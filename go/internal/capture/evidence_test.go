@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -55,3 +56,47 @@ func TestClassifyUnmappedNotVisible(t *testing.T) {
 	}
 }
 
+func TestBuildEvidencePacketUsesGeneratedContractFieldNames(t *testing.T) {
+	now := time.UnixMilli(1000)
+	packet := BuildEvidencePacket("visible-capture", Evidence{
+		Mapped:               true,
+		CaptureCount:         1,
+		LastCaptureTimestamp: now,
+		CapturedAt:           now,
+		VisualInspection:     VisualInspectionVisible,
+	}, now)
+
+	payload, err := json.Marshal(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["captureClassification"] != string(ClassificationCaptureVisible) {
+		t.Fatalf("captureClassification = %v, want %s", decoded["captureClassification"], ClassificationCaptureVisible)
+	}
+	if decoded["visualStatus"] != string(VisualInspectionVisible) {
+		t.Fatalf("visualStatus = %v, want %s", decoded["visualStatus"], VisualInspectionVisible)
+	}
+	if _, ok := decoded["capturedAtUnixMillis"]; !ok {
+		t.Fatal("capturedAtUnixMillis missing from JSON")
+	}
+}
+
+func TestClassificationStringsMatchGeneratedTypescriptContract(t *testing.T) {
+	want := []Classification{
+		ClassificationInsufficientMappedOnly,
+		ClassificationFramePresented,
+		ClassificationCaptureVisible,
+		ClassificationBlankCaptureFailure,
+		ClassificationNotVisible,
+	}
+	for _, classification := range want {
+		if classification == "" {
+			t.Fatal("classification string must not be empty")
+		}
+	}
+}

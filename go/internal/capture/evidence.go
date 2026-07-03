@@ -20,6 +20,13 @@ type Evidence struct {
 	VisualInspection     VisualInspectionStatus
 }
 
+type EvidencePacket struct {
+	Scenario              string                    `json:"scenario"`
+	CapturedAtUnixMillis  int64                     `json:"capturedAtUnixMillis"`
+	VisualStatus          VisualInspectionStatus    `json:"visualStatus"`
+	CaptureClassification Classification            `json:"captureClassification"`
+}
+
 type Classification string
 
 const (
@@ -50,3 +57,11 @@ func Classify(evidence Evidence, now time.Time) Classification {
 	return ClassificationInsufficientMappedOnly
 }
 
+func BuildEvidencePacket(scenario string, evidence Evidence, now time.Time) EvidencePacket {
+	return EvidencePacket{
+		Scenario:              scenario,
+		CapturedAtUnixMillis:  evidence.CapturedAt.UnixMilli(),
+		VisualStatus:          evidence.VisualInspection,
+		CaptureClassification: Classify(evidence, now),
+	}
+}

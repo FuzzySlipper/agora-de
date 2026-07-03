@@ -184,7 +184,8 @@ not enough, frame evidence is strong when present, and a fresh visible capture i
 the fallback proof. Blank captures fail even when mapped.
 
 The classification vocabulary is also exported through generated TypeScript
-contracts as `CaptureClassification`.
+contracts as `CaptureClassification`. `capture.EvidencePacket` uses the same
+JSON field names as the generated TypeScript `EvidencePacket`.
 
 ## `appcatalog`
 
