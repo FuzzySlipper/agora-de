@@ -61,6 +61,10 @@ may_import = ["go/internal/osboundary"]
 lane = "go-shellui"
 may_import = ["go/internal/osboundary"]
 
+[go_package."go/internal/shellui/agenthealth"]
+lane = "go-shellui"
+may_import = ["go/internal/osboundary"]
+
 [go_package."go/internal/shellui/theme"]
 lane = "go-shellui"
 may_import = []

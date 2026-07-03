@@ -40,6 +40,7 @@ successor can wait to deploy until its own stack is coherent and evidenced.
   theme, or widget proxy routes.
 - Keep escalation UI projection behind `osboundary`; no log-file fallback.
 - Keep audit-tail UI projection behind `osboundary`; no direct audit socket.
+- Keep agent-health UI projection behind `osboundary`; no supervisor internals.
 - Keep predecessor tests as selection pressure, but delete workaround modes.
 - Preserve socket protocol fixtures for Wayfire conformance and keep
   `go/internal/wayfireproto` fixture-backed.

@@ -337,6 +337,29 @@ Does not own:
 
 This cell must remain behind the typed `osboundary.AuditClient` interface.
 
+## `shellui/agenthealth`
+
+Path:
+
+```text
+go/internal/shellui/agenthealth
+```
+
+Owns:
+
+- shell-facing agent health projection;
+- state counts for ready/busy/offline/unknown agents;
+- typed use of `go/internal/osboundary`.
+
+Does not own:
+
+- agent supervisor internals;
+- lifecycle topic subscription;
+- event-bus broker behavior;
+- shell HTTP routing.
+
+This cell must remain behind the typed `osboundary.AgentClient` interface.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:
