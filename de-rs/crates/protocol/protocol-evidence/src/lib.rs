@@ -7,6 +7,22 @@ pub enum VisualStatus {
     Unknown,
 }
 
+impl VisualStatus {
+    pub const ALL: [VisualStatus; 3] = [
+        VisualStatus::Visible,
+        VisualStatus::Blank,
+        VisualStatus::Unknown,
+    ];
+
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            VisualStatus::Visible => "visible",
+            VisualStatus::Blank => "blank",
+            VisualStatus::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CaptureClassification {
     InsufficientMappedOnly,
@@ -46,7 +62,16 @@ pub struct EvidencePacket {
 
 #[cfg(test)]
 mod tests {
-    use super::CaptureClassification;
+    use super::{CaptureClassification, VisualStatus};
+
+    #[test]
+    fn visual_status_wire_names_are_stable() {
+        let names: Vec<&str> = VisualStatus::ALL
+            .iter()
+            .map(VisualStatus::wire_name)
+            .collect();
+        assert_eq!(names, vec!["visible", "blank", "unknown"]);
+    }
 
     #[test]
     fn capture_classification_wire_names_are_stable() {

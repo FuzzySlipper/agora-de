@@ -24,8 +24,8 @@ mirrors the Go capture evidence ladder terms:
 - `blank_capture_failure`
 - `not_visible`
 
-The wire names are owned by `de-rs/crates/protocol/protocol-evidence`; codegen
-emits the TypeScript union from that Rust vocabulary.
+Evidence wire names are owned by `de-rs/crates/protocol/protocol-evidence`;
+codegen emits the TypeScript unions from that Rust vocabulary.
 
 ## Regeneration
 

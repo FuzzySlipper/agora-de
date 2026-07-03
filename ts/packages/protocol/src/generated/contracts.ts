@@ -20,7 +20,10 @@ export interface AdminEscalationSummary {
   readonly actorUid: number;
 }
 
-export type VisualStatus = 'visible' | 'blank' | 'unknown';
+export type VisualStatus =
+  | 'visible'
+  | 'blank'
+  | 'unknown';
 
 export type CaptureClassification =
   | 'insufficient_mapped_only'
