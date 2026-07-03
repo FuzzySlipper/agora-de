@@ -56,7 +56,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 - Keep app entrypoints in the TypeScript build graph, even while they are thin.
 - Let `check-ts-structure.mjs` enforce app thinness: app sources import
   `@agora-de/shell` only and app projects reference only the shell package.
-- Consume generated contracts only.
+- Consume generated contracts only through package barrels; generated protocol
+  files stay hidden behind `@agora-de/protocol`.
 - Require `AsyncState<T>` for async store state and classified transport errors.
 
 ## Phase 4: Compositor And Chrome Decisions

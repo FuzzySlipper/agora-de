@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 const root = process.argv[2] ?? process.cwd();
 const tsRoot = join(root, 'ts');
@@ -10,7 +10,8 @@ const tsconfig = JSON.parse(readFileSync(join(tsRoot, 'tsconfig.json'), 'utf8'))
 const knownScopes = new Set(boundaries.scopes);
 const failures = [];
 
-const agoraImportPattern = /(?:from\s+|import\s+(?:type\s+)?|import\s*\(\s*)["'](@agora-de\/[a-z0-9-]+)(?:\/[^"']*)?["']/g;
+const importPattern = /(?:from\s+|import\s+(?:type\s+)?|import\s+|import\s*\(\s*)["']([^"']+)["']/g;
+const agoraImportPattern = /^(?<packageName>@agora-de\/[a-z0-9-]+)(?<suffix>\/.*)?$/;
 const rootReferencePaths = new Set((tsconfig.references ?? []).map((reference) => reference.path));
 
 function readJson(path, label) {
@@ -45,6 +46,22 @@ function collectTypeScriptFiles(dir) {
   return files;
 }
 
+function repoPath(path) {
+  return relative(root, path);
+}
+
+function checkGeneratedContractImport(source, specifier) {
+  if (!specifier.includes('generated/contracts') && !specifier.includes('protocol/src/generated')) {
+    return;
+  }
+
+  if (repoPath(source) === 'ts/packages/protocol/src/index.ts' && specifier === './generated/contracts.js') {
+    return;
+  }
+
+  failures.push(`${repoPath(source)} imports generated contracts directly; use @agora-de/protocol`);
+}
+
 for (const packageDirName of readdirSync(packagesRoot)) {
   const packageDir = join(packagesRoot, packageDirName);
   if (!statSync(packageDir).isDirectory()) continue;
@@ -72,6 +89,15 @@ for (const packageDirName of readdirSync(packagesRoot)) {
   if (scopeTags.length !== 1) failures.push(`ts/packages/${packageDirName} needs exactly one scope: tag`);
   const scope = scopeTags[0]?.slice('scope:'.length);
   if (scope && !knownScopes.has(scope)) failures.push(`ts/packages/${packageDirName} has unknown scope ${scope}`);
+
+  const sourceDir = join(packageDir, 'src');
+  if (!exists(sourceDir)) continue;
+  for (const source of collectTypeScriptFiles(sourceDir)) {
+    const text = readFileSync(source, 'utf8');
+    for (const match of text.matchAll(importPattern)) {
+      checkGeneratedContractImport(source, match[1]);
+    }
+  }
 }
 
 for (const appDirName of readdirSync(appsRoot)) {
@@ -97,9 +123,15 @@ for (const appDirName of readdirSync(appsRoot)) {
 
   for (const source of collectTypeScriptFiles(sourceDir)) {
     const text = readFileSync(source, 'utf8');
-    for (const match of text.matchAll(agoraImportPattern)) {
-      if (match[1] !== '@agora-de/shell') {
-        failures.push(`ts/apps/${appDirName} imports ${match[1]}; apps must import @agora-de/shell only`);
+    for (const match of text.matchAll(importPattern)) {
+      const specifier = match[1];
+      checkGeneratedContractImport(source, specifier);
+      const agoraImport = specifier.match(agoraImportPattern);
+      if (agoraImport) {
+        const { packageName, suffix } = agoraImport.groups;
+        if (packageName !== '@agora-de/shell' || suffix) {
+          failures.push(`ts/apps/${appDirName} imports ${specifier}; apps must import @agora-de/shell only`);
+        }
       }
     }
   }

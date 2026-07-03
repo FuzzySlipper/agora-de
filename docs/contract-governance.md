@@ -54,5 +54,7 @@ The full gate runs the same drift check:
 - Do not hand-edit files under `ts/packages/protocol/src/generated/`.
 - Commit Rust protocol changes and generated TypeScript changes together.
 - TypeScript imports protocol contracts through `@agora-de/protocol` only.
+  `check-ts-structure.mjs` permits generated-contract imports only from the
+  protocol package root barrel.
 - Go/C++ protocol fixtures must eventually be checked against the same source
   of truth or an explicitly documented conformance adapter.
