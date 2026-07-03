@@ -1,1 +1,1 @@
-{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"../..","outDir":"../../../dist/ts/testing-fixtures"},"references":[{"path":"../protocol"}],"include":["src/**/*.ts"]}
+{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"../..","outDir":"../../../dist/ts/testing-fixtures"},"references":[{"path":"../protocol"},{"path":"../domain"},{"path":"../store"},{"path":"../feature-work-surface-controls"}],"include":["src/**/*.ts"]}
