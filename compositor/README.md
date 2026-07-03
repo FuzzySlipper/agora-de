@@ -7,7 +7,8 @@ API, not as the architecture.
 - `wayfire-plugin/`: future lifted plugin source.
 - `protocol-fixtures/`: socket and protocol conformance fixtures.
 - `standard-protocol-probe/`: probe for security-context, foreign-toplevel, and
-  image-copy-capture support.
+  image-copy-capture support. `probe-observations.json` is checked against the
+  backend capability matrix.
 - `smithay-spike/`: custom compositor feasibility work.
 
 The capability matrix lives at

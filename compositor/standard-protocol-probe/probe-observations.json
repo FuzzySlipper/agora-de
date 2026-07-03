@@ -1,0 +1,57 @@
+{
+  "schema": "agora-de.standard-protocol-probe.v1",
+  "probeId": "standard-wayland-protocol-probe",
+  "observations": [
+    {
+      "capability": "kernel_credential_attribution",
+      "support": "standard_protocol",
+      "protocols": [
+        {
+          "name": "security-context-v1",
+          "interface": "wp_security_context_v1",
+          "stage": "staging",
+          "source": "https://wayland.app/protocols/security-context-v1"
+        }
+      ],
+      "finding": "Scoped sockets can attach sandbox/app identity to a new Wayland connection. This can shrink custom attribution for launched or sandboxed clients, but the backend must still own trusted identity fallback when no scoped socket is present."
+    },
+    {
+      "capability": "surface_lifecycle_events",
+      "support": "standard_protocol",
+      "protocols": [
+        {
+          "name": "ext-foreign-toplevel-list-v1",
+          "interface": "ext_foreign_toplevel_list_v1",
+          "stage": "staging",
+          "source": "https://wayland.app/protocols/ext-foreign-toplevel-list-v1"
+        }
+      ],
+      "finding": "Foreign toplevel handles can carry enough lifecycle/listing signal to reduce custom surface discovery, subject to compositor support and metadata completeness."
+    },
+    {
+      "capability": "synchronous_input_deny",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe provides synchronous per-surface input denial in the compositor input path."
+    },
+    {
+      "capability": "per_toplevel_capture",
+      "support": "standard_protocol",
+      "protocols": [
+        {
+          "name": "ext-image-copy-capture-v1",
+          "interface": "ext_image_copy_capture_v1",
+          "stage": "staging",
+          "source": "https://wayland.app/protocols/ext-image-copy-capture-v1"
+        }
+      ],
+      "finding": "Image copy capture can request capture of image sources including toplevels into client-provided buffers. This can move capture transport toward standard protocol support where the compositor exposes the required source objects."
+    },
+    {
+      "capability": "geometry_control",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe provides authority for DE-controlled per-surface move/resize geometry."
+    }
+  ]
+}
