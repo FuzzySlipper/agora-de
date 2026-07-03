@@ -26,6 +26,9 @@ legacy adapter.
 The shell projection lives in `go/internal/shellui/escalations` and consumes
 only the typed `osboundary.EscalationClient` interface.
 
+The audit-tail shell projection lives in `go/internal/shellui/audittail` and
+consumes only the typed `osboundary.AuditClient` interface.
+
 ## Forbidden Couplings
 
 The harness rejects Go source references to known predecessor coupling points:

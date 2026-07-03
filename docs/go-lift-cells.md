@@ -315,6 +315,28 @@ Does not own:
 
 This cell must remain behind the typed `osboundary.EscalationClient` interface.
 
+## `shellui/audittail`
+
+Path:
+
+```text
+go/internal/shellui/audittail
+```
+
+Owns:
+
+- shell-facing audit event projection;
+- typed use of `go/internal/osboundary`.
+
+Does not own:
+
+- direct audit socket dialing;
+- audit log parsing;
+- event-bus broker behavior;
+- shell HTTP routing.
+
+This cell must remain behind the typed `osboundary.AuditClient` interface.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:
