@@ -22,8 +22,16 @@ export interface AdminEscalationSummary {
 
 export type VisualStatus = 'visible' | 'blank' | 'unknown';
 
+export type CaptureClassification =
+  | 'insufficient_mapped_only'
+  | 'frame_presented'
+  | 'capture_visible'
+  | 'blank_capture_failure'
+  | 'not_visible';
+
 export interface EvidencePacket {
   readonly scenario: string;
   readonly capturedAtUnixMillis: number;
   readonly visualStatus: VisualStatus;
+  readonly captureClassification: CaptureClassification;
 }

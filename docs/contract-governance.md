@@ -15,6 +15,15 @@ Current generated TypeScript output:
 ts/packages/protocol/src/generated/contracts.ts
 ```
 
+Current generated evidence vocabulary includes `CaptureClassification`, which
+mirrors the Go capture evidence ladder terms:
+
+- `insufficient_mapped_only`
+- `frame_presented`
+- `capture_visible`
+- `blank_capture_failure`
+- `not_visible`
+
 ## Regeneration
 
 ```bash

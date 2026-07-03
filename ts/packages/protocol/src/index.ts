@@ -1,5 +1,6 @@
 export type {
   AdminEscalationSummary,
+  CaptureClassification,
   EvidencePacket,
   SurfaceEvent,
   SurfaceEventKind,

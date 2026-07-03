@@ -183,6 +183,9 @@ This cell encodes the lesson-packet evidence ladder: mapped visibility alone is
 not enough, frame evidence is strong when present, and a fresh visible capture is
 the fallback proof. Blank captures fail even when mapped.
 
+The classification vocabulary is also exported through generated TypeScript
+contracts as `CaptureClassification`.
+
 ## `appcatalog`
 
 Path:
