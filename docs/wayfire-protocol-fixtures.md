@@ -41,6 +41,9 @@ that every fixture line is valid JSON and uses a known message type:
 ./harness/ci/check-compositor.sh
 ```
 
+The Go surface event kind strings are checked against the generated TypeScript
+contract so `wayfireproto` does not drift from the Rust-owned protocol
+vocabulary.
+
 When the C++ plugin lands, its protocol smoke tests should use these same
 fixture shapes or a generated equivalent.
-

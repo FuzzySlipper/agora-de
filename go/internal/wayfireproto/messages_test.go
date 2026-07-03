@@ -3,6 +3,7 @@ package wayfireproto
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -71,8 +72,27 @@ func TestDecodeLineRejectsUnknownType(t *testing.T) {
 	}
 }
 
+func TestSurfaceEventKindsMatchGeneratedContract(t *testing.T) {
+	contract, err := os.ReadFile(filepath.Join("..", "..", "..", "ts", "packages", "protocol", "src", "generated", "contracts.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractText := string(contract)
+	eventKinds := []SurfaceEventKind{
+		SurfaceEventMapped,
+		SurfaceEventUnmapped,
+		SurfaceEventFocused,
+		SurfaceEventInputDenied,
+	}
+	for _, eventKind := range eventKinds {
+		needle := "'" + string(eventKind) + "'"
+		if !strings.Contains(contractText, needle) {
+			t.Fatalf("generated contract is missing surface event kind %s", needle)
+		}
+	}
+}
+
 func fixturePath(t *testing.T, name string) string {
 	t.Helper()
 	return filepath.Join("..", "..", "..", "compositor", "protocol-fixtures", "wayfire", name)
 }
-
