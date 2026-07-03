@@ -54,6 +54,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 - Keep feature membership in typed manifests composed by `@agora-de/shell`;
   apps select a composition and do not import feature packages directly.
 - Keep app entrypoints in the TypeScript build graph, even while they are thin.
+- Let `check-ts-structure.mjs` enforce app thinness: app sources import
+  `@agora-de/shell` only and app projects reference only the shell package.
 - Consume generated contracts only.
 - Require `AsyncState<T>` for async store state and classified transport errors.
 
