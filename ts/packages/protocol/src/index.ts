@@ -1,3 +1,12 @@
+export type {
+  AdminEscalationSummary,
+  EvidencePacket,
+  SurfaceEvent,
+  SurfaceEventKind,
+  ThemeToken,
+  VisualStatus,
+} from './generated/contracts.js';
+
 export type ClassifiedError =
   | { readonly kind: 'network'; readonly message: string; readonly status?: number }
   | { readonly kind: 'auth'; readonly message: string; readonly status: 401 | 403 }
@@ -17,4 +26,3 @@ export interface DeResultError {
 }
 
 export type DeResult<T> = DeResultOk<T> | DeResultError;
-

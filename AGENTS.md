@@ -20,6 +20,8 @@ protocol mirrors are forbidden.
 - Do not add a new shell runtime mode to route around a platform defect.
 - Do not read governance logs as a product API.
 - Do not hand-edit generated protocol output once generation is active.
+- Regenerate protocol output with `protocol-codegen`; do not patch generated
+  TypeScript by hand.
 - Do not let TypeScript feature libraries import sibling feature libraries.
 - Do not bypass `governance/ownership.toml` when adding crates or packages.
 

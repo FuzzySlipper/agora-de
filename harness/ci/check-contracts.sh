@@ -3,8 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-test -f "$ROOT/de-rs/crates/protocol/protocol-codegen/src/lib.rs"
-test -f "$ROOT/ts/packages/protocol/src/index.ts"
+GENERATED_TS="$ROOT/ts/packages/protocol/src/generated/contracts.ts"
 
-echo "contract scaffold: OK"
-
+cargo run \
+  --quiet \
+  --manifest-path "$ROOT/de-rs/Cargo.toml" \
+  -p protocol-codegen \
+  -- \
+  --check "$GENERATED_TS"

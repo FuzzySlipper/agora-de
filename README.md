@@ -47,4 +47,5 @@ compile and fail mechanically before feature code starts arriving.
 - [Successor brief](docs/successor-brief.md)
 - [Successor lesson packet](docs/successor-lesson-packet.md)
 - [Architecture](governance/architecture.md)
+- [Contract governance](docs/contract-governance.md)
 - [Ownership](governance/ownership.toml)
