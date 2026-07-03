@@ -50,5 +50,6 @@ uses the local compiler installed under `ts/node_modules`.
 - [Successor lesson packet](docs/successor-lesson-packet.md)
 - [Architecture](governance/architecture.md)
 - [Agora OS boundary](docs/agora-os-boundary.md)
+- [Compositor backend plan](docs/compositor-backend-plan.md)
 - [Contract governance](docs/contract-governance.md)
 - [Ownership](governance/ownership.toml)

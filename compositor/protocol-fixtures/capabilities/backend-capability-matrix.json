@@ -1,0 +1,64 @@
+{
+  "schema": "agora-de.backend-capability-matrix.v1",
+  "requiredCapabilities": [
+    "kernel_credential_attribution",
+    "surface_lifecycle_events",
+    "synchronous_input_deny",
+    "per_toplevel_capture",
+    "geometry_control"
+  ],
+  "backends": [
+    {
+      "id": "wayfire-plugin",
+      "status": "initial_backend",
+      "capabilities": {
+        "kernel_credential_attribution": {
+          "support": "custom_plugin",
+          "evidence": "wl_client_get_credentials via Wayfire plugin"
+        },
+        "surface_lifecycle_events": {
+          "support": "custom_plugin",
+          "evidence": "Wayfire view lifecycle signals via plugin socket"
+        },
+        "synchronous_input_deny": {
+          "support": "custom_plugin",
+          "evidence": "local policy cache in compositor input path"
+        },
+        "per_toplevel_capture": {
+          "support": "custom_plugin",
+          "evidence": "predecessor GLES readback path"
+        },
+        "geometry_control": {
+          "support": "custom_plugin",
+          "evidence": "Wayfire view control APIs"
+        }
+      }
+    },
+    {
+      "id": "standard-wayland-protocol-probe",
+      "status": "spike",
+      "capabilities": {
+        "kernel_credential_attribution": {
+          "support": "standard_protocol",
+          "evidence": "wp_security_context_v1 scoped Wayland sockets"
+        },
+        "surface_lifecycle_events": {
+          "support": "standard_protocol",
+          "evidence": "ext_foreign_toplevel_list_v1 / foreign toplevel management"
+        },
+        "synchronous_input_deny": {
+          "support": "missing",
+          "evidence": "no known standard protocol for synchronous per-surface input deny"
+        },
+        "per_toplevel_capture": {
+          "support": "standard_protocol",
+          "evidence": "ext_image_copy_capture_v1 per-toplevel capture"
+        },
+        "geometry_control": {
+          "support": "missing",
+          "evidence": "per-surface move/resize geometry remains compositor-specific"
+        }
+      }
+    }
+  ]
+}

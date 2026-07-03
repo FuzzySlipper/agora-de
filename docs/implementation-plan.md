@@ -17,6 +17,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 - Keep the Go boundary package fail-closed until `agora-os` exposes a typed
   service endpoint; do not bridge through predecessor log files.
 - Define the compositor backend API in Rust.
+- Keep compositor capability claims in the checked backend matrix before
+  promoting compositor spikes to product work.
 - Stand up protocol generation before TypeScript consumes real contracts.
 
 ## Phase 2: Lift And Split

@@ -10,5 +10,6 @@ test -d "$ROOT/compositor/smithay-spike"
 test -d "$ROOT/chrome/native-dock"
 test -d "$ROOT/chrome/panel-supervisor"
 
-echo "compositor/chrome scaffold: OK"
+python3 "$ROOT/harness/depgraph/check-compositor-fixtures.py" "$ROOT"
 
+echo "compositor/chrome scaffold: OK"

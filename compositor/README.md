@@ -10,3 +10,8 @@ API, not as the architecture.
   image-copy-capture support.
 - `smithay-spike/`: custom compositor feasibility work.
 
+The capability matrix lives at
+`protocol-fixtures/capabilities/backend-capability-matrix.json`. It keeps the
+current decision explicit: standard protocols cover useful surface/capture
+territory, while synchronous input deny and geometry control still need a
+compositor-specific enforcement point until a spike proves otherwise.
