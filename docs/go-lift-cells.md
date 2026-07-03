@@ -293,6 +293,28 @@ Does not own:
 This cell is the path-safety primitive future `/shell/`, theme asset, and widget
 proxy serving code should share.
 
+## `shellui/escalations`
+
+Path:
+
+```text
+go/internal/shellui/escalations
+```
+
+Owns:
+
+- shell-facing pending escalation projection;
+- typed use of `go/internal/osboundary`.
+
+Does not own:
+
+- parsing predecessor log files;
+- fallback escalation storage;
+- audit socket transport;
+- shell HTTP routing.
+
+This cell must remain behind the typed `osboundary.EscalationClient` interface.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:

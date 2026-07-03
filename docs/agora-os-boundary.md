@@ -23,6 +23,9 @@ The package includes `UnavailableClient`, a fail-closed implementation used
 until a real typed `agora-os` service endpoint exists. It is deliberately not a
 legacy adapter.
 
+The shell projection lives in `go/internal/shellui/escalations` and consumes
+only the typed `osboundary.EscalationClient` interface.
+
 ## Forbidden Couplings
 
 The harness rejects Go source references to known predecessor coupling points:
@@ -52,4 +55,3 @@ When `agora-os` publishes the real typed API, add an adapter under a narrow Go
 package that implements `osboundary.Client`. Keep conformance tests at that
 adapter boundary. Do not spread governance transport details into shell,
 compositor, or UI packages.
-
