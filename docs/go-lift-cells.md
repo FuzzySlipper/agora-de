@@ -62,6 +62,33 @@ compositor/protocol-fixtures/wayfire/bridge-commands.jsonl
 Close-surface commands in that fixture are intentionally rejected by `policy`.
 They belong in a future surface-control cell, not in the policy cache.
 
+## `shellui/surfaceactions`
+
+Path:
+
+```text
+go/internal/shellui/surfaceactions
+```
+
+Owns:
+
+- table-friendly surface action command decoding;
+- close-surface and close-surfaces-by-owner command shape.
+
+Does not own:
+
+- policy projection;
+- surface lifecycle projection;
+- HTTP routing or static serving;
+- launch/session association.
+
+The package consumes `go/internal/wayfireproto` and extracts only action
+commands from:
+
+```text
+compositor/protocol-fixtures/wayfire/bridge-commands.jsonl
+```
+
 ## `input`
 
 Path:
@@ -84,6 +111,51 @@ Does not own:
 
 `policy` may depend on this cell for actor context state. The dependency is
 explicitly listed in `governance/ownership.toml`.
+
+## `session`
+
+Path:
+
+```text
+go/internal/session
+```
+
+Owns:
+
+- DE session tokens;
+- session record lookup;
+- token-scoped destroy semantics.
+
+Does not own:
+
+- process launch;
+- surface association;
+- compositor policy;
+- shell HTTP auth.
+
+## `launchlife`
+
+Path:
+
+```text
+go/internal/launchlife
+```
+
+Owns:
+
+- launch records;
+- launch state transitions;
+- association from launch records to mapped surface ids.
+
+Does not own:
+
+- session token creation or destruction;
+- surface lifecycle projection;
+- app catalog import;
+- process execution.
+
+`launchlife` may depend on `session` for token identity, but session does not
+depend back on launch lifecycle behavior.
 
 ## Import Enforcement
 

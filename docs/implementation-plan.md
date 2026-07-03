@@ -28,7 +28,9 @@ successor can wait to deploy until its own stack is coherent and evidenced.
   ownership, fixture-backed behavior, checked imports.
 - Keep `go/internal/policy` limited to policy-cache projection and input actor
   context from `go/internal/input`; surface close/control commands land
-  elsewhere.
+  in `go/internal/shellui/surfaceactions`.
+- Keep launch/session split: `session` owns token lifecycle, `launchlife` owns
+  launch records and surface association state.
 - Keep predecessor tests as selection pressure, but delete workaround modes.
 - Preserve socket protocol fixtures for Wayfire conformance and keep
   `go/internal/wayfireproto` fixture-backed.

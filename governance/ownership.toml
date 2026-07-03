@@ -19,7 +19,7 @@ may_import = ["go/internal/wayfireproto"]
 
 [go_package."go/internal/launchlife"]
 lane = "go-compositor"
-may_import = []
+may_import = ["go/internal/session"]
 
 [go_package."go/internal/capture"]
 lane = "go-compositor"
@@ -51,7 +51,7 @@ may_import = []
 
 [go_package."go/internal/shellui/surfaceactions"]
 lane = "go-shellui"
-may_import = []
+may_import = ["go/internal/wayfireproto"]
 
 [go_package."go/internal/shellui/escalations"]
 lane = "go-shellui"
