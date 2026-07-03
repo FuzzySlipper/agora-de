@@ -51,6 +51,9 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 
 - Build desktop shell and operator console as two thin apps over shared feature
   libraries.
+- Keep feature membership in typed manifests composed by `@agora-de/shell`;
+  apps select a composition and do not import feature packages directly.
+- Keep app entrypoints in the TypeScript build graph, even while they are thin.
 - Consume generated contracts only.
 - Require `AsyncState<T>` for async store state and classified transport errors.
 

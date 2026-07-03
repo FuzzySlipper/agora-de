@@ -18,7 +18,8 @@
     { "path": "packages/feature-work-surface-controls" },
     { "path": "packages/feature-app-launcher" },
     { "path": "packages/shell" },
-    { "path": "packages/testing-fixtures" }
+    { "path": "packages/testing-fixtures" },
+    { "path": "apps/desktop-shell" },
+    { "path": "apps/operator-console" }
   ]
 }
-

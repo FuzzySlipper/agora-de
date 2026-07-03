@@ -1,4 +1,3 @@
-import { shellName } from '@agora-de/shell';
+import { desktopShellComposition } from '@agora-de/shell';
 
-console.log(`${shellName}: desktop-shell scaffold`);
-
+console.log(`${desktopShellComposition.name}: ${desktopShellComposition.surface} scaffold`);

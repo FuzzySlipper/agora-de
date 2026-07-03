@@ -237,6 +237,7 @@ type = "lib"
 layer = "shell"
 may_import = [
   "@agora-de/platform",
+  "@agora-de/domain",
   "@agora-de/store",
   "@agora-de/theme",
   "@agora-de/feature-taskbar",

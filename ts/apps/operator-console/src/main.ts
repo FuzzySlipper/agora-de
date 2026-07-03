@@ -1,4 +1,3 @@
-import { shellName } from '@agora-de/shell';
+import { operatorConsoleComposition } from '@agora-de/shell';
 
-console.log(`${shellName}: operator-console scaffold`);
-
+console.log(`${operatorConsoleComposition.name}: ${operatorConsoleComposition.surface} scaffold`);
