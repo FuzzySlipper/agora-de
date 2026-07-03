@@ -1,0 +1,1 @@
+{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"../..","outDir":"../../../dist/ts/components"},"references":[{"path":"../theme"}],"include":["src/**/*.ts"]}

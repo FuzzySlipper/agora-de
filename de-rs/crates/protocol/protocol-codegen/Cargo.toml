@@ -1,0 +1,18 @@
+[package]
+name = "protocol-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+protocol-compositor = { path = "../protocol-compositor" }
+protocol-shell = { path = "../protocol-shell" }
+protocol-os-boundary = { path = "../protocol-os-boundary" }
+protocol-evidence = { path = "../protocol-evidence" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+

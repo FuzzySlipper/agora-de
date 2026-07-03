@@ -1,0 +1,17 @@
+[package]
+name = "layout-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+de-error = { path = "../../foundation/de-error" }
+de-ids = { path = "../../foundation/de-ids" }
+protocol-shell = { path = "../../protocol/protocol-shell" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+

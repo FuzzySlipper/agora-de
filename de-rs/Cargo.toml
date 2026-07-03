@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/foundation/de-ids",
+    "crates/foundation/de-error",
+    "crates/foundation/de-time",
+    "crates/protocol/protocol-compositor",
+    "crates/protocol/protocol-shell",
+    "crates/protocol/protocol-os-boundary",
+    "crates/protocol/protocol-evidence",
+    "crates/protocol/protocol-codegen",
+    "crates/state/surface-model",
+    "crates/state/launch-model",
+    "crates/state/session-model",
+    "crates/state/layout-model",
+    "crates/state/grant-model",
+    "crates/services/policy-projection",
+    "crates/services/capture-classifier",
+    "crates/services/evidence-classifier",
+    "crates/services/theme-sanitizer",
+    "crates/compositor/compositor-backend-api",
+    "crates/compositor/backend-wayfire-protocol",
+    "crates/compositor/backend-standard-wayland-probe",
+    "crates/compositor/smithay-spike",
+    "crates/tools/protocol-dump",
+    "crates/tools/evidence-inspect",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+

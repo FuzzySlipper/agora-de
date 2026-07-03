@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "exactOptionalPropertyTypes": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "outDir": "../dist/ts",
+    "rootDir": ".",
+    "strict": true,
+    "target": "ES2022",
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@agora-de/protocol": ["packages/protocol/src/index.ts"],
+      "@agora-de/platform": ["packages/platform/src/index.ts"],
+      "@agora-de/transport": ["packages/transport/src/index.ts"],
+      "@agora-de/domain": ["packages/domain/src/index.ts"],
+      "@agora-de/store": ["packages/store/src/index.ts"],
+      "@agora-de/renderer": ["packages/renderer/src/index.ts"],
+      "@agora-de/components": ["packages/components/src/index.ts"],
+      "@agora-de/theme": ["packages/theme/src/index.ts"],
+      "@agora-de/feature-taskbar": ["packages/feature-taskbar/src/index.ts"],
+      "@agora-de/feature-command-center": ["packages/feature-command-center/src/index.ts"],
+      "@agora-de/feature-notifications": ["packages/feature-notifications/src/index.ts"],
+      "@agora-de/feature-agent-health": ["packages/feature-agent-health/src/index.ts"],
+      "@agora-de/feature-escalations": ["packages/feature-escalations/src/index.ts"],
+      "@agora-de/feature-audit-tail": ["packages/feature-audit-tail/src/index.ts"],
+      "@agora-de/feature-work-surface-controls": ["packages/feature-work-surface-controls/src/index.ts"],
+      "@agora-de/feature-app-launcher": ["packages/feature-app-launcher/src/index.ts"],
+      "@agora-de/shell": ["packages/shell/src/index.ts"],
+      "@agora-de/testing-fixtures": ["packages/testing-fixtures/src/index.ts"]
+    }
+  }
+}
+

@@ -1,0 +1,1 @@
+{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"../..","outDir":"../../../dist/ts/feature-taskbar"},"references":[{"path":"../protocol"},{"path":"../platform"},{"path":"../domain"},{"path":"../store"},{"path":"../renderer"},{"path":"../components"},{"path":"../theme"}],"include":["src/**/*.ts"]}

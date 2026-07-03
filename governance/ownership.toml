@@ -1,0 +1,232 @@
+# Machine-readable ownership and dependency policy.
+
+[workspace]
+rust_root = "de-rs"
+go_root = "go"
+ts_root = "ts"
+
+# Rust lanes
+
+[crate."de-rs/crates/foundation/de-ids"]
+lane = "rust-foundation"
+may_depend_on = []
+
+[crate."de-rs/crates/foundation/de-error"]
+lane = "rust-foundation"
+may_depend_on = []
+
+[crate."de-rs/crates/foundation/de-time"]
+lane = "rust-foundation"
+may_depend_on = []
+
+[crate."de-rs/crates/protocol/protocol-compositor"]
+lane = "contract-steward"
+may_depend_on = ["de-ids", "de-error"]
+
+[crate."de-rs/crates/protocol/protocol-shell"]
+lane = "contract-steward"
+may_depend_on = ["de-ids", "de-error"]
+
+[crate."de-rs/crates/protocol/protocol-os-boundary"]
+lane = "contract-steward"
+may_depend_on = ["de-ids", "de-error", "de-time"]
+
+[crate."de-rs/crates/protocol/protocol-evidence"]
+lane = "contract-steward"
+may_depend_on = ["de-ids", "de-error", "de-time"]
+
+[crate."de-rs/crates/protocol/protocol-codegen"]
+lane = "contract-steward"
+may_depend_on = [
+  "protocol-compositor",
+  "protocol-shell",
+  "protocol-os-boundary",
+  "protocol-evidence",
+]
+
+[crate."de-rs/crates/state/surface-model"]
+lane = "rust-state"
+may_depend_on = ["de-ids", "de-error", "protocol-compositor"]
+may_not_depend_on = ["compositor-backend-api"]
+
+[crate."de-rs/crates/state/launch-model"]
+lane = "rust-state"
+may_depend_on = ["de-ids", "de-error", "de-time", "protocol-compositor"]
+may_not_depend_on = ["compositor-backend-api"]
+
+[crate."de-rs/crates/state/session-model"]
+lane = "rust-state"
+may_depend_on = ["de-ids", "de-error", "de-time"]
+may_not_depend_on = ["compositor-backend-api"]
+
+[crate."de-rs/crates/state/layout-model"]
+lane = "rust-state"
+may_depend_on = ["de-ids", "de-error", "protocol-shell"]
+may_not_depend_on = ["compositor-backend-api"]
+
+[crate."de-rs/crates/state/grant-model"]
+lane = "rust-state"
+may_depend_on = ["de-ids", "de-error", "de-time", "protocol-os-boundary"]
+may_not_depend_on = ["compositor-backend-api"]
+
+[crate."de-rs/crates/services/policy-projection"]
+lane = "rust-service"
+may_depend_on = ["de-ids", "de-error", "surface-model", "grant-model"]
+
+[crate."de-rs/crates/services/capture-classifier"]
+lane = "rust-service"
+may_depend_on = ["de-ids", "de-error", "protocol-evidence"]
+
+[crate."de-rs/crates/services/evidence-classifier"]
+lane = "rust-service"
+may_depend_on = ["de-ids", "de-error", "de-time", "protocol-evidence"]
+
+[crate."de-rs/crates/services/theme-sanitizer"]
+lane = "rust-service"
+may_depend_on = ["de-error", "protocol-shell"]
+
+[crate."de-rs/crates/compositor/compositor-backend-api"]
+lane = "rust-compositor"
+may_depend_on = ["de-ids", "de-error", "protocol-compositor", "protocol-evidence"]
+
+[crate."de-rs/crates/compositor/backend-wayfire-protocol"]
+lane = "rust-compositor"
+may_depend_on = ["de-ids", "de-error", "compositor-backend-api"]
+
+[crate."de-rs/crates/compositor/backend-standard-wayland-probe"]
+lane = "rust-compositor"
+may_depend_on = ["de-ids", "de-error", "compositor-backend-api"]
+
+[crate."de-rs/crates/compositor/smithay-spike"]
+lane = "rust-compositor-spike"
+may_depend_on = ["de-ids", "de-error", "compositor-backend-api"]
+
+[crate."de-rs/crates/tools/protocol-dump"]
+lane = "rust-tool"
+may_depend_on = ["protocol-compositor", "protocol-shell", "protocol-os-boundary", "protocol-evidence"]
+
+[crate."de-rs/crates/tools/evidence-inspect"]
+lane = "rust-tool"
+may_depend_on = ["protocol-evidence", "evidence-classifier"]
+
+# TypeScript lanes
+
+[package."ts/packages/protocol"]
+lane = "contract-steward"
+type = "lib"
+layer = "protocol"
+may_import = []
+
+[package."ts/packages/platform"]
+lane = "ts-platform"
+type = "lib"
+layer = "platform"
+may_import = []
+
+[package."ts/packages/transport"]
+lane = "ts-transport"
+type = "lib"
+layer = "transport"
+may_import = ["@agora-de/protocol"]
+
+[package."ts/packages/domain"]
+lane = "ts-domain"
+type = "lib"
+layer = "domain"
+may_import = ["@agora-de/protocol"]
+
+[package."ts/packages/store"]
+lane = "ts-store"
+type = "lib"
+layer = "store"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/transport", "@agora-de/domain"]
+
+[package."ts/packages/renderer"]
+lane = "ts-renderer"
+type = "lib"
+layer = "renderer"
+may_import = ["@agora-de/domain", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/components"]
+lane = "ts-components"
+type = "lib"
+layer = "components"
+may_import = ["@agora-de/theme"]
+
+[package."ts/packages/theme"]
+lane = "ts-theme"
+type = "lib"
+layer = "theme"
+may_import = []
+
+[package."ts/packages/shell"]
+lane = "ts-shell"
+type = "lib"
+layer = "shell"
+may_import = [
+  "@agora-de/platform",
+  "@agora-de/store",
+  "@agora-de/theme",
+  "@agora-de/feature-taskbar",
+  "@agora-de/feature-command-center",
+  "@agora-de/feature-notifications",
+  "@agora-de/feature-agent-health",
+  "@agora-de/feature-escalations",
+  "@agora-de/feature-audit-tail",
+  "@agora-de/feature-work-surface-controls",
+  "@agora-de/feature-app-launcher",
+]
+
+[package."ts/packages/testing-fixtures"]
+lane = "ts-testing"
+type = "testing"
+layer = "testing-fixtures"
+may_import = "unrestricted"
+
+[package."ts/packages/feature-taskbar"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-command-center"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-notifications"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-agent-health"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-escalations"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-audit-tail"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-work-surface-controls"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-app-launcher"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]

@@ -1,0 +1,18 @@
+[package]
+name = "policy-projection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+de-error = { path = "../../foundation/de-error" }
+de-ids = { path = "../../foundation/de-ids" }
+grant-model = { path = "../../state/grant-model" }
+surface-model = { path = "../../state/surface-model" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+

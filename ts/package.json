@@ -1,0 +1,14 @@
+{
+  "name": "agora-de-ts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:structure": "node ../harness/depgraph/check-ts-structure.mjs",
+    "typecheck": "tsc --build tsconfig.json",
+    "verify": "npm run check:structure && npm run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
+

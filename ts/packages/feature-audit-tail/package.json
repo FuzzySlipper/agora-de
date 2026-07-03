@@ -1,0 +1,1 @@
+{"name":"@agora-de/feature-audit-tail","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/protocol":"workspace:*","@agora-de/platform":"workspace:*","@agora-de/domain":"workspace:*","@agora-de/store":"workspace:*","@agora-de/renderer":"workspace:*","@agora-de/components":"workspace:*","@agora-de/theme":"workspace:*"}}

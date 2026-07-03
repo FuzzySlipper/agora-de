@@ -1,0 +1,1 @@
+{"name":"@agora-de/transport","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/protocol":"workspace:*"}}

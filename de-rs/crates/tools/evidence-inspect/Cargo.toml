@@ -1,0 +1,16 @@
+[package]
+name = "evidence-inspect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+evidence-classifier = { path = "../../services/evidence-classifier" }
+protocol-evidence = { path = "../../protocol/protocol-evidence" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+

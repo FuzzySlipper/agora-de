@@ -1,0 +1,1 @@
+{"name":"@agora-de/components","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/theme":"workspace:*"}}

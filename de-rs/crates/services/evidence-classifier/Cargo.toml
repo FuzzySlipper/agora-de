@@ -1,0 +1,18 @@
+[package]
+name = "evidence-classifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+de-error = { path = "../../foundation/de-error" }
+de-ids = { path = "../../foundation/de-ids" }
+de-time = { path = "../../foundation/de-time" }
+protocol-evidence = { path = "../../protocol/protocol-evidence" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+

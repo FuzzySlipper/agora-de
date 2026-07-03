@@ -1,0 +1,17 @@
+[package]
+name = "capture-classifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+de-error = { path = "../../foundation/de-error" }
+de-ids = { path = "../../foundation/de-ids" }
+protocol-evidence = { path = "../../protocol/protocol-evidence" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+

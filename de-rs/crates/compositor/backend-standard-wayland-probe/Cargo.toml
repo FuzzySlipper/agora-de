@@ -1,0 +1,17 @@
+[package]
+name = "backend-standard-wayland-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+compositor-backend-api = { path = "../compositor-backend-api" }
+de-error = { path = "../../foundation/de-error" }
+de-ids = { path = "../../foundation/de-ids" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+

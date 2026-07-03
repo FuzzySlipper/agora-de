@@ -1,0 +1,16 @@
+{
+  "scopes": [
+    "protocol",
+    "platform",
+    "transport",
+    "domain",
+    "store",
+    "renderer",
+    "components",
+    "theme",
+    "feature",
+    "shell",
+    "testing-fixtures"
+  ]
+}
+

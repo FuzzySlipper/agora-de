@@ -1,0 +1,1 @@
+{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"../..","outDir":"../../../dist/ts/store"},"references":[{"path":"../protocol"},{"path":"../platform"},{"path":"../transport"},{"path":"../domain"}],"include":["src/**/*.ts"]}

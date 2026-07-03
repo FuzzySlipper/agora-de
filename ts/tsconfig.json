@@ -1,0 +1,24 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/protocol" },
+    { "path": "packages/platform" },
+    { "path": "packages/transport" },
+    { "path": "packages/domain" },
+    { "path": "packages/store" },
+    { "path": "packages/theme" },
+    { "path": "packages/components" },
+    { "path": "packages/renderer" },
+    { "path": "packages/feature-taskbar" },
+    { "path": "packages/feature-command-center" },
+    { "path": "packages/feature-notifications" },
+    { "path": "packages/feature-agent-health" },
+    { "path": "packages/feature-escalations" },
+    { "path": "packages/feature-audit-tail" },
+    { "path": "packages/feature-work-surface-controls" },
+    { "path": "packages/feature-app-launcher" },
+    { "path": "packages/shell" },
+    { "path": "packages/testing-fixtures" }
+  ]
+}
+
