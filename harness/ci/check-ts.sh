@@ -13,3 +13,5 @@ else
   echo "tsc not found. Run: cd ts && npm install"
   exit 1
 fi
+
+node --experimental-strip-types "$ROOT/harness/depgraph/check-ts-fixtures.mjs" "$ROOT"

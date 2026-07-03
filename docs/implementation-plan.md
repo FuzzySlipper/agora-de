@@ -59,6 +59,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 - Consume generated contracts only through package barrels; generated protocol
   files stay hidden behind `@agora-de/protocol`.
 - Require `AsyncState<T>` for async store state and classified transport errors.
+- Keep the first surface lifecycle UI slice fixture-backed until live compositor
+  transport lands; `check-ts.sh` executes the TS fixture assertions.
 
 ## Phase 4: Compositor And Chrome Decisions
 
