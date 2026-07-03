@@ -239,6 +239,36 @@ harness/fixtures/theme/agora-default-theme.json
 Theme support is intentionally constrained to the token/sanitizer contract from
 the successor lesson packet.
 
+## `shellui/widgets`
+
+Path:
+
+```text
+go/internal/shellui/widgets
+```
+
+Owns:
+
+- packaged widget manifest validation;
+- widget registry metadata;
+- widget bus topic prefix shape.
+
+Does not own:
+
+- widget proxy HTTP serving;
+- postMessage event handling;
+- bus publication;
+- shell layout decisions.
+
+The first fixture lives at:
+
+```text
+harness/fixtures/widgets/clock-widget.json
+```
+
+Widget IDs and entrypoints are validated before any future proxy-serving code
+can consume them.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:

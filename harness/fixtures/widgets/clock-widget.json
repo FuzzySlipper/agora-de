@@ -1,0 +1,7 @@
+{
+  "id": "clock",
+  "name": "Clock",
+  "entrypoint": "index.html",
+  "busTopicPrefix": "widget.clock"
+}
+

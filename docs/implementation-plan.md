@@ -34,6 +34,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 - Keep app catalog import separate from process launch and shell HTTP routing.
 - Keep shell theme support limited to manifest and `--agora-*` token sanitizer
   behavior until live UI evidence requires more.
+- Keep widget manifest/registry validation separate from proxy serving and bus
+  publication.
 - Keep predecessor tests as selection pressure, but delete workaround modes.
 - Preserve socket protocol fixtures for Wayfire conformance and keep
   `go/internal/wayfireproto` fixture-backed.
