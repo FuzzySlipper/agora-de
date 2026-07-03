@@ -1,0 +1,4 @@
+{"type":"surface_event","event":"mapped","surface":{"id":"view-42","wayfire_view_id":42,"app_id":"org.example.App","title":"Example","role":"toplevel"},"client":{"pid":1234,"uid":60001,"gid":60001}}
+{"type":"surface_event","event":"focused","surface":{"id":"view-42","wayfire_view_id":42,"app_id":"org.example.App","title":"Example","role":"toplevel"},"client":{"pid":1234,"uid":60001,"gid":60001}}
+{"type":"surface_event","event":"input_denied","device":"keyboard","surface":{"id":"view-42","wayfire_view_id":42,"app_id":"org.example.App","title":"Example","role":"toplevel"},"client":{"pid":1234,"uid":60001,"gid":60001}}
+

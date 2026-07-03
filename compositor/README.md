@@ -15,3 +15,7 @@ The capability matrix lives at
 current decision explicit: standard protocols cover useful surface/capture
 territory, while synchronous input deny and geometry control still need a
 compositor-specific enforcement point until a spike proves otherwise.
+
+Wayfire socket protocol JSONL fixtures live under `protocol-fixtures/wayfire/`.
+They are consumed by `go/internal/wayfireproto` tests and checked directly by
+the compositor harness.

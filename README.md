@@ -53,3 +53,4 @@ uses the local compiler installed under `ts/node_modules`.
 - [Compositor backend plan](docs/compositor-backend-plan.md)
 - [Contract governance](docs/contract-governance.md)
 - [Ownership](governance/ownership.toml)
+- [Wayfire protocol fixtures](docs/wayfire-protocol-fixtures.md)

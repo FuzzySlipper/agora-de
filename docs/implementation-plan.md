@@ -25,7 +25,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 
 - Move predecessor Go daemon behavior into `go/internal/*` cells.
 - Keep predecessor tests as selection pressure, but delete workaround modes.
-- Preserve socket protocol fixtures for Wayfire conformance.
+- Preserve socket protocol fixtures for Wayfire conformance and keep
+  `go/internal/wayfireproto` fixture-backed.
 
 ## Phase 3: UI Successor
 

@@ -11,5 +11,6 @@ test -d "$ROOT/chrome/native-dock"
 test -d "$ROOT/chrome/panel-supervisor"
 
 python3 "$ROOT/harness/depgraph/check-compositor-fixtures.py" "$ROOT"
+python3 "$ROOT/harness/depgraph/check-wayfire-fixtures.py" "$ROOT"
 
 echo "compositor/chrome scaffold: OK"

@@ -9,9 +9,13 @@ ts_root = "ts"
 lane = "go-boundary"
 may_import = []
 
+[go_package."go/internal/wayfireproto"]
+lane = "go-compositor-protocol"
+may_import = []
+
 [go_package."go/internal/surfacetrack"]
 lane = "go-compositor"
-may_import = []
+may_import = ["go/internal/wayfireproto"]
 
 [go_package."go/internal/launchlife"]
 lane = "go-compositor"
