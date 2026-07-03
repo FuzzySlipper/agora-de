@@ -27,6 +27,9 @@ mirrors the Go capture evidence ladder terms:
 Evidence wire names are owned by `de-rs/crates/protocol/protocol-evidence`;
 codegen emits the TypeScript unions from that Rust vocabulary.
 
+Compositor surface event wire names are owned by
+`de-rs/crates/protocol/protocol-compositor` and emitted the same way.
+
 ## Regeneration
 
 ```bash

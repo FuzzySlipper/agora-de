@@ -1,3 +1,4 @@
+use protocol_compositor::SurfaceEventKind;
 use protocol_evidence::{CaptureClassification, VisualStatus};
 
 const GENERATED_HEADER: &str = "\
@@ -11,6 +12,14 @@ pub fn generated_contract_banner() -> &'static str {
 }
 
 pub fn generate_typescript_contracts() -> String {
+    let surface_event_kind_union = typescript_string_union(
+        "SurfaceEventKind",
+        SurfaceEventKind::ALL
+            .iter()
+            .map(SurfaceEventKind::wire_name)
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
     let visual_status_union = typescript_string_union(
         "VisualStatus",
         VisualStatus::ALL
@@ -29,7 +38,7 @@ pub fn generate_typescript_contracts() -> String {
     );
 
     let body = [
-        "export type SurfaceEventKind = 'mapped' | 'unmapped' | 'focused' | 'input_denied';",
+        surface_event_kind_union.as_str(),
         "",
         "export interface SurfaceEvent {",
         "  readonly surfaceId: string;",
