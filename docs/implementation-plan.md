@@ -36,6 +36,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
   behavior until live UI evidence requires more.
 - Keep widget manifest/registry validation separate from proxy serving and bus
   publication.
+- Keep static asset path safety in `shellui/staticserve` before adding shell,
+  theme, or widget proxy routes.
 - Keep predecessor tests as selection pressure, but delete workaround modes.
 - Preserve socket protocol fixtures for Wayfire conformance and keep
   `go/internal/wayfireproto` fixture-backed.

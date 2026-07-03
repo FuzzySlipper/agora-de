@@ -269,6 +269,30 @@ harness/fixtures/widgets/clock-widget.json
 Widget IDs and entrypoints are validated before any future proxy-serving code
 can consume them.
 
+## `shellui/staticserve`
+
+Path:
+
+```text
+go/internal/shellui/staticserve
+```
+
+Owns:
+
+- static asset path resolution;
+- traversal and absolute-path rejection;
+- default `/` to `index.html` behavior.
+
+Does not own:
+
+- HTTP route registration;
+- theme manifest logic;
+- widget proxy policy;
+- shell state APIs.
+
+This cell is the path-safety primitive future `/shell/`, theme asset, and widget
+proxy serving code should share.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:
