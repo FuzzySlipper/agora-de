@@ -77,6 +77,10 @@ may_import = []
 lane = "go-shellui"
 may_import = ["go/internal/appcatalog"]
 
+[go_package."go/internal/shellui/catalogroute"]
+lane = "go-shellui"
+may_import = ["go/internal/shellui/catalog"]
+
 # Rust lanes
 
 [crate."de-rs/crates/foundation/de-ids"]

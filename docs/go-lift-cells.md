@@ -239,6 +239,30 @@ Does not own:
 This cell may depend on `appcatalog`, and only projects visible entries into
 shell view data.
 
+## `shellui/catalogroute`
+
+Path:
+
+```text
+go/internal/shellui/catalogroute
+```
+
+Owns:
+
+- the first shell HTTP route boundary for catalog views;
+- exact route/method checks for `GET /api/catalog/apps`;
+- fail-closed JSON response behavior when the catalog provider is unavailable.
+
+Does not own:
+
+- `.desktop` parsing;
+- catalog projection behavior;
+- process launch;
+- auth/session policy.
+
+The route package depends only on `shellui/catalog` and a narrow provider
+function. It does not reach into `appcatalog` or predecessor shell routing.
+
 ## `shellui/theme`
 
 Path:

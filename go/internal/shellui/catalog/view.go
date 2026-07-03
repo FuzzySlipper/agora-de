@@ -3,9 +3,9 @@ package catalog
 import "agora-de.local/go/internal/appcatalog"
 
 type AppView struct {
-	ID   string
-	Name string
-	Icon string
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Icon string `json:"icon"`
 }
 
 func VisibleAppViews(source *appcatalog.Catalog) []AppView {
@@ -20,4 +20,3 @@ func VisibleAppViews(source *appcatalog.Catalog) []AppView {
 	}
 	return views
 }
-
