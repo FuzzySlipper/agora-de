@@ -16,10 +16,53 @@ pub enum CaptureClassification {
     NotVisible,
 }
 
+impl CaptureClassification {
+    pub const ALL: [CaptureClassification; 5] = [
+        CaptureClassification::InsufficientMappedOnly,
+        CaptureClassification::FramePresented,
+        CaptureClassification::CaptureVisible,
+        CaptureClassification::BlankCaptureFailure,
+        CaptureClassification::NotVisible,
+    ];
+
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            CaptureClassification::InsufficientMappedOnly => "insufficient_mapped_only",
+            CaptureClassification::FramePresented => "frame_presented",
+            CaptureClassification::CaptureVisible => "capture_visible",
+            CaptureClassification::BlankCaptureFailure => "blank_capture_failure",
+            CaptureClassification::NotVisible => "not_visible",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvidencePacket {
     pub scenario: String,
     pub captured_at: UnixMillis,
     pub visual_status: VisualStatus,
     pub capture_classification: CaptureClassification,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CaptureClassification;
+
+    #[test]
+    fn capture_classification_wire_names_are_stable() {
+        let names: Vec<&str> = CaptureClassification::ALL
+            .iter()
+            .map(CaptureClassification::wire_name)
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "insufficient_mapped_only",
+                "frame_presented",
+                "capture_visible",
+                "blank_capture_failure",
+                "not_visible",
+            ]
+        );
+    }
 }
