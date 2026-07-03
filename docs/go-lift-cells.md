@@ -157,6 +157,58 @@ Does not own:
 `launchlife` may depend on `session` for token identity, but session does not
 depend back on launch lifecycle behavior.
 
+## `appcatalog`
+
+Path:
+
+```text
+go/internal/appcatalog
+```
+
+Owns:
+
+- launchable app metadata;
+- conservative `.desktop` entry import;
+- visible catalog entry projection.
+
+Does not own:
+
+- process launch;
+- shell HTTP routes;
+- surface association;
+- policy decisions.
+
+The first fixture lives at:
+
+```text
+harness/fixtures/appcatalog/example-browser.desktop
+```
+
+`shellui/catalog` may depend on this cell to expose catalog data through shell
+APIs, but app catalog code does not depend on shell UI behavior.
+
+## `shellui/catalog`
+
+Path:
+
+```text
+go/internal/shellui/catalog
+```
+
+Owns:
+
+- shell-facing catalog view projection.
+
+Does not own:
+
+- `.desktop` parsing;
+- process launch;
+- HTTP routing;
+- policy or surface state.
+
+This cell may depend on `appcatalog`, and only projects visible entries into
+shell view data.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:

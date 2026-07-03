@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Example Browser
+Exec=example-browser --new-window %u
+Icon=example-browser
+NoDisplay=false
+
