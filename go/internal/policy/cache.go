@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	"agora-de.local/go/internal/input"
 	"agora-de.local/go/internal/wayfireproto"
 )
 
@@ -20,12 +21,15 @@ type SurfacePolicy struct {
 }
 
 type Cache struct {
-	surfaces map[string]SurfacePolicy
-	actorUID *int
+	surfaces     map[string]SurfacePolicy
+	inputContext input.Context
 }
 
 func NewCache() *Cache {
-	return &Cache{surfaces: map[string]SurfacePolicy{}}
+	return &Cache{
+		surfaces:     map[string]SurfacePolicy{},
+		inputContext: input.NewContext(),
+	}
 }
 
 func (cache *Cache) ApplyBridgeCommandLine(line []byte) error {
@@ -65,7 +69,11 @@ func (cache *Cache) ApplyBridgeCommandLine(line []byte) error {
 		if err := json.Unmarshal(line, &command); err != nil {
 			return fmt.Errorf("decode input_context: %w", err)
 		}
-		cache.actorUID = command.ActorUID
+		if command.ActorUID == nil {
+			cache.inputContext.ClearActorUID()
+		} else {
+			cache.inputContext.SetActorUID(*command.ActorUID)
+		}
 		return nil
 	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedCommand, messageType)
@@ -95,10 +103,7 @@ func (cache *Cache) SurfacePolicy(surfaceID string) (SurfacePolicy, bool) {
 }
 
 func (cache *Cache) ActorUID() (int, bool) {
-	if cache.actorUID == nil {
-		return 0, false
-	}
-	return *cache.actorUID, true
+	return cache.inputContext.ActorUID()
 }
 
 func fromWirePolicy(surface wayfireproto.SurfacePolicy) SurfacePolicy {
@@ -109,4 +114,3 @@ func fromWirePolicy(surface wayfireproto.SurfacePolicy) SurfacePolicy {
 		AllowKeyboardUIDs: append([]int(nil), surface.AllowKeyboardUIDs...),
 	}
 }
-

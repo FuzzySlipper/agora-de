@@ -62,6 +62,29 @@ compositor/protocol-fixtures/wayfire/bridge-commands.jsonl
 Close-surface commands in that fixture are intentionally rejected by `policy`.
 They belong in a future surface-control cell, not in the policy cache.
 
+## `input`
+
+Path:
+
+```text
+go/internal/input
+```
+
+Owns:
+
+- current input actor context;
+- set/clear semantics for actor uid.
+
+Does not own:
+
+- policy allow/deny projection;
+- surface state;
+- input event injection;
+- compositor socket parsing.
+
+`policy` may depend on this cell for actor context state. The dependency is
+explicitly listed in `governance/ownership.toml`.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:
