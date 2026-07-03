@@ -32,6 +32,36 @@ The package consumes `go/internal/wayfireproto` and fixture-tests against:
 compositor/protocol-fixtures/wayfire/plugin-events.jsonl
 ```
 
+## `policy`
+
+Path:
+
+```text
+go/internal/policy
+```
+
+Owns:
+
+- compositor policy-cache projection;
+- policy replace/upsert/remove commands;
+- current input actor context.
+
+Does not own:
+
+- surface lifecycle state;
+- forced close commands;
+- launch/session association;
+- audit or escalation decisions.
+
+The package consumes `go/internal/wayfireproto` and fixture-tests against:
+
+```text
+compositor/protocol-fixtures/wayfire/bridge-commands.jsonl
+```
+
+Close-surface commands in that fixture are intentionally rejected by `policy`.
+They belong in a future surface-control cell, not in the policy cache.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:
@@ -42,4 +72,3 @@ Go internal package imports are checked against `governance/ownership.toml` by:
 
 Add a `go_package` entry before adding a new internal package. Add `may_import`
 only when the dependency is an approved cell boundary.
-

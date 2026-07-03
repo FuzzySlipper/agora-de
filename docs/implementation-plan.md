@@ -26,6 +26,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 - Move predecessor Go daemon behavior into `go/internal/*` cells.
 - Treat `go/internal/surfacetrack` as the first exemplar lift cell: narrow
   ownership, fixture-backed behavior, checked imports.
+- Keep `go/internal/policy` limited to policy-cache projection and input actor
+  context; surface close/control commands land elsewhere.
 - Keep predecessor tests as selection pressure, but delete workaround modes.
 - Preserve socket protocol fixtures for Wayfire conformance and keep
   `go/internal/wayfireproto` fixture-backed.

@@ -31,7 +31,7 @@ may_import = []
 
 [go_package."go/internal/policy"]
 lane = "go-compositor"
-may_import = []
+may_import = ["go/internal/wayfireproto"]
 
 [go_package."go/internal/session"]
 lane = "go-session"
