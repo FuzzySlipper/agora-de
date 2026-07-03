@@ -52,5 +52,6 @@ uses the local compiler installed under `ts/node_modules`.
 - [Agora OS boundary](docs/agora-os-boundary.md)
 - [Compositor backend plan](docs/compositor-backend-plan.md)
 - [Contract governance](docs/contract-governance.md)
+- [Go lift cells](docs/go-lift-cells.md)
 - [Ownership](governance/ownership.toml)
 - [Wayfire protocol fixtures](docs/wayfire-protocol-fixtures.md)

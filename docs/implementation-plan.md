@@ -24,6 +24,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 ## Phase 2: Lift And Split
 
 - Move predecessor Go daemon behavior into `go/internal/*` cells.
+- Treat `go/internal/surfacetrack` as the first exemplar lift cell: narrow
+  ownership, fixture-backed behavior, checked imports.
 - Keep predecessor tests as selection pressure, but delete workaround modes.
 - Preserve socket protocol fixtures for Wayfire conformance and keep
   `go/internal/wayfireproto` fixture-backed.

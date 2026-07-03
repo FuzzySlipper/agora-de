@@ -39,6 +39,29 @@ def main() -> int:
         elif not any(package_dir.glob("*.go")):
             failures.append(f"Go ownership entry has no Go files: {key}")
 
+    go_import_re = re.compile(r'"(agora-de\.local/go/internal/[a-zA-Z0-9_./-]+)"')
+    for package_dir in sorted(path for path in (root / "go" / "internal").rglob("*") if path.is_dir()):
+        if not any(package_dir.glob("*.go")):
+            continue
+        key = package_dir.relative_to(root).as_posix()
+        meta = go_packages.get(key, {})
+        allowed = meta.get("may_import", [])
+        allowed_set = None if allowed == "unrestricted" else set(allowed)
+
+        imports: set[str] = set()
+        for source in package_dir.glob("*.go"):
+            for match in go_import_re.finditer(source.read_text()):
+                import_path = match.group(1)
+                import_key = "go/internal/" + import_path.split("/go/internal/", 1)[1]
+                if import_key != key:
+                    imports.add(import_key)
+
+        for import_key in sorted(imports):
+            if import_key not in go_packages:
+                failures.append(f"{key} imports unknown Go internal package {import_key}")
+            if allowed_set is not None and import_key not in allowed_set:
+                failures.append(f"{key} imports unlisted Go package {import_key}")
+
     crates = ownership.get("crate", {})
     workspace = load_toml(root / "de-rs" / "Cargo.toml")
     members = workspace.get("workspace", {}).get("members", [])
