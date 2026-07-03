@@ -14,6 +14,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 ## Phase 1: Boundary Contracts
 
 - Define the typed `agora-os` boundary for agent/audit/escalation data.
+- Keep the Go boundary package fail-closed until `agora-os` exposes a typed
+  service endpoint; do not bridge through predecessor log files.
 - Define the compositor backend API in Rust.
 - Stand up protocol generation before TypeScript consumes real contracts.
 

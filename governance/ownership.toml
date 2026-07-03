@@ -5,6 +5,66 @@ rust_root = "de-rs"
 go_root = "go"
 ts_root = "ts"
 
+[go_package."go/internal/osboundary"]
+lane = "go-boundary"
+may_import = []
+
+[go_package."go/internal/surfacetrack"]
+lane = "go-compositor"
+may_import = []
+
+[go_package."go/internal/launchlife"]
+lane = "go-compositor"
+may_import = []
+
+[go_package."go/internal/capture"]
+lane = "go-compositor"
+may_import = []
+
+[go_package."go/internal/input"]
+lane = "go-compositor"
+may_import = []
+
+[go_package."go/internal/policy"]
+lane = "go-compositor"
+may_import = []
+
+[go_package."go/internal/session"]
+lane = "go-session"
+may_import = []
+
+[go_package."go/internal/appcatalog"]
+lane = "go-shell"
+may_import = []
+
+[go_package."go/internal/shelldefaults"]
+lane = "go-shell"
+may_import = []
+
+[go_package."go/internal/shellui/staticserve"]
+lane = "go-shellui"
+may_import = []
+
+[go_package."go/internal/shellui/surfaceactions"]
+lane = "go-shellui"
+may_import = []
+
+[go_package."go/internal/shellui/escalations"]
+lane = "go-shellui"
+may_import = ["go/internal/osboundary"]
+
+[go_package."go/internal/shellui/theme"]
+lane = "go-shellui"
+may_import = []
+
+[go_package."go/internal/shellui/widgets"]
+lane = "go-shellui"
+may_import = []
+
+[go_package."go/internal/shellui/catalog"]
+lane = "go-shellui"
+may_import = ["go/internal/appcatalog"]
+
 # Rust lanes
 
 [crate."de-rs/crates/foundation/de-ids"]

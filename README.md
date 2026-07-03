@@ -49,5 +49,6 @@ uses the local compiler installed under `ts/node_modules`.
 - [Successor brief](docs/successor-brief.md)
 - [Successor lesson packet](docs/successor-lesson-packet.md)
 - [Architecture](governance/architecture.md)
+- [Agora OS boundary](docs/agora-os-boundary.md)
 - [Contract governance](docs/contract-governance.md)
 - [Ownership](governance/ownership.toml)

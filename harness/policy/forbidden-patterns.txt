@@ -1,0 +1,5 @@
+/var/log/agent-os/admin-agent.log
+/var/log/agent-os/admin-human-decisions.jsonl
+../agora-os
+github.com/.*/agora-os/internal
+

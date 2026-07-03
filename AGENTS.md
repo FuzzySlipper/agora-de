@@ -19,6 +19,7 @@ protocol mirrors are forbidden.
 - Do not put product code under `deploy/`.
 - Do not add a new shell runtime mode to route around a platform defect.
 - Do not read governance logs as a product API.
+- Use `go/internal/osboundary` for governance-facing Go contracts.
 - Do not hand-edit generated protocol output once generation is active.
 - Regenerate protocol output with `protocol-codegen`; do not patch generated
   TypeScript by hand.

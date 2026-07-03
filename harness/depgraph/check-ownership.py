@@ -24,6 +24,21 @@ def main() -> int:
     ownership = load_toml(root / "governance" / "ownership.toml")
     failures: list[str] = []
 
+    go_packages = ownership.get("go_package", {})
+    for package_dir in sorted(path for path in (root / "go" / "internal").rglob("*") if path.is_dir()):
+        if not any(package_dir.glob("*.go")):
+            continue
+        key = package_dir.relative_to(root).as_posix()
+        if key not in go_packages:
+            failures.append(f"missing Go ownership entry: {key}")
+
+    for key in sorted(go_packages):
+        package_dir = root / key
+        if not package_dir.exists():
+            failures.append(f"Go ownership entry points at missing package: {key}")
+        elif not any(package_dir.glob("*.go")):
+            failures.append(f"Go ownership entry has no Go files: {key}")
+
     crates = ownership.get("crate", {})
     workspace = load_toml(root / "de-rs" / "Cargo.toml")
     members = workspace.get("workspace", {}).get("members", [])
@@ -120,4 +135,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
