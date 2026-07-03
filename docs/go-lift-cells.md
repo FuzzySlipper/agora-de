@@ -157,6 +157,32 @@ Does not own:
 `launchlife` may depend on `session` for token identity, but session does not
 depend back on launch lifecycle behavior.
 
+## `capture`
+
+Path:
+
+```text
+go/internal/capture
+```
+
+Owns:
+
+- capture/readback evidence classification;
+- mapped-only insufficiency;
+- frame-presented vs visual-capture fallback distinction;
+- blank capture failure classification.
+
+Does not own:
+
+- compositor capture transport;
+- GLES or standard-protocol readback implementation;
+- surface lifecycle projection;
+- shell HTTP routing.
+
+This cell encodes the lesson-packet evidence ladder: mapped visibility alone is
+not enough, frame evidence is strong when present, and a fresh visible capture is
+the fallback proof. Blank captures fail even when mapped.
+
 ## `appcatalog`
 
 Path:

@@ -31,6 +31,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
   in `go/internal/shellui/surfaceactions`.
 - Keep launch/session split: `session` owns token lifecycle, `launchlife` owns
   launch records and surface association state.
+- Keep capture evidence classification separate from compositor readback
+  transport.
 - Keep app catalog import separate from process launch and shell HTTP routing.
 - Keep shell theme support limited to manifest and `--agora-*` token sanitizer
   behavior until live UI evidence requires more.
