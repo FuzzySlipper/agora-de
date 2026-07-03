@@ -6,6 +6,8 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 ## Phase 0: Rails
 
 - Keep this scaffold green with `./harness/ci/check-all.sh`.
+- Install TypeScript tooling with `cd ts && npm install` before running the full
+  local gate on a fresh checkout.
 - Treat `governance/ownership.toml` as the machine-readable assignment map.
 - Add crates/packages only with ownership entries and boundary checks.
 
@@ -40,4 +42,3 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 - Port VM and phase live checks before cutover.
 - Close user-visible shell claims only with inspected evidence packets.
 - Use `deploy/` only for final productization, not source code.
-

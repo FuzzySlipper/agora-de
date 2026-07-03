@@ -1,1 +1,1 @@
-{"name":"@agora-de/renderer","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/domain":"workspace:*","@agora-de/components":"workspace:*","@agora-de/theme":"workspace:*"}}
+{"name":"@agora-de/renderer","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/domain":"*","@agora-de/components":"*","@agora-de/theme":"*"}}

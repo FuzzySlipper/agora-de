@@ -2,6 +2,9 @@
   "name": "agora-de-ts",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "check:structure": "node ../harness/depgraph/check-ts-structure.mjs",
     "typecheck": "tsc --build tsconfig.json",
@@ -11,4 +14,3 @@
     "typescript": "^5.9.3"
   }
 }
-

@@ -32,6 +32,7 @@ deploy/        final productization only, not product source
 ## First Commands
 
 ```bash
+cd ts && npm install && cd ..
 ./harness/ci/check-all.sh
 ./harness/ci/check-rust.sh
 ./harness/ci/check-go.sh
@@ -40,7 +41,8 @@ deploy/        final productization only, not product source
 ```
 
 The scaffold is deliberately small. Its job is to make the desired boundaries
-compile and fail mechanically before feature code starts arriving.
+compile and fail mechanically before feature code starts arriving. TypeScript
+uses the local compiler installed under `ts/node_modules`.
 
 ## References
 
