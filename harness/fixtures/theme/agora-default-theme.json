@@ -1,0 +1,10 @@
+{
+  "id": "agora-default",
+  "name": "Agora Observatory",
+  "tokens": {
+    "--agora-bg": "#101418",
+    "--agora-fg": "#f4f7f8",
+    "--agora-accent": "#46b3a5"
+  }
+}
+

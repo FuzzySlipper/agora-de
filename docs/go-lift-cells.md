@@ -209,6 +209,36 @@ Does not own:
 This cell may depend on `appcatalog`, and only projects visible entries into
 shell view data.
 
+## `shellui/theme`
+
+Path:
+
+```text
+go/internal/shellui/theme
+```
+
+Owns:
+
+- theme manifest validation;
+- `--agora-*` token validation;
+- safe visual CSS rejection rules.
+
+Does not own:
+
+- arbitrary CSS support;
+- theme marketplaces;
+- layout-capable CSS;
+- shell HTTP routing.
+
+The first manifest fixture lives at:
+
+```text
+harness/fixtures/theme/agora-default-theme.json
+```
+
+Theme support is intentionally constrained to the token/sanitizer contract from
+the successor lesson packet.
+
 ## Import Enforcement
 
 Go internal package imports are checked against `governance/ownership.toml` by:
