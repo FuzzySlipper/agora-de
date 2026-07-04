@@ -7,6 +7,7 @@ import sys
 VISUAL_STATUSES = {"visible", "blank", "unknown"}
 CLASSIFICATIONS = {
     "insufficient_mapped_only",
+    "content_committed",
     "frame_presented",
     "capture_visible",
     "blank_capture_failure",

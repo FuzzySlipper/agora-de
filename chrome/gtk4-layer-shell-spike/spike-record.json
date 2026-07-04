@@ -15,7 +15,8 @@
     "interaction": "Native shell chrome can own panel/dock input focus and delegate content/customization regions to WebKitGTK web views.",
     "layering": "Layer-shell anchoring can keep dock and panel surfaces out of normal application toplevel management when compositor support is present.",
     "deployment": "Product source belongs under chrome/; deploy/ should package built chrome artifacts only after the source architecture is chosen.",
-    "inspection": "Layer-shell chrome still requires compositor capture/readback evidence for user-visible claims; DOM-level checks are not sufficient."
+    "inspection": "Layer-shell chrome still requires compositor capture/readback evidence for user-visible claims; DOM-level checks are not sufficient.",
+    "liveBakeoff": "harness/live/gtk-layer-shell-bakeoff.py maps GTK3/WebKit2 and GTK4/WebKit 6 background/panel cases on den-k8. GTK4 requires LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so on the current host. Automated readback proves mapped geometry but not physical paint because frame_count remains 0 and layer-shell capture is unavailable. Human observation on 2026-07-04 confirmed the GTK4 panel demo physically painted on the monitor."
   },
   "decision": {
     "promoteToProductSource": false,

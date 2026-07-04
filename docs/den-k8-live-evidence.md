@@ -51,6 +51,8 @@ Current den-k8 installed-service surfaces observed on this host:
 | Compositor control | `/run/agent-os/compositor-control.sock` | Unix socket exists and accepts connection |
 | Capture artifacts | `/run/agent-os/captures` | capture JSON supplied to the runner |
 | Surface frame readback | `compositorctl list-surfaces` | selected surface mapped/visible and optional `frame_count` |
+| Physical output discovery | `compositorctl output list` | physical output identity; `physical_surface_readback` is inferred from mapped surfaces |
+| Physical output capture | `compositorctl output capture` or successor | monitor/output image evidence, preferred for visible-shell closeout |
 
 The shell route currently proves installed shell availability, not visual
 correctness. Visual claims need capture evidence.
@@ -72,6 +74,7 @@ Classification mapping:
 | --- | --- | --- |
 | Shell route/service/socket only, no capture | `unknown` | `insufficient_mapped_only` |
 | Valid installed JSON claim route, no capture | `unknown` | `insufficient_mapped_only` |
+| Layer-shell content commit metadata without frame/capture | `unknown` | `content_committed` |
 | Presented frame metadata without capture | `unknown` | `frame_presented` |
 | Capture JSON with `visual_inspection.status == visible` | `visible` | `capture_visible` |
 | Capture JSON with `visual_inspection.status == blank` | `blank` | `blank_capture_failure` |
@@ -161,9 +164,22 @@ AGORA_DE_LIVE_SURFACE_ROLE=panel \
 ./harness/live/check-den-k8.py
 ```
 
-Frame readback is stronger than mapped-surface JSON and weaker than capture. A
-mapped layer-shell surface with `frame_count: 0` remains insufficient for a
-visual claim.
+Content-commit readback is stronger than mapped-surface JSON and weaker than
+frame-presented metadata. Frame readback is stronger than content commits and
+weaker than capture.
+
+For layer-shell surfaces, `frame_count: 0` currently means the bridge has not
+observed a frame-presented signal. It does not prove the monitor is blank; the
+GTK4 panel has physically painted with this counter still at zero. A layer-shell
+surface with `content_commit_count > 0` and `frame_count: 0` proves the client
+committed content, not that the compositor presented it. Prefer physical output
+capture once the compositor exposes the active monitor.
+
+The first output-discovery step in the compositor bridge is intentionally
+conservative: `compositorctl output list` may report a physical output with
+`mode: physical_surface_readback` when mapped surfaces already carry an
+`output_id` such as `HDMI-A-1`. That discovers the monitor identity but is not
+yet image capture.
 
 Require capture evidence for the run to pass:
 

@@ -25,6 +25,29 @@ func TestClassifyFramePresented(t *testing.T) {
 	}
 }
 
+func TestClassifyContentCommittedBelowFramePresented(t *testing.T) {
+	now := time.Now()
+	got := Classify(Evidence{
+		Mapped:                     true,
+		ContentCommitCount:         1,
+		LastContentCommitTimestamp: now.Add(-time.Second),
+	}, now)
+	if got != ClassificationContentCommitted {
+		t.Fatalf("classification = %q, want %q", got, ClassificationContentCommitted)
+	}
+
+	got = Classify(Evidence{
+		Mapped:                     true,
+		FrameCount:                 1,
+		LastPresentTimestamp:       now.Add(-time.Second),
+		ContentCommitCount:         1,
+		LastContentCommitTimestamp: now.Add(-time.Second),
+	}, now)
+	if got != ClassificationFramePresented {
+		t.Fatalf("classification = %q, want %q", got, ClassificationFramePresented)
+	}
+}
+
 func TestClassifyVisibleCaptureFallback(t *testing.T) {
 	now := time.Now()
 	got := Classify(Evidence{
@@ -89,6 +112,7 @@ func TestBuildEvidencePacketUsesGeneratedContractFieldNames(t *testing.T) {
 func TestClassificationStringsMatchGeneratedTypescriptContract(t *testing.T) {
 	want := []Classification{
 		ClassificationInsufficientMappedOnly,
+		ClassificationContentCommitted,
 		ClassificationFramePresented,
 		ClassificationCaptureVisible,
 		ClassificationBlankCaptureFailure,

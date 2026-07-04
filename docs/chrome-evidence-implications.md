@@ -5,9 +5,9 @@ accumulation.
 
 ## Current Preference
 
-Use the current webview-hosted shell path for initial live checks on den-k8.
-Keep GTK4/WebKitGTK layer-shell chrome as an inspectable candidate under
-`chrome/gtk4-layer-shell-spike/` until it proves better dock/panel reliability.
+Use GTK4/WebKit 6 + gtk4-layer-shell for installed shell chrome on den-k8. The
+GTK3/WebKit2 panel path remains useful only as a reproduction case for the old
+reserve-without-paint failure.
 
 Do not promote native chrome to product source outside `chrome/`, and do not use
 `deploy/` as source-code staging.
@@ -17,7 +17,7 @@ Do not promote native chrome to product source outside `chrome/`, and do not use
 | Option | Inspection impact | Live evidence implication |
 | --- | --- | --- |
 | Webview-hosted shell | DOM/model checks are useful for development, but final closure still needs compositor capture/readback. | den-k8 checks should verify shell routes, then require capture evidence for user-visible dock/panel claims. |
-| GTK4/WebKitGTK layer-shell chrome | Layer-shell may give stronger panel/dock placement and input behavior, but visual truth still comes from compositor readback. | Promotion requires live capture packets proving dock/panel visibility and no layering/input regression. |
+| GTK4/WebKitGTK layer-shell chrome | Layer-shell gives stronger panel/dock placement and input behavior than the old GTK3 panel path, but visual truth still comes from compositor readback. | The default installed path should map background and panel surfaces; closure still requires human or capture evidence until physical output capture exists. |
 | Compositor-hosted chrome | Strongest control over geometry and input, highest compositor coupling. | Requires backend decision update plus capture/readback evidence for every promoted shell claim. |
 
 ## Scenario Mapping
@@ -34,5 +34,56 @@ The chrome evidence layer should extend those with live visual scenarios:
 - `den-k8-operator-console-boundary-projections-visible`
 - `den-k8-layer-shell-dock-visible` if the GTK4/WebKitGTK spike is promoted
 
+## GTK Layer-Shell Bake-Off
+
+`harness/live/gtk-layer-shell-bakeoff.py` runs the current den-k8 GTK3 versus
+GTK4 WebKit layer-shell presentation comparison:
+
+```bash
+./harness/live/gtk-layer-shell-bakeoff.py \
+  --output /tmp/agora-de-gtk-layer-shell-bakeoff.json
+```
+
+The runner launches equivalent GTK3/WebKit2/GtkLayerShell and GTK4/WebKit
+6/Gtk4LayerShell background and panel cases, then records compositor readback.
+On the current host GTK4 layer-shell support requires:
+
+```text
+LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so
+```
+
+The automated result can prove app id, role, layer, anchors, geometry, output,
+and mapped/visible readback. It still cannot prove physical paint on this
+Wayfire bridge because layer-shell capture is unavailable and `frame_count`
+remains `0` for WebKit layer-shell cases.
+
+On 2026-07-04, human observation confirmed the GTK4 panel bake-off case painted
+on the physical monitor. That clears the first decision question: the black
+WebKit layer-shell panel failure is not reproduced by the GTK4/WebKit 6 +
+gtk4-layer-shell spike. The installed panel path now uses a repo-owned GTK4
+helper with the same layer-shell configuration.
+
 Mapped shell state alone remains insufficient. A user-visible chrome claim closes
 only with a nonblank capture packet or a stronger compositor readback packet.
+
+## Frame Count And Output Capture
+
+Current layer-shell surfaces can physically paint while `frame_count` remains
+`0`. The likely cause is compositor instrumentation: the Wayfire plugin observes
+layer-shell `client_commit`, but the bridge only increments `frame_count` for
+`frame_done`. Treat `frame_count: 0` as insufficient evidence, not as proof that
+GTK4 did not paint.
+
+The evidence ladder should grow in two directions:
+
+- content-commit evidence for layer-shell surfaces, counted separately from true
+  presented frames;
+- physical output capture for the active den-k8 monitor, which should become the
+  strongest visible-shell proof.
+
+The intended ordering is:
+
+1. mapped-only: insufficient for visual claims;
+2. content committed: the client submitted surface content;
+3. frame presented: compositor presentation metadata exists;
+4. capture visible: output/capture evidence confirms visible pixels.

@@ -26,6 +26,7 @@ impl VisualStatus {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CaptureClassification {
     InsufficientMappedOnly,
+    ContentCommitted,
     FramePresented,
     CaptureVisible,
     BlankCaptureFailure,
@@ -33,8 +34,9 @@ pub enum CaptureClassification {
 }
 
 impl CaptureClassification {
-    pub const ALL: [CaptureClassification; 5] = [
+    pub const ALL: [CaptureClassification; 6] = [
         CaptureClassification::InsufficientMappedOnly,
+        CaptureClassification::ContentCommitted,
         CaptureClassification::FramePresented,
         CaptureClassification::CaptureVisible,
         CaptureClassification::BlankCaptureFailure,
@@ -44,6 +46,7 @@ impl CaptureClassification {
     pub fn wire_name(&self) -> &'static str {
         match self {
             CaptureClassification::InsufficientMappedOnly => "insufficient_mapped_only",
+            CaptureClassification::ContentCommitted => "content_committed",
             CaptureClassification::FramePresented => "frame_presented",
             CaptureClassification::CaptureVisible => "capture_visible",
             CaptureClassification::BlankCaptureFailure => "blank_capture_failure",
@@ -83,6 +86,7 @@ mod tests {
             names,
             vec![
                 "insufficient_mapped_only",
+                "content_committed",
                 "frame_presented",
                 "capture_visible",
                 "blank_capture_failure",

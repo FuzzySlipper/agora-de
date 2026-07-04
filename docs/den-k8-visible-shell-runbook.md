@@ -28,12 +28,21 @@ During agora-de visibility tests, `agora-shell-panel.service` and
 tested. `agora-wayfire.service` and `compositor-bridge.service` remain the
 installed compositor/session backend.
 
+The visible chrome default is GTK4/WebKit 6 + gtk4-layer-shell. The service
+units set `GDK_BACKEND=wayland` and `LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so`
+because the current den-k8 GTK4 layer-shell library needs that preload to report
+support.
+
+`?surface=background-fallback` remains available for recovery when the panel
+service is deliberately disabled, but the normal installed shape is split
+background plus panel surfaces.
+
 ## Restart
 
-Restart only the visible agora-de panel:
+Restart the visible agora-de background:
 
 ```bash
-systemctl --user restart agora-de-shell-panel.service
+systemctl --user restart agora-de-shell-background.service
 ```
 
 Restart the full visible agora-de shell stack:
@@ -66,8 +75,7 @@ compositorctl list-surfaces | jq -r '.surfaces[]
   | .client.pid // empty' \
   | xargs -r kill
 
-systemctl --user start agora-de-shell-background.service
-systemctl --user restart agora-de-shell-panel.service
+systemctl --user start agora-de-shell-background.service agora-de-shell-panel.service
 ```
 
 Then verify the mapped background and panel:
@@ -107,7 +115,19 @@ sudo systemctl enable --now agora-shell-panel.service
 
 `agora-wayfire.service` should not be restarted casually: it owns the physical
 Wayfire session on VT1. Restart it only as a deliberate compositor-session
-recovery step, and expect all Wayland clients to be remapped afterward.
+recovery step, and expect all Wayland clients to be remapped afterward. On
+den-k8, the stable unit shape is an active `oneshot` marker that launches
+Wayfire through `openvt -c 1 -f -s -- runuser -u agent -- sg seat`; `openvt -w`
+can report status 8 after failing to deallocate VT1, and `openvt -e` did not
+start Wayfire reliably on this host.
+
+If the live host gets into a stale compositor/session state, install the
+recovery helper once and then use the sudoers-backed kill-all command:
+
+```bash
+sudo deploy/shellui/install-den-k8-recovery-tools
+sudo /usr/local/sbin/agora-de-kill-all
+```
 
 ## Live Evidence
 
@@ -136,6 +156,10 @@ Panel readback check:
   --surface-role panel
 ```
 
+The panel check targets the GTK4 installed panel path. The old GTK3/WebKit2
+panel path reserved a bottom exclusive zone but did not visibly paint, leaving a
+black bar; keep that path retired unless deliberately reproducing the old bug.
+
 Require frame-presented evidence:
 
 ```bash
@@ -152,3 +176,39 @@ On the current bridge, per-layer-shell capture is denied and physical output
 capture is not exposed as a logical output. A black physical monitor with a
 mapped shell panel should remain classified as insufficient or failing evidence,
 not as a closed visual claim.
+
+The long-term evidence target is physical output capture for the active monitor
+such as `HDMI-A-1`. Once `compositorctl output list` exposes that output and
+capture returns image evidence, output capture should outrank mapped state and
+frame counters for visible-shell closeout.
+
+During the transition, `compositorctl output list` may expose
+`mode: physical_surface_readback`. That mode means the bridge inferred the
+physical output identity from mapped surface readback. It is useful for choosing
+the output name, but it is not yet pixel evidence.
+
+## GTK3 vs GTK4 Bake-Off
+
+Run the live GTK layer-shell comparison:
+
+```bash
+./harness/live/gtk-layer-shell-bakeoff.py \
+  --output /tmp/agora-de-gtk-layer-shell-bakeoff.json
+```
+
+Hold one case on the monitor for physical observation:
+
+```bash
+./harness/live/gtk-layer-shell-bakeoff.py \
+  --cases gtk4-panel \
+  --hold-seconds 45 \
+  --output /tmp/agora-de-gtk4-panel-hold.json
+```
+
+The current host needs `LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so` for
+GTK4/Gtk4LayerShell support; the runner applies that automatically for GTK4
+cases.
+
+Human observation on 2026-07-04 confirmed the GTK4 panel bake-off visibly
+painted on the physical monitor. The installed agora-de panel service now uses
+the same GTK4/WebKit 6 + gtk4-layer-shell family by default.

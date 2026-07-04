@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Stop all live Agora DE/legacy Agora OS display-session pieces on den-k8.
+set -u
+
+AGORA_USER=${AGORA_DE_SESSION_USER:-agent}
+AGORA_UID=${AGORA_DE_SESSION_UID:-1001}
+RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$AGORA_UID}
+
+log() {
+  printf '%s %s\n' "$(date --iso-8601=seconds)" "$*"
+}
+
+run() {
+  log "+ $*"
+  "$@"
+  local status=$?
+  if [[ $status -ne 0 ]]; then
+    log "  status=$status"
+  fi
+  return 0
+}
+
+run_as_user_systemctl() {
+  local action=$1
+  shift
+  XDG_RUNTIME_DIR="$RUNTIME_DIR" run runuser -u "$AGORA_USER" -- systemctl --user "$action" "$@"
+}
+
+log "stopping Agora display/session processes for user=$AGORA_USER uid=$AGORA_UID"
+
+run_as_user_systemctl stop \
+  agora-de-shell-background.service \
+  agora-de-shell-panel.service \
+  agora-de-shellui.service \
+  agora-shell-panel.service \
+  event-bus-web.service
+
+run systemctl stop \
+  agora-wayfire.service \
+  agora-shell-panel.service \
+  event-bus-web.service \
+  compositor-bridge.service
+
+for pattern in \
+  '[a]gora-de-gtk4-layer-shell-webview' \
+  '[a]gora-de-shell-panel-supervisor' \
+  '[a]gora-de-shellui' \
+  '[n]ative-shell-dock' \
+  '[a]gora-shell-panel-supervisor' \
+  '[w]ayfire -c /home/agent/.config/wayfire.ini' \
+  '[d]bus-run-session -- /usr/bin/wayfire -c /home/agent/.config/wayfire.ini' \
+  '[r]unuser -u agent -- /usr/bin/sg seat' \
+  '[r]unuser -u agent -g seat' \
+  '[o]penvt .*wayfire'
+do
+  run pkill -TERM -f "$pattern"
+done
+
+sleep 1
+
+for pattern in \
+  '[a]gora-de-gtk4-layer-shell-webview' \
+  '[a]gora-de-shell-panel-supervisor' \
+  '[a]gora-de-shellui' \
+  '[n]ative-shell-dock' \
+  '[a]gora-shell-panel-supervisor' \
+  '[w]ayfire -c /home/agent/.config/wayfire.ini' \
+  '[d]bus-run-session -- /usr/bin/wayfire -c /home/agent/.config/wayfire.ini' \
+  '[r]unuser -u agent -- /usr/bin/sg seat' \
+  '[r]unuser -u agent -g seat' \
+  '[o]penvt .*wayfire'
+do
+  run pkill -KILL -f "$pattern"
+done
+
+run_as_user_systemctl reset-failed \
+  agora-de-shell-background.service \
+  agora-de-shell-panel.service \
+  agora-de-shellui.service \
+  agora-shell-panel.service \
+  event-bus-web.service
+
+run systemctl reset-failed \
+  agora-wayfire.service \
+  agora-shell-panel.service \
+  event-bus-web.service \
+  compositor-bridge.service
+
+log "remaining Agora/Wayfire processes:"
+ps -eo pid,ppid,user,group,tty,stat,cmd | grep -E 'agora|wayfire|openvt|dbus-run-session -- /usr/bin/wayfire|compositor-bridge' | grep -v grep || true
+log "done"

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Install den-k8 recovery helpers and sudoers entry.
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+
+install -D -o root -g root -m 0755 \
+  "$repo_root/deploy/shellui/agora-de-kill-all" \
+  /usr/local/sbin/agora-de-kill-all
+
+cat >/etc/sudoers.d/agora-de-recovery <<'SUDOERS'
+agent ALL=(root) NOPASSWD: /usr/local/sbin/agora-de-kill-all
+SUDOERS
+
+chmod 0440 /etc/sudoers.d/agora-de-recovery
+visudo -cf /etc/sudoers.d/agora-de-recovery
+
+printf 'installed /usr/local/sbin/agora-de-kill-all and sudoers entry\n'

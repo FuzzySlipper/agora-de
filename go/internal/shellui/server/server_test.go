@@ -25,6 +25,25 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	if !strings.Contains(body, "#f8fafc") || !strings.Contains(body, "#00d1b2") {
 		t.Fatalf("shell body = %q, want high-contrast fallback paint styles", body)
 	}
+	if !strings.Contains(body, `class="panel"`) || !strings.Contains(body, "workspace 1") {
+		t.Fatalf("shell body = %q, want visible panel fallback content", body)
+	}
+
+	background := responseBody(t, handler, "/shell/dist/desktop/?surface=background")
+	if strings.Contains(background, `class="panel"`) {
+		t.Fatalf("background body = %q, should not use panel fallback content", background)
+	}
+	if !strings.Contains(background, "agora-de shell: background") {
+		t.Fatalf("background body = %q, want background label", background)
+	}
+	if strings.Contains(background, `class="taskbar"`) || strings.Contains(background, "shell: dock") {
+		t.Fatalf("background body = %q, should not include fallback taskbar by default", background)
+	}
+
+	fallback := responseBody(t, handler, "/shell/dist/desktop/?surface=background-fallback")
+	if !strings.Contains(fallback, `class="taskbar"`) || !strings.Contains(fallback, "shell: dock") {
+		t.Fatalf("fallback body = %q, want fallback taskbar content", fallback)
+	}
 
 	var catalogResponse struct {
 		Apps []struct {

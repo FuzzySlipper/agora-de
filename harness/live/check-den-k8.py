@@ -423,8 +423,14 @@ def check_compositor_surface(
     selected = sorted(matches, key=lambda item: item.get("updated_at") or "")[-1]
     surface = selected.get("surface") or {}
     frame_count = int(selected.get("frame_count") or 0)
+    content_commit_count = int(selected.get("content_commit_count") or 0)
     visible = bool(selected.get("visible") or surface.get("visible"))
     surface_id = surface.get("id") or app_id
+    classification = "insufficient_mapped_only"
+    if content_commit_count > 0:
+        classification = "content_committed"
+    if frame_count > 0:
+        classification = "frame_presented"
 
     packet = {
         "scenario": "den-k8-compositor-surface-readback",
@@ -432,7 +438,8 @@ def check_compositor_surface(
         "surfaceId": surface_id,
         "visualStatus": "unknown",
         "frameCount": frame_count,
-        "captureClassification": "frame_presented" if frame_count > 0 else "insufficient_mapped_only",
+        "contentCommitCount": content_commit_count,
+        "captureClassification": classification,
     }
 
     if not visible:
@@ -444,6 +451,7 @@ def check_compositor_surface(
             appId=app_id,
             role=surface.get("role"),
             frameCount=frame_count,
+            contentCommitCount=content_commit_count,
         ), packet
 
     if require_frame and frame_count <= 0:
@@ -454,6 +462,7 @@ def check_compositor_surface(
             appId=app_id,
             role=surface.get("role"),
             frameCount=frame_count,
+            contentCommitCount=content_commit_count,
         ), packet
 
     if frame_count > 0:
@@ -464,6 +473,18 @@ def check_compositor_surface(
             appId=app_id,
             role=surface.get("role"),
             frameCount=frame_count,
+            contentCommitCount=content_commit_count,
+        ), packet
+
+    if content_commit_count > 0:
+        return passed_check(
+            surface_id,
+            "surface-readback",
+            "matching compositor surface is visible and has content commit evidence",
+            appId=app_id,
+            role=surface.get("role"),
+            frameCount=frame_count,
+            contentCommitCount=content_commit_count,
         ), packet
 
     return passed_check(
@@ -473,6 +494,7 @@ def check_compositor_surface(
         appId=app_id,
         role=surface.get("role"),
         frameCount=frame_count,
+        contentCommitCount=content_commit_count,
     ), packet
 
 

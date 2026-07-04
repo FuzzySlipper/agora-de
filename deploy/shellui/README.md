@@ -34,6 +34,7 @@ Suggested install paths:
 ~/.config/systemd/user/agora-de-shell-panel.service
 ~/.config/agora-de/shellui.env
 ~/.local/bin/agora-de-shellui
+~/.local/bin/agora-de-gtk4-layer-shell-webview
 ~/.local/bin/agora-de-shell-panel-supervisor
 ~/.local/share/agora-de/shell/dist
 ```
@@ -45,6 +46,7 @@ go build -C go -o ~/.local/bin/agora-de-shellui ./cmd/shellui
 install -D -m 0644 deploy/shellui/agora-de-shellui.user.service ~/.config/systemd/user/agora-de-shellui.service
 install -D -m 0644 deploy/shellui/agora-de-shell-background.user.service ~/.config/systemd/user/agora-de-shell-background.service
 install -D -m 0644 deploy/shellui/agora-de-shell-panel.user.service ~/.config/systemd/user/agora-de-shell-panel.service
+install -D -m 0755 deploy/shellui/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
 install -D -m 0755 deploy/shellui/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
 install -D -m 0644 deploy/shellui/shellui.user.env.example ~/.config/agora-de/shellui.env
 systemctl --user daemon-reload
@@ -57,11 +59,19 @@ The user-service example uses `127.0.0.1:17780` to avoid colliding with the
 currently bound predecessor port `7780`. Move it to `7780` once that port is
 free or intentionally replaced.
 
-`agora-de-shell-background.service` and `agora-de-shell-panel.service` launch
-layer-shell WebViews pointed at the user shellui service, then keep systemd
-attached to the mapped surface and WebView client process. They are
-intentionally separate from the HTTP service so route evidence, full-screen
-background evidence, and panel evidence can be restarted independently.
+`agora-de-shell-background.service` launches the background shell and
+`agora-de-shell-panel.service` launches the dock/panel shell. Both use the
+repo-owned GTK4/WebKit 6 + gtk4-layer-shell helper by default. On the current
+den-k8 host GTK4 layer-shell support requires:
+
+```text
+GDK_BACKEND=wayland
+LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so
+```
+
+Those values are present in the user-service examples. The
+`?surface=background-fallback` route keeps the temporary background-owned
+taskbar available as a recovery path; it is not the default installed shape.
 
 ## System Systemd
 
@@ -132,3 +142,23 @@ still require capture/readback evidence.
 
 For the den-k8 user-service restart and visibility playbook, see
 `docs/den-k8-visible-shell-runbook.md`.
+
+## Recovery Helper
+
+The live den-k8 compositor path can accumulate stale Wayland, WebKit, or bridge
+state while this successor repo is still replacing the predecessor shell. Install
+the root-owned recovery helper once:
+
+```bash
+sudo deploy/shellui/install-den-k8-recovery-tools
+```
+
+That installs `/usr/local/sbin/agora-de-kill-all` and a sudoers entry allowing
+the `agent` user to run it without a password:
+
+```bash
+sudo /usr/local/sbin/agora-de-kill-all
+```
+
+The helper intentionally leaves Agora display/session services stopped. Start or
+deploy them again only after the host is back to an empty state.

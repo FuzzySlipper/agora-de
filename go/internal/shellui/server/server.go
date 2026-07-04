@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"os/exec"
@@ -201,6 +202,29 @@ func writeShellHTML(response http.ResponseWriter, request *http.Request) {
 		surface = "desktop"
 	}
 	response.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if surface == "dock" || surface == "panel" {
+		writePanelHTML(response, surface)
+		return
+	}
+	writeBackgroundHTML(response, surface, surface == "background-fallback")
+}
+
+func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTaskbar bool) {
+	escapedSurface := html.EscapeString(surface)
+	bodyClass := "background"
+	rows := "1fr"
+	taskbarHTML := ""
+	if includeTaskbar {
+		bodyClass = "background with-taskbar"
+		rows = "1fr 96px"
+		taskbarHTML = `
+  <nav class="taskbar" aria-label="Agora DE fallback taskbar">
+    <span class="badge">agora-de</span>
+    <span class="slot">shell: dock</span>
+    <span class="slot">workspace 1</span>
+    <span class="slot">ready</span>
+  </nav>`
+	}
 	fmt.Fprintf(response, `<!doctype html>
 <html>
 <head>
@@ -215,8 +239,13 @@ func writeShellHTML(response http.ResponseWriter, request *http.Request) {
       margin: 0;
     }
     body {
-      align-items: center;
       box-sizing: border-box;
+      display: grid;
+      grid-template-rows: %s;
+      min-height: 100vh;
+    }
+    .stage {
+      align-items: center;
       display: flex;
       gap: 18px;
       padding: 0 28px;
@@ -227,8 +256,110 @@ func writeShellHTML(response http.ResponseWriter, request *http.Request) {
       height: 40px;
       width: 40px;
     }
+    .taskbar {
+      align-items: center;
+      background: #f8fafc;
+      border-top: 4px solid #00d1b2;
+      box-shadow: inset 0 1px 0 #cbd5e1;
+      box-sizing: border-box;
+      display: flex;
+      gap: 18px;
+      min-height: 96px;
+      padding: 0 28px;
+    }
+    .badge {
+      align-items: center;
+      background: #102027;
+      border-radius: 4px;
+      color: #f8fafc;
+      display: inline-flex;
+      height: 44px;
+      justify-content: center;
+      min-width: 132px;
+      padding: 0 16px;
+    }
+    .slot {
+      align-items: center;
+      border: 2px solid #94a3b8;
+      border-radius: 4px;
+      display: inline-flex;
+      height: 40px;
+      padding: 0 14px;
+    }
   </style>
 </head>
-<body data-surface=%q><span class="mark"></span><span>agora-de shell: %s</span></body>
-</html>`, surface, surface)
+<body class="%s" data-surface="%s">
+  <main class="stage">
+    <span class="mark"></span>
+    <span>agora-de shell: %s</span>
+  </main>%s
+</body>
+</html>`, rows, bodyClass, escapedSurface, escapedSurface, taskbarHTML)
+}
+
+func writePanelHTML(response http.ResponseWriter, surface string) {
+	escapedSurface := html.EscapeString(surface)
+	fmt.Fprintf(response, `<!doctype html>
+<html>
+<head>
+  <title>agora-de shell panel</title>
+  <meta name="color-scheme" content="light">
+  <style>
+    html,
+    body {
+      background: #f8fafc !important;
+      color: #102027;
+      height: 100%%;
+      margin: 0;
+      overflow: hidden;
+      width: 100%%;
+    }
+    body {
+      align-items: stretch;
+      box-sizing: border-box;
+      display: flex;
+      font: 600 20px system-ui, sans-serif;
+    }
+    .panel {
+      align-items: center;
+      background: #f8fafc;
+      border-top: 4px solid #00d1b2;
+      box-shadow: inset 0 1px 0 #cbd5e1;
+      box-sizing: border-box;
+      display: flex;
+      gap: 18px;
+      min-height: 96px;
+      padding: 0 28px;
+      width: 100vw;
+    }
+    .badge {
+      align-items: center;
+      background: #102027;
+      border-radius: 4px;
+      color: #f8fafc;
+      display: inline-flex;
+      height: 44px;
+      justify-content: center;
+      min-width: 132px;
+      padding: 0 16px;
+    }
+    .slot {
+      align-items: center;
+      border: 2px solid #94a3b8;
+      border-radius: 4px;
+      display: inline-flex;
+      height: 40px;
+      padding: 0 14px;
+    }
+  </style>
+</head>
+<body data-surface="%s">
+  <main class="panel" aria-label="Agora DE shell panel">
+    <span class="badge">agora-de</span>
+    <span class="slot">shell: %s</span>
+    <span class="slot">workspace 1</span>
+    <span class="slot">ready</span>
+  </main>
+</body>
+</html>`, escapedSurface, escapedSurface)
 }

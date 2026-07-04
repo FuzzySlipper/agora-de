@@ -143,6 +143,11 @@ Wayfire / Wayland session:
 - Wayfire refuses to run as root; sessions bootstrap via seatd + `openvt` +
   `runuser` + `dbus-run-session` with `WLR_RENDERER_ALLOW_SOFTWARE=1` in the VM
   (see README Phase 3 recipe).
+- On den-k8plus, the working systemd shape is `Type=oneshot` +
+  `RemainAfterExit=yes` with `openvt -c 1 -f -s -- runuser -u agent -- sg seat`.
+  The `-w` wait/deallocate path can leave a working Wayfire child alive while
+  returning status 8 after failing to deallocate VT1, and `openvt -e` exited
+  before Wayfire started on this host.
 - Plugin capture uses GLES readback (`wf::gles`); it fails cleanly on non-GLES
   render buffers ("snapshot buffer does not support GL readback"). Capture is
   renderer-coupled today — a reason to move to `ext-image-copy-capture-v1`.

@@ -4,7 +4,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 COMPOSITORCTL=${COMPOSITORCTL:-/usr/local/bin/compositorctl}
-WEBVIEW_LAUNCHER=${WEBVIEW_LAUNCHER:-/usr/local/bin/webview-launcher}
+WEBVIEW_LAUNCHER=${WEBVIEW_LAUNCHER:-${AGORA_DE_SHELL_WEBVIEW_LAUNCHER:-$HOME/.local/bin/agora-de-gtk4-layer-shell-webview}}
 SURFACE_URL=${AGORA_DE_SHELL_SURFACE_URL:-${AGORA_DE_SHELL_PANEL_URL:-http://127.0.0.1:17780/shell/dist/desktop/?surface=dock}}
 SURFACE_ROLE=${AGORA_DE_SHELL_SURFACE_ROLE:-${AGORA_DE_SHELL_PANEL_ROLE:-panel}}
 SURFACE_TITLE=${AGORA_DE_SHELL_SURFACE_TITLE:-${AGORA_DE_SHELL_PANEL_TITLE:-AGORA-DE-SHELL-PANEL}}
@@ -56,11 +56,15 @@ import sys
 
 app_id = sys.argv[1]
 role = sys.argv[2]
+launcher_pid = sys.argv[3]
 data = json.load(sys.stdin)
 matches = []
 for item in data.get("surfaces", []):
     surface = item.get("surface") or {}
     if surface.get("app_id") != app_id or surface.get("role") != role:
+        continue
+    client = item.get("client") or {}
+    if launcher_pid and str(client.get("pid") or "") != launcher_pid:
         continue
     matches.append((item.get("updated_at") or "", item))
 if not matches:
@@ -72,7 +76,7 @@ print(json.dumps({
     "surface_id": surface.get("id") or "",
     "client_pid": client.get("pid") or "",
 }))
-' "$SURFACE_APP_ID" "$SURFACE_ROLE"
+' "$SURFACE_APP_ID" "$SURFACE_ROLE" "${launcher_pid:-}"
 }
 
 close_existing_surfaces() {
