@@ -71,6 +71,7 @@ successor can wait to deploy until its own stack is coherent and evidenced.
 
 ## Phase 5: Evidence And Deploy
 
-- Port VM and phase live checks before cutover.
+- Use den-k8 installed-service live checks before cutover; VM harnesses belong
+  in agora-os, not agora-de.
 - Close user-visible shell claims only with inspected evidence packets.
 - Use `deploy/` only for final productization, not source code.
