@@ -141,6 +141,8 @@ Route and surface readback check:
   --catalog-url http://127.0.0.1:17780/api/catalog/apps \
   --surfaces-url http://127.0.0.1:17780/api/surfaces \
   --work-controls-url http://127.0.0.1:17780/api/work-surface-controls \
+  --workspaces-url http://127.0.0.1:17780/api/workspaces \
+  --operator-status-url http://127.0.0.1:17780/api/operator/status \
   --surface-app-id io.agorade.ShellBackground \
   --surface-role background
 ```
@@ -164,9 +166,38 @@ Expected visible dock state:
 
 - `agora-de` brand block.
 - `Apps` and `Refresh` controls.
+- `Status` launches the read-only shell status utility.
 - App entries loaded from `/api/catalog/apps`.
 - Running surface entries loaded from `/api/surfaces`.
 - `workspace 1`, mapped-surface status, and clock controls.
+
+The first workspace model is intentionally one workspace:
+
+```text
+http://127.0.0.1:17780/api/workspaces
+```
+
+`workspace 1` is a visible control. Activating it calls
+`POST /api/workspaces/action` with `workspaceId: workspace-1` and confirms the
+current workspace state; multi-workspace placement is a later compositor/layout
+slice.
+
+Open the operator/status utility from the dock with `Status`, or directly with:
+
+```text
+http://127.0.0.1:17780/shell/dist/desktop/?surface=operator
+```
+
+Its backing route is:
+
+```text
+http://127.0.0.1:17780/api/operator/status
+```
+
+The view is read-only. It shows service, socket, output, and surface health plus
+the copy/paste-safe recovery commands, including
+`sudo /usr/local/sbin/agora-de-kill-all`; it does not execute privileged
+recovery actions from the shell UI.
 
 Require frame-presented evidence:
 
@@ -194,6 +225,8 @@ Run the full installed-service visual check:
   --catalog-url 'http://127.0.0.1:17780/api/catalog/apps' \
   --surfaces-url 'http://127.0.0.1:17780/api/surfaces' \
   --work-controls-url 'http://127.0.0.1:17780/api/work-surface-controls' \
+  --workspaces-url 'http://127.0.0.1:17780/api/workspaces' \
+  --operator-status-url 'http://127.0.0.1:17780/api/operator/status' \
   --surface-app-id io.agorade.ShellPanel \
   --surface-role panel \
   --output-name HDMI-A-1 \
@@ -227,6 +260,23 @@ The loop verifies:
 - `/api/surfaces` reports the launched toplevel surface as running.
 - `POST /api/surfaces/action` accepts `focus` and `close`.
 - The closed surface disappears from running state.
+
+Close visible launch-loop claims with physical output capture:
+
+```bash
+./harness/live/check-shell-loop.py \
+  --base-url http://127.0.0.1:17780 \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-shell-loop \
+  --require-capture
+```
+
+The capture-backed loop emits a `den-k8-shell-launch-visible` evidence packet
+after the app is running and focused, before close/stale-cleanup. The packet
+should report `captureClassification: capture_visible` and
+`pixelClassification.classification: expected_shell_visible`. The runner waits
+briefly before capture so the dock can refresh from `/api/surfaces` and show the
+running app entry.
 
 For task 4154, the launch loop passed 6/6 checks and the physical output
 artifact

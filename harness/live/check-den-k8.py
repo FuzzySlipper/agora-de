@@ -103,6 +103,16 @@ def main() -> int:
         help="Optional installed work surface controls JSON route to validate.",
     )
     parser.add_argument(
+        "--workspaces-url",
+        default=os.environ.get("AGORA_DE_LIVE_WORKSPACES_URL", ""),
+        help="Optional installed workspace JSON route to validate.",
+    )
+    parser.add_argument(
+        "--operator-status-url",
+        default=os.environ.get("AGORA_DE_LIVE_OPERATOR_STATUS_URL", ""),
+        help="Optional installed operator status JSON route to validate.",
+    )
+    parser.add_argument(
         "--require-capture",
         action="store_true",
         default=os.environ.get("AGORA_DE_LIVE_REQUIRE_CAPTURE", "") == "1",
@@ -191,6 +201,18 @@ def main() -> int:
             "work-surface-controls-route",
             "den-k8-work-surface-controls-route",
             validate_surfaces_payload,
+        ),
+        (
+            args.workspaces_url,
+            "workspaces-route",
+            "den-k8-workspaces-route",
+            validate_workspaces_payload,
+        ),
+        (
+            args.operator_status_url,
+            "operator-status-route",
+            "den-k8-operator-status-route",
+            validate_operator_status_payload,
         ),
     ]
     for url, name, scenario, validator in route_claims:
@@ -378,6 +400,63 @@ def validate_surfaces_payload(payload: object) -> str | None:
                 return f"surface route entry missing boolean {field}"
         if not isinstance(surface.get("inputDeniedCount"), int):
             return "surface route entry missing integer inputDeniedCount"
+    return None
+
+
+def validate_operator_status_payload(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return "operator status route response must be an object"
+    if not isinstance(payload.get("overall"), str) or not payload["overall"]:
+        return "operator status route missing overall state"
+    if not isinstance(payload.get("services"), list) or not payload["services"]:
+        return "operator status route response must contain services array"
+    if not isinstance(payload.get("sockets"), list) or not payload["sockets"]:
+        return "operator status route response must contain sockets array"
+    surfaces = payload.get("surfaces")
+    if not isinstance(surfaces, dict) or not isinstance(surfaces.get("state"), str):
+        return "operator status route response must contain surface summary"
+    recovery = payload.get("recovery")
+    if not isinstance(recovery, dict):
+        return "operator status route response must contain recovery object"
+    if recovery.get("killAllCommand") != "sudo /usr/local/sbin/agora-de-kill-all":
+        return "operator status route must reference durable kill-all helper"
+    if not isinstance(recovery.get("restartCommands"), list) or not recovery["restartCommands"]:
+        return "operator status route must include restart commands"
+    if not isinstance(recovery.get("runbook"), str) or "den-k8-visible-shell-runbook.md" not in recovery["runbook"]:
+        return "operator status route must reference visible-shell runbook"
+    for service in payload["services"]:
+        if not isinstance(service, dict):
+            return "operator status service entry must be an object"
+        for field in ("name", "scope", "state"):
+            if not isinstance(service.get(field), str):
+                return f"operator status service entry missing string {field}"
+    for socket_status in payload["sockets"]:
+        if not isinstance(socket_status, dict):
+            return "operator status socket entry must be an object"
+        for field in ("path", "state"):
+            if not isinstance(socket_status.get(field), str):
+                return f"operator status socket entry missing string {field}"
+    return None
+
+
+def validate_workspaces_payload(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return "workspace route response must be an object"
+    if payload.get("currentWorkspaceId") != "workspace-1":
+        return "workspace route currentWorkspaceId must be workspace-1"
+    workspaces = payload.get("workspaces")
+    if not isinstance(workspaces, list) or not workspaces:
+        return "workspace route response must contain workspaces array"
+    active = [workspace for workspace in workspaces if isinstance(workspace, dict) and workspace.get("active")]
+    if len(active) != 1:
+        return "workspace route must report exactly one active workspace"
+    workspace = active[0]
+    if workspace.get("id") != "workspace-1":
+        return "workspace route active workspace must be workspace-1"
+    if not isinstance(workspace.get("name"), str) or not workspace["name"]:
+        return "workspace route workspace missing name"
+    if not isinstance(workspace.get("surfaceCount"), int):
+        return "workspace route workspace missing integer surfaceCount"
     return None
 
 

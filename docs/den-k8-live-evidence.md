@@ -46,6 +46,8 @@ Current den-k8 installed-service surfaces observed on this host:
 | Shell UI claim | optional app catalog route | JSON payload with `apps` array |
 | Shell UI claim | optional surface lifecycle route | JSON payload with `surfaces` array |
 | Shell UI claim | optional work surface controls route | JSON payload with `surfaces` array |
+| Shell UI claim | optional workspace route | JSON payload with current workspace and workspace array |
+| Shell UI claim | optional operator status route | JSON payload with service/socket/output status and recovery commands |
 | Compositor/event bus | `/run/agent-os/bus.sock` | Unix socket exists and accepts connection |
 | Compositor bridge | `/run/agent-os/compositor-bridge.sock` | Unix socket exists and accepts connection |
 | Compositor control | `/run/agent-os/compositor-control.sock` | Unix socket exists and accepts connection |
@@ -64,6 +66,13 @@ The current GTK4 dock/panel visible state is intentionally small but usable:
 brand, `Apps`, `Refresh`, app entries from `/api/catalog/apps`, running surface
 entries from `/api/surfaces`, `workspace 1`, mapped-surface status, and a clock.
 Capture evidence for this state should still use the physical output path below.
+The workspace model is intentionally conservative: `workspace-1` is the only
+workspace, activation confirms that workspace, and the route reports mapped work
+surface count until compositor-level multi-workspace layout exists.
+The first launch-loop scenario uses `example-browser` as a fixture app: it
+launches a compositor-managed toplevel surface, records running-state readback,
+focuses the surface, captures the physical output while the app is visible, then
+closes the surface and verifies stale running state is removed.
 
 ## Evidence Mapping
 
@@ -91,6 +100,13 @@ Classification mapping:
 
 Mapped visibility alone is insufficient. Blank captures fail even when a
 surface is mapped.
+
+Current visible-shell scenario packets:
+
+| Scenario | Meaning |
+| --- | --- |
+| `den-k8-installed-service-capture` | General installed shell output capture, used for dock/panel visibility. |
+| `den-k8-shell-launch-visible` | Launch-loop capture taken after an app surface is running and focused. |
 
 ## Failure Taxonomy
 
@@ -150,6 +166,8 @@ Run with optional installed-service route claims:
 ```bash
 AGORA_DE_LIVE_CATALOG_URL=http://127.0.0.1:7780/api/catalog/apps \
 AGORA_DE_LIVE_SURFACES_URL=http://127.0.0.1:7780/api/surfaces \
+AGORA_DE_LIVE_WORKSPACES_URL=http://127.0.0.1:7780/api/workspaces \
+AGORA_DE_LIVE_OPERATOR_STATUS_URL=http://127.0.0.1:7780/api/operator/status \
 ./harness/live/check-den-k8.py
 ```
 
@@ -200,6 +218,8 @@ Require physical output capture evidence for the run to pass:
   --catalog-url 'http://127.0.0.1:17780/api/catalog/apps' \
   --surfaces-url 'http://127.0.0.1:17780/api/surfaces' \
   --work-controls-url 'http://127.0.0.1:17780/api/work-surface-controls' \
+  --workspaces-url 'http://127.0.0.1:17780/api/workspaces' \
+  --operator-status-url 'http://127.0.0.1:17780/api/operator/status' \
   --surface-app-id io.agorade.ShellPanel \
   --surface-role panel \
   --output-name HDMI-A-1 \
@@ -216,6 +236,23 @@ Task 4153 live evidence produced
 `/run/agent-os/artifacts/den-k8-live-4153/output-capture-1783170766443939863-3/output-capture-1783170766443939863-3.png`
 with `captureClassification: capture_visible` and
 `pixelClassification.classification: expected_shell_visible`.
+
+Run the launch/focus/close loop with capture evidence:
+
+```bash
+./harness/live/check-shell-loop.py \
+  --base-url http://127.0.0.1:17780 \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-shell-loop \
+  --require-capture
+```
+
+The launch-loop runner emits `agora-de.shell-loop-live.v1` with the same
+classification vocabulary. Its capture packet uses
+`scenario: den-k8-shell-launch-visible` and closes only when the physical output
+capture is visible and the expected shell pixels are present while the launched
+app is mapped. The runner waits briefly before capture so the dock's polling
+loop can reflect the running-app entry in the visible panel.
 
 Imported capture JSON remains supported:
 
@@ -239,6 +276,8 @@ Useful overrides:
 - `AGORA_DE_LIVE_CATALOG_URL`
 - `AGORA_DE_LIVE_SURFACES_URL`
 - `AGORA_DE_LIVE_WORK_CONTROLS_URL`
+- `AGORA_DE_LIVE_WORKSPACES_URL`
+- `AGORA_DE_LIVE_OPERATOR_STATUS_URL`
 - `AGORA_DE_LIVE_TIMEOUT_SECONDS`
 
 This harness belongs under `harness/live/` because it checks an installed

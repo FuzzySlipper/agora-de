@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +25,9 @@ const (
 	DefaultListenAddress = "127.0.0.1:7780"
 	WorkControlsPath     = "/api/work-surface-controls"
 	SurfaceActionPath    = "/api/surfaces/action"
+	OperatorStatusPath   = "/api/operator/status"
+	WorkspacesPath       = "/api/workspaces"
+	WorkspaceActionPath  = "/api/workspaces/action"
 
 	SurfaceProviderFixture       = "fixture"
 	SurfaceProviderCompositorctl = "compositorctl"
@@ -51,6 +55,9 @@ func NewHandler(config Config) (http.Handler, error) {
 		Provider: surfaceProvider,
 	})
 	mux.Handle(SurfaceActionPath, surfaceActionHandler(config))
+	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider))
+	mux.Handle(WorkspacesPath, workspacesHandler(surfaceProvider))
+	mux.Handle(WorkspaceActionPath, workspaceActionHandler(surfaceProvider))
 	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot))
 	return mux, nil
 }
@@ -81,6 +88,12 @@ func fixtureCatalog() *appcatalog.Catalog {
 		Exec: "example-browser --new-window %u",
 		Icon: "example-browser",
 	})
+	source.Add(appcatalog.Entry{
+		ID:   "shell-status",
+		Name: "Shell Status",
+		Exec: "agora-de-shell-status",
+		Icon: "preferences-system",
+	})
 	return source
 }
 
@@ -96,6 +109,11 @@ func launchTargets() map[string]launchTarget {
 			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=app-example",
 			Title: "Agora DE Example Browser",
 			AppID: "io.agorade.ExampleBrowser",
+		},
+		"shell-status": {
+			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=operator",
+			Title: "Agora DE Shell Status",
+			AppID: "io.agorade.ShellStatus",
 		},
 	}
 }
@@ -194,6 +212,7 @@ type compositorctlTrackedSurface struct {
 		Visible     bool   `json:"visible"`
 	} `json:"surface"`
 	Client struct {
+		PID int `json:"pid"`
 		UID int `json:"uid"`
 	} `json:"client"`
 	LaunchID           string `json:"launch_id"`
@@ -215,6 +234,9 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 			return nil, fmt.Errorf("compositorctl surface missing id")
 		}
 		mapped := tracked.Visible || tracked.Surface.Visible || tracked.LastEvent != "unmapped"
+		if tracked.Client.PID > 0 && !processExists(tracked.Client.PID) {
+			mapped = false
+		}
 		views = append(views, surfaces.SurfaceView{
 			ID:                 tracked.Surface.ID,
 			AppID:              tracked.Surface.AppID,
@@ -231,6 +253,14 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 		})
 	}
 	return views, nil
+}
+
+func processExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
+	return err == nil
 }
 
 type compositorctlLaunchResponse struct {
@@ -327,6 +357,327 @@ func surfaceActionArgs(action surfaceActionRequest) ([]string, bool) {
 	}
 }
 
+type workspacesResponse struct {
+	CurrentWorkspaceID string          `json:"currentWorkspaceId"`
+	Workspaces         []workspaceView `json:"workspaces"`
+}
+
+type workspaceView struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Active       bool   `json:"active"`
+	SurfaceCount int    `json:"surfaceCount"`
+}
+
+type workspaceActionRequest struct {
+	Action      string `json:"action"`
+	WorkspaceID string `json:"workspaceId"`
+}
+
+type workspaceActionResponse struct {
+	Action             string          `json:"action"`
+	WorkspaceID        string          `json:"workspaceId"`
+	CurrentWorkspaceID string          `json:"currentWorkspaceId"`
+	Status             string          `json:"status"`
+	Workspace          workspaceView   `json:"workspace"`
+	Workspaces         []workspaceView `json:"workspaces"`
+}
+
+func workspacesHandler(surfaceProvider surfaceroute.Provider) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != WorkspacesPath {
+			http.NotFound(response, request)
+			return
+		}
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		writeJSON(response, http.StatusOK, collectWorkspaceState(request, surfaceProvider))
+	})
+}
+
+func workspaceActionHandler(surfaceProvider surfaceroute.Provider) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != WorkspaceActionPath {
+			http.NotFound(response, request)
+			return
+		}
+		if request.Method != http.MethodPost {
+			response.Header().Set("Allow", http.MethodPost)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		var action workspaceActionRequest
+		if err := json.NewDecoder(request.Body).Decode(&action); err != nil {
+			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid workspace action request"})
+			return
+		}
+		if action.Action != "activate" || action.WorkspaceID != "workspace-1" {
+			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "unsupported workspace action"})
+			return
+		}
+		state := collectWorkspaceState(request, surfaceProvider)
+		writeJSON(response, http.StatusAccepted, workspaceActionResponse{
+			Action:             action.Action,
+			WorkspaceID:        action.WorkspaceID,
+			CurrentWorkspaceID: state.CurrentWorkspaceID,
+			Status:             "accepted",
+			Workspace:          state.Workspaces[0],
+			Workspaces:         state.Workspaces,
+		})
+	})
+}
+
+func collectWorkspaceState(request *http.Request, surfaceProvider surfaceroute.Provider) workspacesResponse {
+	surfaceCount := 0
+	if surfaceProvider != nil {
+		if views, err := surfaceProvider(request); err == nil {
+			for _, view := range views {
+				if view.Mapped && view.SurfaceKind != "layer_shell" {
+					surfaceCount++
+				}
+			}
+		}
+	}
+	workspace := workspaceView{
+		ID:           "workspace-1",
+		Name:         "workspace 1",
+		Active:       true,
+		SurfaceCount: surfaceCount,
+	}
+	return workspacesResponse{
+		CurrentWorkspaceID: workspace.ID,
+		Workspaces:         []workspaceView{workspace},
+	}
+}
+
+type operatorStatusResponse struct {
+	GeneratedAtUnixMillis int64                  `json:"generatedAtUnixMillis"`
+	Overall               string                 `json:"overall"`
+	Services              []operatorServiceView  `json:"services"`
+	Sockets               []operatorSocketView   `json:"sockets"`
+	Outputs               []operatorOutputView   `json:"outputs"`
+	Surfaces              operatorSurfaceSummary `json:"surfaces"`
+	Recovery              operatorRecoveryView   `json:"recovery"`
+}
+
+type operatorServiceView struct {
+	Name  string `json:"name"`
+	Scope string `json:"scope"`
+	State string `json:"state"`
+}
+
+type operatorSocketView struct {
+	Path  string `json:"path"`
+	State string `json:"state"`
+}
+
+type operatorOutputView struct {
+	Name         string `json:"name"`
+	State        string `json:"state"`
+	Mode         string `json:"mode,omitempty"`
+	Width        int    `json:"width,omitempty"`
+	Height       int    `json:"height,omitempty"`
+	SurfaceCount int    `json:"surfaceCount,omitempty"`
+	Detail       string `json:"detail,omitempty"`
+}
+
+type operatorSurfaceSummary struct {
+	State      string `json:"state"`
+	Total      int    `json:"total"`
+	LayerShell int    `json:"layerShell"`
+	Work       int    `json:"work"`
+	Focused    int    `json:"focused"`
+	Detail     string `json:"detail,omitempty"`
+}
+
+type operatorRecoveryView struct {
+	KillAllCommand    string   `json:"killAllCommand"`
+	RestartCommands   []string `json:"restartCommands"`
+	LiveCheckCommands []string `json:"liveCheckCommands"`
+	Runbook           string   `json:"runbook"`
+	Note              string   `json:"note"`
+}
+
+func operatorStatusHandler(config Config, surfaceProvider surfaceroute.Provider) http.Handler {
+	path := strings.TrimSpace(config.CompositorctlPath)
+	if path == "" {
+		path = "compositorctl"
+	}
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != OperatorStatusPath {
+			http.NotFound(response, request)
+			return
+		}
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+		defer cancel()
+		status := collectOperatorStatus(ctx, path, surfaceProvider, time.Now())
+		writeJSON(response, http.StatusOK, status)
+	})
+}
+
+func collectOperatorStatus(ctx context.Context, compositorctl string, surfaceProvider surfaceroute.Provider, now time.Time) operatorStatusResponse {
+	services := []operatorServiceView{
+		checkSystemdService(ctx, "agora-de-shellui.service", "user"),
+		checkSystemdService(ctx, "agora-de-shell-background.service", "user"),
+		checkSystemdService(ctx, "agora-de-shell-panel.service", "user"),
+		checkSystemdService(ctx, "agora-wayfire.service", "system"),
+		checkSystemdService(ctx, "compositor-bridge.service", "system"),
+	}
+	sockets := []operatorSocketView{
+		checkUnixSocket("/run/agent-os/compositor-control.sock"),
+		checkUnixSocket("/run/agent-os/compositor-bridge.sock"),
+	}
+	surfaces := summarizeSurfaces(ctx, surfaceProvider)
+	outputs := listOperatorOutputs(ctx, compositorctl)
+	overall := "ok"
+	for _, service := range services {
+		if service.State != "active" {
+			overall = "warn"
+		}
+	}
+	for _, socket := range sockets {
+		if socket.State != "available" {
+			overall = "warn"
+		}
+	}
+	if surfaces.State != "available" {
+		overall = "warn"
+	}
+	for _, output := range outputs {
+		if output.State != "available" {
+			overall = "warn"
+		}
+	}
+	return operatorStatusResponse{
+		GeneratedAtUnixMillis: now.UnixMilli(),
+		Overall:               overall,
+		Services:              services,
+		Sockets:               sockets,
+		Outputs:               outputs,
+		Surfaces:              surfaces,
+		Recovery: operatorRecoveryView{
+			KillAllCommand: "sudo /usr/local/sbin/agora-de-kill-all",
+			RestartCommands: []string{
+				"systemctl --user restart agora-de-shellui.service",
+				"systemctl --user restart agora-de-shell-background.service agora-de-shell-panel.service",
+			},
+			LiveCheckCommands: []string{
+				"./harness/live/check-den-k8.py --systemd-units 'agora-wayfire.service,compositor-bridge.service' --sockets '/run/agent-os/compositor-control.sock,/run/agent-os/compositor-bridge.sock' --shell-url 'http://127.0.0.1:17780/shell/dist/desktop/?surface=dock' --catalog-url 'http://127.0.0.1:17780/api/catalog/apps' --surfaces-url 'http://127.0.0.1:17780/api/surfaces' --work-controls-url 'http://127.0.0.1:17780/api/work-surface-controls' --workspaces-url 'http://127.0.0.1:17780/api/workspaces' --operator-status-url 'http://127.0.0.1:17780/api/operator/status' --surface-app-id io.agorade.ShellPanel --surface-role panel --output-name HDMI-A-1 --output-capture-session den-k8-live --require-capture",
+				"./harness/live/check-shell-loop.py --base-url http://127.0.0.1:17780 --output-name HDMI-A-1 --output-capture-session den-k8-shell-loop --require-capture",
+			},
+			Runbook: "docs/den-k8-visible-shell-runbook.md",
+			Note:    "Recovery commands are shown for operator use; the shell does not run privileged recovery actions.",
+		},
+	}
+}
+
+func checkSystemdService(ctx context.Context, name string, scope string) operatorServiceView {
+	args := []string{"is-active", name}
+	if scope == "user" {
+		args = []string{"--user", "is-active", name}
+	}
+	output, err := exec.CommandContext(ctx, "systemctl", args...).CombinedOutput()
+	state := strings.TrimSpace(string(output))
+	if state == "" && err != nil {
+		state = "unavailable"
+	}
+	return operatorServiceView{Name: name, Scope: scope, State: state}
+}
+
+func checkUnixSocket(path string) operatorSocketView {
+	info, err := os.Stat(path)
+	if err != nil {
+		return operatorSocketView{Path: path, State: "missing"}
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return operatorSocketView{Path: path, State: "not_socket"}
+	}
+	conn, err := net.DialTimeout("unix", path, 300*time.Millisecond)
+	if err != nil {
+		return operatorSocketView{Path: path, State: "unreachable"}
+	}
+	_ = conn.Close()
+	return operatorSocketView{Path: path, State: "available"}
+}
+
+func summarizeSurfaces(ctx context.Context, provider surfaceroute.Provider) operatorSurfaceSummary {
+	if provider == nil {
+		return operatorSurfaceSummary{State: "unavailable", Detail: "surface provider is not configured"}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/surfaces", nil)
+	if err != nil {
+		return operatorSurfaceSummary{State: "unavailable", Detail: err.Error()}
+	}
+	views, err := provider(request)
+	if err != nil {
+		return operatorSurfaceSummary{State: "unavailable", Detail: err.Error()}
+	}
+	summary := operatorSurfaceSummary{State: "available"}
+	for _, view := range views {
+		if !view.Mapped {
+			continue
+		}
+		summary.Total++
+		if view.SurfaceKind == "layer_shell" {
+			summary.LayerShell++
+		} else {
+			summary.Work++
+		}
+		if view.Focused {
+			summary.Focused++
+		}
+	}
+	return summary
+}
+
+type compositorctlOutputListResponse struct {
+	Outputs []struct {
+		Name     string   `json:"name"`
+		Mode     string   `json:"mode"`
+		Width    int      `json:"width"`
+		Height   int      `json:"height"`
+		Surfaces []string `json:"surfaces"`
+	} `json:"outputs"`
+}
+
+func listOperatorOutputs(ctx context.Context, compositorctl string) []operatorOutputView {
+	output, err := exec.CommandContext(ctx, compositorctl, "output", "list").CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return []operatorOutputView{{Name: "compositorctl output list", State: "unavailable", Detail: detail}}
+	}
+	var response compositorctlOutputListResponse
+	if err := json.Unmarshal(output, &response); err != nil {
+		return []operatorOutputView{{Name: "compositorctl output list", State: "unavailable", Detail: err.Error()}}
+	}
+	if len(response.Outputs) == 0 {
+		return []operatorOutputView{{Name: "outputs", State: "missing", Detail: "no outputs reported"}}
+	}
+	views := make([]operatorOutputView, 0, len(response.Outputs))
+	for _, output := range response.Outputs {
+		views = append(views, operatorOutputView{
+			Name:         output.Name,
+			State:        "available",
+			Mode:         output.Mode,
+			Width:        output.Width,
+			Height:       output.Height,
+			SurfaceCount: len(output.Surfaces),
+		})
+	}
+	return views
+}
+
 func writeJSON(response http.ResponseWriter, status int, value any) {
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(status)
@@ -380,6 +731,10 @@ func writeShellHTML(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if surface == "dock" || surface == "panel" {
 		writePanelHTML(response, surface)
+		return
+	}
+	if surface == "operator" {
+		writeOperatorHTML(response)
 		return
 	}
 	writeBackgroundHTML(response, surface, surface == "background-fallback")
@@ -473,6 +828,242 @@ func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTa
 </html>`, rows, bodyClass, escapedSurface, escapedSurface, taskbarHTML)
 }
 
+func writeOperatorHTML(response http.ResponseWriter) {
+	fmt.Fprint(response, `<!doctype html>
+<html>
+<head>
+  <title>agora-de shell status</title>
+  <meta name="color-scheme" content="light">
+  <style>
+    html,
+    body {
+      background: #f8fafc;
+      color: #102027;
+      font: 600 16px system-ui, sans-serif;
+      margin: 0;
+      min-height: 100%;
+    }
+    body {
+      box-sizing: border-box;
+      display: grid;
+      gap: 24px;
+      padding: 32px;
+    }
+    header,
+    section {
+      max-width: 1120px;
+      width: 100%;
+    }
+    header {
+      align-items: center;
+      display: flex;
+      gap: 18px;
+    }
+    h1,
+    h2 {
+      font-size: 20px;
+      line-height: 1.2;
+      margin: 0;
+    }
+    h2 {
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+    .mark {
+      background: #00d1b2;
+      border-radius: 4px;
+      height: 36px;
+      width: 36px;
+    }
+    .overall {
+      border: 2px solid #94a3b8;
+      border-radius: 4px;
+      margin-left: auto;
+      min-width: 96px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .overall.ok {
+      border-color: #00d1b2;
+    }
+    .overall.warn {
+      border-color: #eab308;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    th,
+    td {
+      border-bottom: 1px solid #cbd5e1;
+      padding: 9px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: #475569;
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+    code {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      display: block;
+      font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin: 8px 0;
+      overflow-wrap: anywhere;
+      padding: 10px;
+    }
+    .grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+    .muted {
+      color: #475569;
+    }
+  </style>
+</head>
+<body data-surface="operator">
+  <header>
+    <span class="mark"></span>
+    <h1>agora-de shell status</h1>
+    <span class="overall warn" id="overall">loading</span>
+  </header>
+  <section class="grid" aria-label="Status summaries">
+    <section>
+      <h2>Services</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Scope</th><th>State</th></tr></thead>
+        <tbody id="services"><tr><td colspan="3">loading</td></tr></tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Sockets</h2>
+      <table>
+        <thead><tr><th>Path</th><th>State</th></tr></thead>
+        <tbody id="sockets"><tr><td colspan="2">loading</td></tr></tbody>
+      </table>
+    </section>
+  </section>
+  <section class="grid" aria-label="Compositor summaries">
+    <section>
+      <h2>Outputs</h2>
+      <table>
+        <thead><tr><th>Name</th><th>State</th><th>Mode</th><th>Size</th></tr></thead>
+        <tbody id="outputs"><tr><td colspan="4">loading</td></tr></tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Surfaces</h2>
+      <table>
+        <tbody id="surfaces"><tr><td>loading</td></tr></tbody>
+      </table>
+    </section>
+  </section>
+  <section aria-label="Recovery">
+    <h2>Recovery</h2>
+    <div id="recovery"><code>loading</code></div>
+  </section>
+  <script>
+    function cell(value) {
+      const td = document.createElement("td");
+      td.textContent = String(value || "");
+      return td;
+    }
+
+    function renderRows(id, values, mapper, columns) {
+      const body = document.getElementById(id);
+      body.replaceChildren();
+      if (!Array.isArray(values) || values.length === 0) {
+        const row = document.createElement("tr");
+        const empty = cell("none");
+        empty.colSpan = columns;
+        row.appendChild(empty);
+        body.appendChild(row);
+        return;
+      }
+      values.forEach((value) => body.appendChild(mapper(value)));
+    }
+
+    function row(...values) {
+      const tr = document.createElement("tr");
+      values.forEach((value) => tr.appendChild(cell(value)));
+      return tr;
+    }
+
+    function renderCommands(target, title, commands) {
+      if (!Array.isArray(commands) || commands.length === 0) {
+        return;
+      }
+      const label = document.createElement("div");
+      label.className = "muted";
+      label.textContent = title;
+      target.appendChild(label);
+      commands.forEach((command) => {
+        const code = document.createElement("code");
+        code.textContent = command;
+        target.appendChild(code);
+      });
+    }
+
+    async function refresh() {
+      const response = await fetch("/api/operator/status", {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error("operator status returned " + response.status);
+      }
+      const status = await response.json();
+      const overall = document.getElementById("overall");
+      overall.textContent = status.overall || "unknown";
+      overall.className = "overall " + (status.overall === "ok" ? "ok" : "warn");
+
+      renderRows("services", status.services, (service) => row(service.name, service.scope, service.state), 3);
+      renderRows("sockets", status.sockets, (socket) => row(socket.path, socket.state), 2);
+      renderRows("outputs", status.outputs, (output) => {
+        const size = output.width && output.height ? output.width + "x" + output.height : output.detail || "";
+        return row(output.name, output.state, output.mode || "", size);
+      }, 4);
+
+      const surfaces = status.surfaces || {};
+      const surfaceBody = document.getElementById("surfaces");
+      surfaceBody.replaceChildren(
+        row("state", surfaces.state || "unknown"),
+        row("total", surfaces.total || 0),
+        row("layer shell", surfaces.layerShell || 0),
+        row("work", surfaces.work || 0),
+        row("focused", surfaces.focused || 0)
+      );
+
+      const recovery = status.recovery || {};
+      const recoveryTarget = document.getElementById("recovery");
+      recoveryTarget.replaceChildren();
+      renderCommands(recoveryTarget, "Kill all", [recovery.killAllCommand].filter(Boolean));
+      renderCommands(recoveryTarget, "Restart", recovery.restartCommands);
+      renderCommands(recoveryTarget, "Live checks", recovery.liveCheckCommands);
+      if (recovery.runbook) {
+        const runbook = document.createElement("code");
+        runbook.textContent = recovery.runbook;
+        recoveryTarget.appendChild(runbook);
+      }
+      if (recovery.note) {
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = recovery.note;
+        recoveryTarget.appendChild(note);
+      }
+    }
+
+    refresh().catch((error) => {
+      document.getElementById("overall").textContent = "offline";
+      document.getElementById("overall").className = "overall warn";
+    });
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>`)
+}
+
 func writePanelHTML(response http.ResponseWriter, surface string) {
 	escapedSurface := html.EscapeString(surface)
 	fmt.Fprintf(response, `<!doctype html>
@@ -548,6 +1139,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border: 2px solid #94a3b8;
       color: #102027;
     }
+    button.workspace {
+      background: #ffffff;
+      font: inherit;
+    }
     .dock-section {
       align-items: center;
       display: flex;
@@ -621,13 +1216,14 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     <span class="brand">agora-de</span>
     <button class="control" id="apps-button" type="button">Apps</button>
     <button class="control secondary" id="refresh-button" type="button">Refresh</button>
+    <button class="control secondary" id="operator-button" type="button">Status</button>
     <section class="dock-section apps" id="apps-list" aria-label="Applications">
       <span class="dock-item muted">loading apps</span>
     </section>
     <section class="dock-section running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
     </section>
-    <span class="workspace" id="workspace-label">workspace 1</span>
+    <button class="workspace" id="workspace-label" type="button">workspace 1</button>
     <span class="status" id="status-label">starting</span>
     <time class="clock" id="clock-label">--:--</time>
   </main>
@@ -635,6 +1231,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     const state = {
       apps: [],
       surfaces: [],
+      workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
       surface: %q
     };
 
@@ -689,6 +1286,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const status = document.getElementById("status-label");
       status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
       status.className = "status " + (workSurfaces.length ? "ready" : "warn");
+      const workspace = document.getElementById("workspace-label");
+      workspace.textContent = text(state.workspace.name, "workspace 1");
+      workspace.title = state.workspace.surfaceCount ? state.workspace.surfaceCount + " work surfaces" : "workspace 1";
     }
 
     async function loadJSON(path) {
@@ -701,12 +1301,16 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
 
     async function refresh() {
       try {
-        const [catalog, surfaces] = await Promise.all([
+        const [catalog, surfaces, workspaces] = await Promise.all([
           loadJSON("/api/catalog/apps"),
-          loadJSON("/api/surfaces")
+          loadJSON("/api/surfaces"),
+          loadJSON("/api/workspaces")
         ]);
         state.apps = Array.isArray(catalog.apps) ? catalog.apps : [];
         state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
+        if (Array.isArray(workspaces.workspaces) && workspaces.workspaces.length) {
+          state.workspace = workspaces.workspaces.find((workspace) => workspace.active) || workspaces.workspaces[0];
+        }
         render();
       } catch (error) {
         const status = document.getElementById("status-label");
@@ -753,6 +1357,19 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
     }
 
+    async function activateWorkspace() {
+      const status = document.getElementById("status-label");
+      status.textContent = "workspace";
+      status.className = "status ready";
+      try {
+        await postJSON("/api/workspaces/action", {workspaceId: "workspace-1", action: "activate"});
+        await refresh();
+      } catch (error) {
+        status.textContent = "workspace failed";
+        status.className = "status warn";
+      }
+    }
+
     function updateClock() {
       const now = new Date();
       document.getElementById("clock-label").textContent = now.toLocaleTimeString([], {
@@ -763,6 +1380,8 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
 
     document.getElementById("apps-button").addEventListener("click", refresh);
     document.getElementById("refresh-button").addEventListener("click", refresh);
+    document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
+    document.getElementById("workspace-label").addEventListener("click", activateWorkspace);
     updateClock();
     refresh();
     setInterval(updateClock, 30000);

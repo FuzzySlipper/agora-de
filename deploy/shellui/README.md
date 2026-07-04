@@ -70,16 +70,26 @@ LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so
 ```
 
 The default dock/panel route is API-backed. `?surface=dock` renders the Agora DE
-brand, `Apps` and `Refresh` controls, app entries from `/api/catalog/apps`,
-running surface entries from `/api/surfaces`, workspace state, mapped-surface
-status, and a clock. This keeps the installed shell useful even before launch
-and focus actions are wired.
+brand, `Apps`, `Refresh`, and `Status` controls, app entries from
+`/api/catalog/apps`, running surface entries from `/api/surfaces`, workspace
+state, mapped-surface status, and a clock.
+
+The first workspace model is intentionally conservative. `/api/workspaces`
+reports one active `workspace-1`, and `POST /api/workspaces/action` with
+`{"workspaceId":"workspace-1","action":"activate"}` confirms that workspace
+state without pretending multi-workspace compositor placement exists yet.
 
 The first launch loop is also shellui-backed: `POST /api/catalog/launch` maps a
 known catalog app to a compositor launch target, and `POST /api/surfaces/action`
 accepts `focus` and `close` for running work surfaces. Use
 `harness/live/check-shell-loop.py` to verify launch, running-state readback,
 focus, close, and stale-entry cleanup against the installed service.
+
+The `Status` control launches `?surface=operator`, a read-only shell status
+utility backed by `/api/operator/status`. It exposes service/socket/output and
+surface health plus copy/paste-safe recovery commands. Privileged recovery stays
+behind the installed `/usr/local/sbin/agora-de-kill-all` helper and sudoers
+boundary; the web UI does not run it directly.
 
 Those values are present in the user-service examples. The
 `?surface=background-fallback` route keeps the temporary background-owned
@@ -134,6 +144,8 @@ AGORA_DE_LIVE_SHELL_URL=http://127.0.0.1:7780/shell/dist/desktop/?surface=dock \
 AGORA_DE_LIVE_CATALOG_URL=http://127.0.0.1:7780/api/catalog/apps \
 AGORA_DE_LIVE_SURFACES_URL=http://127.0.0.1:7780/api/surfaces \
 AGORA_DE_LIVE_WORK_CONTROLS_URL=http://127.0.0.1:7780/api/work-surface-controls \
+AGORA_DE_LIVE_WORKSPACES_URL=http://127.0.0.1:7780/api/workspaces \
+AGORA_DE_LIVE_OPERATOR_STATUS_URL=http://127.0.0.1:7780/api/operator/status \
 AGORA_DE_LIVE_SURFACE_APP_ID=io.agorade.ShellPanel \
 AGORA_DE_LIVE_SURFACE_ROLE=panel \
 ./harness/live/check-den-k8.py
@@ -149,14 +161,17 @@ For route-only testing without systemd/socket checks:
   --catalog-url http://127.0.0.1:7780/api/catalog/apps \
   --surfaces-url http://127.0.0.1:7780/api/surfaces \
   --work-controls-url http://127.0.0.1:7780/api/work-surface-controls \
+  --workspaces-url http://127.0.0.1:7780/api/workspaces \
+  --operator-status-url http://127.0.0.1:7780/api/operator/status \
   --surface-app-id io.agorade.ShellPanel \
   --surface-role panel
 ```
 
 The route checks prove installed model/route shape. The compositor surface
 readback adds mapped/visible and content-commit evidence. User-visible visual
-claims still require human confirmation or physical output capture until output
-pixel capture lands.
+claims close with physical output capture and expected shell-pixel
+classification. The launch-loop harness can run the app lifecycle and capture
+the monitor in one pass with `--output-name HDMI-A-1 --require-capture`.
 
 For the den-k8 user-service restart and visibility playbook, see
 `docs/den-k8-visible-shell-runbook.md`.

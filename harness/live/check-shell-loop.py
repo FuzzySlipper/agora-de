@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.util
 import json
+import pathlib
 import sys
 import time
 import urllib.error
@@ -12,37 +14,80 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:17780")
     parser.add_argument("--app-id", default="example-browser")
     parser.add_argument("--expected-app-id", default="io.agorade.ExampleBrowser")
+    parser.add_argument("--compositorctl", default="compositorctl")
+    parser.add_argument("--output-name", default="")
+    parser.add_argument("--output-capture-session", default="den-k8-shell-loop")
+    parser.add_argument(
+        "--capture-delay-seconds",
+        type=float,
+        default=3.5,
+        help="Delay after focus before physical output capture, allowing dock polling to reflect running state.",
+    )
+    parser.add_argument(
+        "--require-capture",
+        action="store_true",
+        help="Fail unless --output-name supplies visible physical-output capture evidence.",
+    )
     parser.add_argument("--timeout-seconds", type=float, default=8)
     args = parser.parse_args()
 
+    checked_at = unix_millis()
     checks = []
+    evidence_packets = []
     launched_surface = ""
     try:
         catalog = get_json(args.base_url + "/api/catalog/apps")
         app = next((item for item in catalog.get("apps", []) if item.get("id") == args.app_id), None)
         if not app:
             checks.append(failed("catalog", f"app {args.app_id!r} not present"))
-            return finish(checks, launched_surface)
+            return finish(checks, evidence_packets, launched_surface, checked_at)
         if not app.get("launchable"):
             checks.append(failed("catalog", f"app {args.app_id!r} is not launchable"))
-            return finish(checks, launched_surface)
+            return finish(checks, evidence_packets, launched_surface, checked_at)
         checks.append(passed("catalog", "launchable app is present"))
 
         launch = post_json(args.base_url + "/api/catalog/launch", {"appId": args.app_id})
         launched_surface = launch.get("surfaceId") or ""
         if not launched_surface:
             checks.append(failed("launch", f"launch response missing surfaceId: {launch}"))
-            return finish(checks, launched_surface)
+            return finish(checks, evidence_packets, launched_surface, checked_at)
         checks.append(passed("launch", "launch returned a surface", surfaceId=launched_surface, launchId=launch.get("launchId")))
 
         surface = wait_for_surface(args.base_url, launched_surface, args.expected_app_id, args.timeout_seconds)
         if not surface:
             checks.append(failed("running-state", f"surface {launched_surface!r} did not appear in /api/surfaces"))
-            return finish(checks, launched_surface)
+            return finish(checks, evidence_packets, launched_surface, checked_at)
         checks.append(passed("running-state", "launched surface appears in running state", surfaceId=launched_surface))
 
         post_json(args.base_url + "/api/surfaces/action", {"surfaceId": launched_surface, "action": "focus"})
         checks.append(passed("focus", "focus action accepted", surfaceId=launched_surface))
+
+        if args.output_name:
+            if args.capture_delay_seconds > 0:
+                time.sleep(args.capture_delay_seconds)
+            capture_check, packet = capture_visible_shell_loop(
+                args.compositorctl,
+                args.output_name,
+                args.output_capture_session,
+                checked_at,
+                launched_surface,
+                args.expected_app_id,
+            )
+            checks.append(capture_check)
+            if packet:
+                evidence_packets.append(packet)
+        elif args.require_capture:
+            checks.append(failed("capture", "physical output capture is required; pass --output-name"))
+            evidence_packets.append(
+                {
+                    "scenario": "den-k8-shell-launch-visible",
+                    "capturedAtUnixMillis": checked_at,
+                    "surfaceId": launched_surface,
+                    "appId": args.expected_app_id,
+                    "visualStatus": "unknown",
+                    "captureClassification": "not_visible",
+                }
+            )
 
         post_json(args.base_url + "/api/surfaces/action", {"surfaceId": launched_surface, "action": "close"})
         checks.append(passed("close", "close action accepted", surfaceId=launched_surface))
@@ -58,7 +103,7 @@ def main() -> int:
             except Exception:
                 pass
 
-    return finish(checks, launched_surface)
+    return finish(checks, evidence_packets, launched_surface, checked_at)
 
 
 def get_json(url: str) -> dict:
@@ -103,6 +148,49 @@ def wait_until_absent(base_url: str, surface_id: str, timeout_seconds: float) ->
     return False
 
 
+def capture_visible_shell_loop(
+    compositorctl: str,
+    output_name: str,
+    session_id: str,
+    checked_at: int,
+    surface_id: str,
+    app_id: str,
+) -> tuple[dict, dict | None]:
+    live_evidence = load_live_evidence_module()
+    capture_check, packet = live_evidence.capture_and_classify_output(
+        compositorctl,
+        output_name,
+        session_id,
+        checked_at,
+    )
+    if packet:
+        packet = dict(packet)
+        packet["scenario"] = "den-k8-shell-launch-visible"
+        packet["surfaceId"] = surface_id
+        packet["appId"] = app_id
+    if capture_check.get("status") == "pass":
+        capture_check = dict(capture_check)
+        capture_check["name"] = "launch-visible-capture"
+        capture_check["detail"] = "physical output capture shows launched shell app and dock pixels"
+        capture_check["surfaceId"] = surface_id
+        capture_check["appId"] = app_id
+    return capture_check, packet
+
+
+def load_live_evidence_module():
+    path = pathlib.Path(__file__).with_name("check-den-k8.py")
+    spec = importlib.util.spec_from_file_location("agora_de_check_den_k8", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load live evidence module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def unix_millis() -> int:
+    return int(time.time() * 1000)
+
+
 def passed(name: str, detail: str, **extra: object) -> dict:
     return {"name": name, "status": "pass", "detail": detail, **extra}
 
@@ -111,11 +199,13 @@ def failed(name: str, detail: str, **extra: object) -> dict:
     return {"name": name, "status": "fail", "detail": detail, **extra}
 
 
-def finish(checks: list[dict], launched_surface: str) -> int:
+def finish(checks: list[dict], evidence_packets: list[dict], launched_surface: str, checked_at: int) -> int:
     failed_checks = [check for check in checks if check["status"] != "pass"]
     result = {
         "schema": "agora-de.shell-loop-live.v1",
+        "checkedAtUnixMillis": checked_at,
         "checks": checks,
+        "evidencePackets": evidence_packets,
         "launchedSurfaceId": launched_surface,
         "summary": {
             "status": "fail" if failed_checks else "pass",

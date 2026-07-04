@@ -29,6 +29,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`class="panel"`,
 		`id="apps-button"`,
 		`id="refresh-button"`,
+		`id="operator-button"`,
 		`id="apps-list"`,
 		`id="running-list"`,
 		`id="workspace-label"`,
@@ -38,10 +39,25 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`/api/catalog/launch`,
 		`/api/surfaces`,
 		`/api/surfaces/action`,
+		`/api/workspaces`,
+		`/api/workspaces/action`,
+		`shell-status`,
 		`workspace 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("shell body missing %q: %s", want, body)
+		}
+	}
+
+	operator := responseBody(t, handler, "/shell/dist/desktop/?surface=operator")
+	for _, want := range []string{
+		"agora-de shell status",
+		`id="overall"`,
+		`/api/operator/status`,
+		"Recovery",
+	} {
+		if !strings.Contains(operator, want) {
+			t.Fatalf("operator body missing %q: %s", want, operator)
 		}
 	}
 
@@ -70,11 +86,17 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		} `json:"apps"`
 	}
 	decodeRoute(t, handler, "/api/catalog/apps", &catalogResponse)
-	if len(catalogResponse.Apps) != 1 || catalogResponse.Apps[0].ID != "example-browser" {
+	if len(catalogResponse.Apps) != 2 {
 		t.Fatalf("unexpected catalog response: %+v", catalogResponse)
 	}
-	if !catalogResponse.Apps[0].Launchable {
-		t.Fatalf("catalog app should be launchable: %+v", catalogResponse.Apps[0])
+	seen := map[string]bool{}
+	for _, app := range catalogResponse.Apps {
+		seen[app.ID] = app.Launchable
+	}
+	for _, id := range []string{"example-browser", "shell-status"} {
+		if !seen[id] {
+			t.Fatalf("catalog app %q should be launchable: %+v", id, catalogResponse.Apps)
+		}
 	}
 
 	var surfacesResponse struct {
@@ -99,6 +121,73 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	decodeRoute(t, handler, WorkControlsPath, &workControlsResponse)
 	if len(workControlsResponse.Surfaces) != 1 || workControlsResponse.Surfaces[0].ID != "view-42" {
 		t.Fatalf("unexpected work controls response: %+v", workControlsResponse)
+	}
+
+	var workspacesResponse struct {
+		CurrentWorkspaceID string `json:"currentWorkspaceId"`
+		Workspaces         []struct {
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			Active       bool   `json:"active"`
+			SurfaceCount int    `json:"surfaceCount"`
+		} `json:"workspaces"`
+	}
+	decodeRoute(t, handler, WorkspacesPath, &workspacesResponse)
+	if workspacesResponse.CurrentWorkspaceID != "workspace-1" || len(workspacesResponse.Workspaces) != 1 {
+		t.Fatalf("unexpected workspace response: %+v", workspacesResponse)
+	}
+	if !workspacesResponse.Workspaces[0].Active || workspacesResponse.Workspaces[0].SurfaceCount != 1 {
+		t.Fatalf("unexpected workspace view: %+v", workspacesResponse.Workspaces[0])
+	}
+
+	recorder := httptest.NewRecorder()
+	workspaceActionBody := strings.NewReader(`{"workspaceId":"workspace-1","action":"activate"}`)
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, WorkspaceActionPath, workspaceActionBody))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("workspace action status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	var workspaceAction workspaceActionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &workspaceAction); err != nil {
+		t.Fatal(err)
+	}
+	if workspaceAction.CurrentWorkspaceID != "workspace-1" || workspaceAction.Status != "accepted" {
+		t.Fatalf("unexpected workspace action response: %+v", workspaceAction)
+	}
+
+	var operatorResponse struct {
+		Overall  string `json:"overall"`
+		Services []struct {
+			Name  string `json:"name"`
+			Scope string `json:"scope"`
+			State string `json:"state"`
+		} `json:"services"`
+		Sockets []struct {
+			Path  string `json:"path"`
+			State string `json:"state"`
+		} `json:"sockets"`
+		Surfaces struct {
+			State string `json:"state"`
+			Total int    `json:"total"`
+		} `json:"surfaces"`
+		Recovery struct {
+			KillAllCommand  string   `json:"killAllCommand"`
+			RestartCommands []string `json:"restartCommands"`
+			Runbook         string   `json:"runbook"`
+			Note            string   `json:"note"`
+		} `json:"recovery"`
+	}
+	decodeRoute(t, handler, OperatorStatusPath, &operatorResponse)
+	if operatorResponse.Overall == "" || len(operatorResponse.Services) == 0 || len(operatorResponse.Sockets) == 0 {
+		t.Fatalf("unexpected operator status response: %+v", operatorResponse)
+	}
+	if operatorResponse.Surfaces.State != "available" || operatorResponse.Surfaces.Total != 1 {
+		t.Fatalf("unexpected operator surface summary: %+v", operatorResponse.Surfaces)
+	}
+	if operatorResponse.Recovery.KillAllCommand != "sudo /usr/local/sbin/agora-de-kill-all" {
+		t.Fatalf("unexpected recovery command: %+v", operatorResponse.Recovery)
+	}
+	if len(operatorResponse.Recovery.RestartCommands) == 0 || !strings.Contains(operatorResponse.Recovery.Runbook, "den-k8-visible-shell-runbook.md") {
+		t.Fatalf("unexpected recovery docs: %+v", operatorResponse.Recovery)
 	}
 }
 
@@ -146,6 +235,42 @@ printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client
 	surface := response.Surfaces[0]
 	if surface.ID != "view-live" || surface.OwnerUID != 60010 || !surface.Mapped || !surface.Focused || surface.ContentCommitCount != 3 {
 		t.Fatalf("unexpected live surface response: %+v", surface)
+	}
+}
+
+func TestHandlerMarksDeadCompositorctlClientUnmapped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	command := filepath.Join(t.TempDir(), "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-stale","app_id":"io.agorade.ShellPanel","surface_kind":"layer_shell","visible":true},"client":{"pid":99999999,"uid":60010},"last_event":"content_committed","visible":true,"content_commit_count":3}]}'
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		SurfaceProvider:   SurfaceProviderCompositorctl,
+		CompositorctlPath: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var response struct {
+		Surfaces []struct {
+			ID     string `json:"id"`
+			Mapped bool   `json:"mapped"`
+		} `json:"surfaces"`
+	}
+	decodeRoute(t, handler, "/api/surfaces", &response)
+	if len(response.Surfaces) != 1 {
+		t.Fatalf("surfaces = %d, want 1", len(response.Surfaces))
+	}
+	if response.Surfaces[0].Mapped {
+		t.Fatalf("dead client surface should not be mapped: %+v", response.Surfaces[0])
 	}
 }
 
@@ -210,6 +335,22 @@ esac
 	for _, want := range []string{"launch", "--url", "--expected-app-id io.agorade.ExampleBrowser", "--wait-surface"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("compositorctl calls missing %q: %s", want, calls)
+		}
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/catalog/launch", strings.NewReader(`{"appId":"shell-status"}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status launch status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	calls, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"surface=operator", "--expected-app-id io.agorade.ShellStatus"} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("status launch compositorctl calls missing %q: %s", want, calls)
 		}
 	}
 }
