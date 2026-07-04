@@ -322,7 +322,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       align-items: stretch;
       box-sizing: border-box;
       display: flex;
-      font: 600 20px system-ui, sans-serif;
+      font: 600 18px system-ui, sans-serif;
     }
     .panel {
       align-items: center;
@@ -331,39 +331,195 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       box-shadow: inset 0 1px 0 #cbd5e1;
       box-sizing: border-box;
       display: flex;
-      gap: 18px;
+      gap: 14px;
       min-height: 96px;
-      padding: 0 28px;
+      padding: 0 22px;
       width: 100vw;
     }
-    .badge {
+    button {
+      font: inherit;
+    }
+    .brand,
+    .control,
+    .workspace,
+    .status,
+    .clock {
       align-items: center;
-      background: #102027;
       border-radius: 4px;
-      color: #f8fafc;
       display: inline-flex;
       height: 44px;
       justify-content: center;
-      min-width: 132px;
       padding: 0 16px;
+      white-space: nowrap;
     }
-    .slot {
-      align-items: center;
+    .brand {
+      background: #102027;
+      color: #f8fafc;
+      min-width: 132px;
+    }
+    .control {
+      background: #00d1b2;
+      border: 0;
+      color: #102027;
+      min-width: 94px;
+    }
+    .control.secondary {
+      background: #ffffff;
       border: 2px solid #94a3b8;
+    }
+    .workspace,
+    .status,
+    .clock {
+      border: 2px solid #94a3b8;
+      color: #102027;
+    }
+    .dock-section {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      min-width: 0;
+    }
+    .apps {
+      flex: 0 1 520px;
+      overflow: hidden;
+    }
+    .running {
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+    .dock-item {
+      align-items: center;
+      background: #ffffff;
+      border: 2px solid #cbd5e1;
       border-radius: 4px;
+      color: #102027;
       display: inline-flex;
-      height: 40px;
-      padding: 0 14px;
+      height: 44px;
+      max-width: 180px;
+      min-width: 86px;
+      overflow: hidden;
+      padding: 0 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dock-item.focused {
+      border-color: #00d1b2;
+      box-shadow: inset 0 -3px 0 #00d1b2;
+    }
+    .spacer {
+      flex: 1 1 auto;
+      min-width: 24px;
+    }
+    .status {
+      min-width: 88px;
+    }
+    .status.ready {
+      border-color: #00d1b2;
+    }
+    .status.warn {
+      border-color: #eab308;
+    }
+    .muted {
+      color: #475569;
     }
   </style>
 </head>
 <body data-surface="%s">
   <main class="panel" aria-label="Agora DE shell panel">
-    <span class="badge">agora-de</span>
-    <span class="slot">shell: %s</span>
-    <span class="slot">workspace 1</span>
-    <span class="slot">ready</span>
+    <span class="brand">agora-de</span>
+    <button class="control" id="apps-button" type="button">Apps</button>
+    <button class="control secondary" id="refresh-button" type="button">Refresh</button>
+    <section class="dock-section apps" id="apps-list" aria-label="Applications">
+      <span class="dock-item muted">loading apps</span>
+    </section>
+    <section class="dock-section running" id="running-list" aria-label="Running surfaces">
+      <span class="dock-item muted">loading surfaces</span>
+    </section>
+    <span class="workspace" id="workspace-label">workspace 1</span>
+    <span class="status" id="status-label">starting</span>
+    <time class="clock" id="clock-label">--:--</time>
   </main>
+  <script>
+    const state = {
+      apps: [],
+      surfaces: [],
+      surface: %q
+    };
+
+    function text(value, fallback) {
+      const trimmed = String(value || "").trim();
+      return trimmed || fallback;
+    }
+
+    function item(label, className) {
+      const element = document.createElement("span");
+      element.className = "dock-item" + (className ? " " + className : "");
+      element.textContent = label;
+      element.title = label;
+      return element;
+    }
+
+    function renderList(id, emptyLabel, values, mapper) {
+      const target = document.getElementById(id);
+      target.replaceChildren();
+      if (!values.length) {
+        target.appendChild(item(emptyLabel, "muted"));
+        return;
+      }
+      values.slice(0, 4).forEach((value) => target.appendChild(mapper(value)));
+    }
+
+    function render() {
+      renderList("apps-list", "no apps", state.apps, (app) => item(text(app.name, app.id)));
+      const mapped = state.surfaces.filter((surface) => surface.mapped);
+      renderList("running-list", "no running apps", mapped, (surface) => {
+        const label = surface.focused ? "focused " + surface.id : surface.id;
+        return item(label, surface.focused ? "focused" : "");
+      });
+      const status = document.getElementById("status-label");
+      status.textContent = mapped.length ? mapped.length + " mapped" : "ready";
+      status.className = "status " + (mapped.length ? "ready" : "warn");
+    }
+
+    async function loadJSON(path) {
+      const response = await fetch(path, {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function refresh() {
+      try {
+        const [catalog, surfaces] = await Promise.all([
+          loadJSON("/api/catalog/apps"),
+          loadJSON("/api/surfaces")
+        ]);
+        state.apps = Array.isArray(catalog.apps) ? catalog.apps : [];
+        state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
+        render();
+      } catch (error) {
+        const status = document.getElementById("status-label");
+        status.textContent = "offline";
+        status.className = "status warn";
+      }
+    }
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("clock-label").textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    document.getElementById("apps-button").addEventListener("click", refresh);
+    document.getElementById("refresh-button").addEventListener("click", refresh);
+    updateClock();
+    refresh();
+    setInterval(updateClock, 30000);
+    setInterval(refresh, 3000);
+  </script>
 </body>
 </html>`, escapedSurface, escapedSurface)
 }

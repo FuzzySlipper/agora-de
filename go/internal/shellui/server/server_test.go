@@ -25,8 +25,22 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	if !strings.Contains(body, "#f8fafc") || !strings.Contains(body, "#00d1b2") {
 		t.Fatalf("shell body = %q, want high-contrast fallback paint styles", body)
 	}
-	if !strings.Contains(body, `class="panel"`) || !strings.Contains(body, "workspace 1") {
-		t.Fatalf("shell body = %q, want visible panel fallback content", body)
+	for _, want := range []string{
+		`class="panel"`,
+		`id="apps-button"`,
+		`id="refresh-button"`,
+		`id="apps-list"`,
+		`id="running-list"`,
+		`id="workspace-label"`,
+		`id="status-label"`,
+		`id="clock-label"`,
+		`/api/catalog/apps`,
+		`/api/surfaces`,
+		`workspace 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("shell body missing %q: %s", want, body)
+		}
 	}
 
 	background := responseBody(t, handler, "/shell/dist/desktop/?surface=background")

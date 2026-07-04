@@ -160,6 +160,14 @@ The panel check targets the GTK4 installed panel path. The old GTK3/WebKit2
 panel path reserved a bottom exclusive zone but did not visibly paint, leaving a
 black bar; keep that path retired unless deliberately reproducing the old bug.
 
+Expected visible dock state:
+
+- `agora-de` brand block.
+- `Apps` and `Refresh` controls.
+- App entries loaded from `/api/catalog/apps`.
+- Running surface entries loaded from `/api/surfaces`.
+- `workspace 1`, mapped-surface status, and clock controls.
+
 Require frame-presented evidence:
 
 ```bash
@@ -197,6 +205,11 @@ The capture packet should report `captureClassification: capture_visible` and
 `pixelClassification.classification: expected_shell_visible`. If the monitor is
 black or the output capture path fails, the harness fails closed and includes the
 artifact path or compositorctl stderr needed for debugging.
+
+For task 4153, the live artifact
+`/run/agent-os/artifacts/den-k8-live-4153/output-capture-1783170766443939863-3/output-capture-1783170766443939863-3.png`
+showed the API-backed dock controls and passed the installed-service capture
+check.
 
 ## GTK3 vs GTK4 Bake-Off
 

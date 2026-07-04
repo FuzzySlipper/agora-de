@@ -69,6 +69,12 @@ GDK_BACKEND=wayland
 LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so
 ```
 
+The default dock/panel route is API-backed. `?surface=dock` renders the Agora DE
+brand, `Apps` and `Refresh` controls, app entries from `/api/catalog/apps`,
+running surface entries from `/api/surfaces`, workspace state, mapped-surface
+status, and a clock. This keeps the installed shell useful even before launch
+and focus actions are wired.
+
 Those values are present in the user-service examples. The
 `?surface=background-fallback` route keeps the temporary background-owned
 taskbar available as a recovery path; it is not the default installed shape.

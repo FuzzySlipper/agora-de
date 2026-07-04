@@ -60,6 +60,11 @@ correctness. `/api/surfaces` forwards compositor lifecycle fields such as
 close through physical output capture when available; human confirmation is now
 fallback evidence, not the preferred closeout path.
 
+The current GTK4 dock/panel visible state is intentionally small but usable:
+brand, `Apps`, `Refresh`, app entries from `/api/catalog/apps`, running surface
+entries from `/api/surfaces`, `workspace 1`, mapped-surface status, and a clock.
+Capture evidence for this state should still use the physical output path below.
+
 ## Evidence Mapping
 
 `EvidencePacket` fields map as follows:
@@ -206,6 +211,11 @@ This invokes `compositorctl output capture --name HDMI-A-1 --export`, reads the
 artifact PNG, and emits `capture_visible` only when the compositor inspection is
 visible and the pixel classifier finds the expected light shell background,
 accent line, dock/panel dark region, and text-like foreground pixels.
+
+Task 4153 live evidence produced
+`/run/agent-os/artifacts/den-k8-live-4153/output-capture-1783170766443939863-3/output-capture-1783170766443939863-3.png`
+with `captureClassification: capture_visible` and
+`pixelClassification.classification: expected_shell_visible`.
 
 Imported capture JSON remains supported:
 
