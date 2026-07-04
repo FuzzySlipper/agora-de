@@ -95,7 +95,7 @@ func TestHandlerCanUseCompositorctlSurfaceProvider(t *testing.T) {
 	}
 	command := filepath.Join(t.TempDir(), "compositorctl-fixture")
 	script := `#!/usr/bin/env sh
-printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client":{"uid":60010},"last_event":"mapped","focused":true}]}'
+printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client":{"uid":60010},"last_event":"content_committed","focused":true,"frame_count":0,"content_commit_count":3}]}'
 `
 	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -112,10 +112,11 @@ printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client
 
 	var response struct {
 		Surfaces []struct {
-			ID       string `json:"id"`
-			OwnerUID int    `json:"ownerUid"`
-			Mapped   bool   `json:"mapped"`
-			Focused  bool   `json:"focused"`
+			ID                 string `json:"id"`
+			OwnerUID           int    `json:"ownerUid"`
+			Mapped             bool   `json:"mapped"`
+			Focused            bool   `json:"focused"`
+			ContentCommitCount int    `json:"contentCommitCount"`
 		} `json:"surfaces"`
 	}
 	decodeRoute(t, handler, "/api/surfaces", &response)
@@ -123,7 +124,7 @@ printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client
 		t.Fatalf("surfaces = %d, want 1", len(response.Surfaces))
 	}
 	surface := response.Surfaces[0]
-	if surface.ID != "view-live" || surface.OwnerUID != 60010 || !surface.Mapped || !surface.Focused {
+	if surface.ID != "view-live" || surface.OwnerUID != 60010 || !surface.Mapped || !surface.Focused || surface.ContentCommitCount != 3 {
 		t.Fatalf("unexpected live surface response: %+v", surface)
 	}
 }

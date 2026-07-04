@@ -172,20 +172,31 @@ AGORA_DE_LIVE_REQUIRE_FRAME=1 \
   --surface-role panel
 ```
 
-On the current bridge, per-layer-shell capture is denied and physical output
-capture is not exposed as a logical output. A black physical monitor with a
-mapped shell panel should remain classified as insufficient or failing evidence,
-not as a closed visual claim.
+Per-layer-shell capture is denied; use physical output capture for visible
+claims. The active den-k8 monitor is currently exposed as `HDMI-A-1` by
+`compositorctl output list`.
 
-The long-term evidence target is physical output capture for the active monitor
-such as `HDMI-A-1`. Once `compositorctl output list` exposes that output and
-capture returns image evidence, output capture should outrank mapped state and
-frame counters for visible-shell closeout.
+Run the full installed-service visual check:
 
-During the transition, `compositorctl output list` may expose
-`mode: physical_surface_readback`. That mode means the bridge inferred the
-physical output identity from mapped surface readback. It is useful for choosing
-the output name, but it is not yet pixel evidence.
+```bash
+./harness/live/check-den-k8.py \
+  --systemd-units 'agora-wayfire.service,compositor-bridge.service' \
+  --sockets '/run/agent-os/compositor-control.sock,/run/agent-os/compositor-bridge.sock' \
+  --shell-url 'http://127.0.0.1:17780/shell/dist/desktop/?surface=dock' \
+  --catalog-url 'http://127.0.0.1:17780/api/catalog/apps' \
+  --surfaces-url 'http://127.0.0.1:17780/api/surfaces' \
+  --work-controls-url 'http://127.0.0.1:17780/api/work-surface-controls' \
+  --surface-app-id io.agorade.ShellPanel \
+  --surface-role panel \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-live \
+  --require-capture
+```
+
+The capture packet should report `captureClassification: capture_visible` and
+`pixelClassification.classification: expected_shell_visible`. If the monitor is
+black or the output capture path fails, the harness fails closed and includes the
+artifact path or compositorctl stderr needed for debugging.
 
 ## GTK3 vs GTK4 Bake-Off
 

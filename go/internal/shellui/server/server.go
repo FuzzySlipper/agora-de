@@ -130,9 +130,11 @@ type compositorctlTrackedSurface struct {
 	Client struct {
 		UID int `json:"uid"`
 	} `json:"client"`
-	LastEvent string `json:"last_event"`
-	Focused   bool   `json:"focused"`
-	Visible   bool   `json:"visible"`
+	LastEvent          string `json:"last_event"`
+	Focused            bool   `json:"focused"`
+	Visible            bool   `json:"visible"`
+	FrameCount         int    `json:"frame_count"`
+	ContentCommitCount int    `json:"content_commit_count"`
 }
 
 func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error) {
@@ -147,11 +149,13 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 		}
 		mapped := tracked.Visible || tracked.Surface.Visible || tracked.LastEvent != "unmapped"
 		views = append(views, surfaces.SurfaceView{
-			ID:               tracked.Surface.ID,
-			OwnerUID:         tracked.Client.UID,
-			Mapped:           mapped,
-			Focused:          tracked.Focused,
-			InputDeniedCount: 0,
+			ID:                 tracked.Surface.ID,
+			OwnerUID:           tracked.Client.UID,
+			Mapped:             mapped,
+			Focused:            tracked.Focused,
+			InputDeniedCount:   0,
+			FrameCount:         tracked.FrameCount,
+			ContentCommitCount: tracked.ContentCommitCount,
 		})
 	}
 	return views, nil

@@ -7,11 +7,13 @@ import (
 )
 
 type SurfaceView struct {
-	ID               string `json:"id"`
-	OwnerUID         int    `json:"ownerUid"`
-	Mapped           bool   `json:"mapped"`
-	Focused          bool   `json:"focused"`
-	InputDeniedCount int    `json:"inputDeniedCount"`
+	ID                 string `json:"id"`
+	OwnerUID           int    `json:"ownerUid"`
+	Mapped             bool   `json:"mapped"`
+	Focused            bool   `json:"focused"`
+	InputDeniedCount   int    `json:"inputDeniedCount"`
+	FrameCount         int    `json:"frameCount,omitempty"`
+	ContentCommitCount int    `json:"contentCommitCount,omitempty"`
 }
 
 func LifecycleViews(source *surfacetrack.Projection) []SurfaceView {

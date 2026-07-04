@@ -52,10 +52,13 @@ Current den-k8 installed-service surfaces observed on this host:
 | Capture artifacts | `/run/agent-os/captures` | capture JSON supplied to the runner |
 | Surface frame readback | `compositorctl list-surfaces` | selected surface mapped/visible and optional `frame_count` |
 | Physical output discovery | `compositorctl output list` | physical output identity; `physical_surface_readback` is inferred from mapped surfaces |
-| Physical output capture | `compositorctl output capture` or successor | monitor/output image evidence, preferred for visible-shell closeout |
+| Physical output capture | `compositorctl output capture` via `--output-name` | monitor/output image evidence, preferred for visible-shell closeout |
 
 The shell route currently proves installed shell availability, not visual
-correctness. Visual claims need capture evidence.
+correctness. `/api/surfaces` forwards compositor lifecycle fields such as
+`contentCommitCount` when the compositor provider is enabled. Visual claims
+close through physical output capture when available; human confirmation is now
+fallback evidence, not the preferred closeout path.
 
 ## Evidence Mapping
 
@@ -76,7 +79,8 @@ Classification mapping:
 | Valid installed JSON claim route, no capture | `unknown` | `insufficient_mapped_only` |
 | Layer-shell content commit metadata without frame/capture | `unknown` | `content_committed` |
 | Presented frame metadata without capture | `unknown` | `frame_presented` |
-| Capture JSON with `visual_inspection.status == visible` | `visible` | `capture_visible` |
+| Output capture with `visual_inspection.status == visible` and expected shell pixels | `visible` | `capture_visible` |
+| Capture JSON with `visual_inspection.status == visible`, used as imported evidence | `visible` | `capture_visible` |
 | Capture JSON with `visual_inspection.status == blank` | `blank` | `blank_capture_failure` |
 | Surface absent or capture unavailable for a visibility claim | `unknown` | `not_visible` |
 
@@ -181,7 +185,29 @@ conservative: `compositorctl output list` may report a physical output with
 `output_id` such as `HDMI-A-1`. That discovers the monitor identity but is not
 yet image capture.
 
-Require capture evidence for the run to pass:
+Require physical output capture evidence for the run to pass:
+
+```bash
+./harness/live/check-den-k8.py \
+  --systemd-units 'agora-wayfire.service,compositor-bridge.service' \
+  --sockets '/run/agent-os/compositor-control.sock,/run/agent-os/compositor-bridge.sock' \
+  --shell-url 'http://127.0.0.1:17780/shell/dist/desktop/?surface=dock' \
+  --catalog-url 'http://127.0.0.1:17780/api/catalog/apps' \
+  --surfaces-url 'http://127.0.0.1:17780/api/surfaces' \
+  --work-controls-url 'http://127.0.0.1:17780/api/work-surface-controls' \
+  --surface-app-id io.agorade.ShellPanel \
+  --surface-role panel \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-live \
+  --require-capture
+```
+
+This invokes `compositorctl output capture --name HDMI-A-1 --export`, reads the
+artifact PNG, and emits `capture_visible` only when the compositor inspection is
+visible and the pixel classifier finds the expected light shell background,
+accent line, dock/panel dark region, and text-like foreground pixels.
+
+Imported capture JSON remains supported:
 
 ```bash
 AGORA_DE_LIVE_REQUIRE_CAPTURE=1 \

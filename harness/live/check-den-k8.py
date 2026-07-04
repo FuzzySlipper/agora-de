@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 import argparse
+import binascii
 import json
 import os
 import pathlib
 import socket
+import struct
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+import zlib
 
 
 DEFAULT_UNITS = [
@@ -54,6 +57,16 @@ def main() -> int:
         help="Optional installed-service capture JSON to classify into an EvidencePacket.",
     )
     parser.add_argument(
+        "--output-name",
+        default=os.environ.get("AGORA_DE_LIVE_OUTPUT_NAME", ""),
+        help="Optional physical compositor output name to capture through compositorctl output capture.",
+    )
+    parser.add_argument(
+        "--output-capture-session",
+        default=os.environ.get("AGORA_DE_LIVE_OUTPUT_CAPTURE_SESSION", "den-k8-live-output"),
+        help="Artifact session id used with --output-name capture.",
+    )
+    parser.add_argument(
         "--compositorctl",
         default=os.environ.get("AGORA_DE_LIVE_COMPOSITORCTL", "compositorctl"),
         help="compositorctl binary used for optional surface readback checks.",
@@ -93,7 +106,7 @@ def main() -> int:
         "--require-capture",
         action="store_true",
         default=os.environ.get("AGORA_DE_LIVE_REQUIRE_CAPTURE", "") == "1",
-        help="Fail when --capture-json is not supplied or cannot be classified.",
+        help="Fail when neither --capture-json nor --output-name supplies classifiable capture evidence.",
     )
     parser.add_argument(
         "--timeout-seconds",
@@ -129,12 +142,22 @@ def main() -> int:
         checks.append(capture_check)
         if packet:
             evidence_packets.append(packet)
+    elif args.output_name:
+        capture_check, packet = capture_and_classify_output(
+            args.compositorctl,
+            args.output_name,
+            args.output_capture_session,
+            checked_at,
+        )
+        checks.append(capture_check)
+        if packet:
+            evidence_packets.append(packet)
     elif args.require_capture:
         checks.append(
             failed_check(
-                "capture-json",
                 "capture",
-                "AGORA_DE_LIVE_CAPTURE_JSON or --capture-json is required for capture evidence",
+                "capture",
+                "AGORA_DE_LIVE_CAPTURE_JSON/--capture-json or AGORA_DE_LIVE_OUTPUT_NAME/--output-name is required for capture evidence",
             )
         )
 
@@ -498,25 +521,149 @@ def check_compositor_surface(
     ), packet
 
 
+def capture_and_classify_output(
+    compositorctl: str,
+    output_name: str,
+    session_id: str,
+    checked_at: int,
+) -> tuple[dict, dict | None]:
+    try:
+        completed = subprocess.run(
+            [
+                compositorctl,
+                "output",
+                "capture",
+                "--name",
+                output_name,
+                "--export",
+                "--session",
+                session_id,
+                "--evidence-class",
+                "viewport_screenshot",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return failed_check(output_name, "capture", f"compositorctl output capture failed: {error}"), unavailable_packet(
+            "den-k8-installed-service-capture",
+            checked_at,
+        )
+
+    if completed.returncode != 0:
+        return failed_check(
+            output_name,
+            "capture",
+            "compositorctl output capture failed",
+            stderr=completed.stderr.strip(),
+        ), unavailable_packet("den-k8-installed-service-capture", checked_at)
+
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        return failed_check(output_name, "capture", f"invalid output capture JSON: {error}"), unavailable_packet(
+            "den-k8-installed-service-capture",
+            checked_at,
+        )
+
+    capture = first_capture_record(payload)
+    if not capture:
+        return failed_check(output_name, "capture", "output capture did not return any capture artifacts"), unavailable_packet(
+            "den-k8-installed-service-capture",
+            checked_at,
+        )
+    return classify_capture_record(capture, checked_at, output_name=output_name, require_shell_pixels=True)
+
+
 def classify_capture_json(path: pathlib.Path, checked_at: int) -> tuple[dict, dict | None]:
     try:
         capture = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
         return failed_check(str(path), "capture", f"capture JSON could not be read: {error}"), None
+    if isinstance(capture, dict) and isinstance(capture.get("evidencePackets"), list):
+        return classify_evidence_summary_capture(path, capture, checked_at)
+    capture = first_capture_record(capture) or capture
+    return classify_capture_record(capture, checked_at, source_name=str(path), require_shell_pixels=False)
 
+
+def classify_evidence_summary_capture(path: pathlib.Path, summary: dict, checked_at: int) -> tuple[dict, dict | None]:
+    packets = [packet for packet in summary.get("evidencePackets", []) if isinstance(packet, dict)]
+    capture_packets = [packet for packet in packets if packet.get("scenario") == "den-k8-installed-service-capture"]
+    if not capture_packets:
+        return failed_check(str(path), "capture", "evidence summary contains no installed-service capture packet"), None
+    packet = dict(capture_packets[-1])
+    packet["capturedAtUnixMillis"] = checked_at
+    visual_status = packet.get("visualStatus", "unknown")
+    classification = packet.get("captureClassification", "not_visible")
+    if visual_status == "visible" and classification == "capture_visible":
+        return passed_check(str(path), "capture", "evidence summary reports visible capture"), packet
+    if classification == "blank_capture_failure":
+        return failed_check(str(path), "capture", "evidence summary reports blank capture"), packet
+    return failed_check(str(path), "capture", "evidence summary does not prove visibility"), packet
+
+
+def first_capture_record(payload: object) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    captures = payload.get("captures")
+    if isinstance(captures, list) and captures:
+        capture = captures[0]
+        if isinstance(capture, dict):
+            artifact = capture.get("artifact")
+            if isinstance(artifact, dict):
+                merged = dict(artifact)
+                merged.update({key: value for key, value in capture.items() if key != "artifact"})
+                return merged
+            return capture
+    return payload
+
+
+def classify_capture_record(
+    capture: dict,
+    checked_at: int,
+    source_name: str | None = None,
+    output_name: str | None = None,
+    require_shell_pixels: bool = False,
+) -> tuple[dict, dict | None]:
+    name = source_name or output_name or capture.get("image_path") or capture.get("path") or "capture"
     visual_status = capture.get("visual_inspection", {}).get("status", "unknown")
     if visual_status not in {"visible", "blank", "unknown"}:
         visual_status = "unknown"
 
+    image_path = capture.get("image_path") or capture.get("path")
+    shell_pixels = None
+    pixel_error = ""
+    if image_path:
+        shell_pixels, pixel_error = classify_shell_output_pixels(pathlib.Path(str(image_path)))
+
     if visual_status == "visible":
-        classification = "capture_visible"
-        check = passed_check(str(path), "capture", "capture JSON reports visible inspection")
+        if require_shell_pixels and (not shell_pixels or not shell_pixels.get("shellVisible")):
+            classification = "not_visible"
+            detail = "output capture pixels do not match expected shell"
+            if pixel_error:
+                detail = f"{detail}: {pixel_error}"
+            check = failed_check(str(name), "capture", detail, imagePath=image_path, outputName=output_name)
+        else:
+            classification = "capture_visible"
+            if shell_pixels and shell_pixels.get("shellVisible"):
+                check = passed_check(
+                    str(name),
+                    "capture",
+                    "output capture shows expected shell pixels",
+                    imagePath=image_path,
+                    outputName=output_name,
+                )
+            else:
+                check = passed_check(str(name), "capture", "capture JSON reports visible inspection", imagePath=image_path)
     elif visual_status == "blank":
         classification = "blank_capture_failure"
-        check = failed_check(str(path), "capture", "capture JSON reports blank inspection")
+        check = failed_check(str(name), "capture", "capture JSON reports blank inspection", imagePath=image_path)
     else:
         classification = "not_visible"
-        check = failed_check(str(path), "capture", "capture JSON does not prove visibility")
+        check = failed_check(str(name), "capture", "capture JSON does not prove visibility", imagePath=image_path)
 
     packet = {
         "scenario": "den-k8-installed-service-capture",
@@ -524,7 +671,174 @@ def classify_capture_json(path: pathlib.Path, checked_at: int) -> tuple[dict, di
         "visualStatus": visual_status,
         "captureClassification": classification,
     }
+    if output_name:
+        packet["outputName"] = output_name
+    if image_path:
+        packet["artifactPath"] = image_path
+    if shell_pixels:
+        packet["pixelClassification"] = shell_pixels
+    elif pixel_error:
+        packet["pixelClassificationError"] = pixel_error
     return check, packet
+
+
+def classify_shell_output_pixels(path: pathlib.Path) -> tuple[dict | None, str]:
+    try:
+        image = read_png_rgb(path)
+    except (OSError, ValueError, zlib.error, binascii.Error, struct.error) as error:
+        return None, str(error)
+
+    width = image["width"]
+    height = image["height"]
+    rows = image["rows"]
+    total = width * height
+    if total <= 0:
+        return None, "capture has empty dimensions"
+
+    light_background = 0
+    black_pixels = 0
+    accent_pixels = 0
+    panel_dark_pixels = 0
+    text_like_pixels = 0
+    main_text_max_y = max(1, int(height * 0.85))
+    panel_start = max(0, height - 140)
+
+    for y, row in enumerate(rows):
+        for x in range(width):
+            i = x * 3
+            r, g, b = row[i], row[i + 1], row[i + 2]
+            if r < 10 and g < 10 and b < 10:
+                black_pixels += 1
+            if r >= 235 and g >= 235 and b >= 235:
+                light_background += 1
+            if r <= 30 and g >= 170 and b >= 140:
+                accent_pixels += 1
+            if y >= panel_start and r <= 45 and g <= 70 and b <= 80:
+                panel_dark_pixels += 1
+            if y < main_text_max_y and x < max(480, width // 4) and r <= 90 and g <= 110 and b <= 125:
+                text_like_pixels += 1
+
+    light_ratio = light_background / total
+    black_ratio = black_pixels / total
+    shell_visible = (
+        black_ratio < 0.95
+        and light_ratio > 0.45
+        and accent_pixels >= max(128, width // 4)
+        and panel_dark_pixels >= 512
+        and text_like_pixels >= 64
+    )
+
+    if shell_visible:
+        classification = "expected_shell_visible"
+    elif black_ratio >= 0.95:
+        classification = "blank_or_black_output"
+    else:
+        classification = "unexpected_output_pixels"
+
+    return {
+        "classification": classification,
+        "shellVisible": shell_visible,
+        "width": width,
+        "height": height,
+        "lightBackgroundRatio": round(light_ratio, 4),
+        "blackPixelRatio": round(black_ratio, 4),
+        "accentPixels": accent_pixels,
+        "panelDarkPixels": panel_dark_pixels,
+        "textLikePixels": text_like_pixels,
+    }, ""
+
+
+def read_png_rgb(path: pathlib.Path) -> dict:
+    data = path.read_bytes()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("capture artifact is not a PNG")
+
+    pos = 8
+    width = height = color_type = bit_depth = interlace = None
+    idat = bytearray()
+    while pos < len(data):
+        if pos + 8 > len(data):
+            raise ValueError("truncated PNG chunk")
+        length = struct.unpack(">I", data[pos : pos + 4])[0]
+        chunk_type = data[pos + 4 : pos + 8]
+        pos += 8
+        chunk = data[pos : pos + length]
+        pos += length
+        if pos + 4 > len(data):
+            raise ValueError("truncated PNG CRC")
+        pos += 4
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", chunk)
+        elif chunk_type == b"IDAT":
+            idat.extend(chunk)
+        elif chunk_type == b"IEND":
+            break
+
+    if width is None or height is None:
+        raise ValueError("PNG missing IHDR")
+    if bit_depth != 8 or color_type not in (2, 6) or interlace != 0:
+        raise ValueError(f"unsupported PNG format bit_depth={bit_depth} color_type={color_type} interlace={interlace}")
+
+    channels = 4 if color_type == 6 else 3
+    stride = width * channels
+    raw = zlib.decompress(bytes(idat))
+    expected = (stride + 1) * height
+    if len(raw) < expected:
+        raise ValueError("PNG image data is truncated")
+
+    rows = []
+    prev = bytearray(stride)
+    offset = 0
+    for _ in range(height):
+        filter_type = raw[offset]
+        offset += 1
+        current = bytearray(raw[offset : offset + stride])
+        offset += stride
+        unfilter_png_row(current, prev, channels, filter_type)
+        if channels == 4:
+            rgb = bytearray(width * 3)
+            for x in range(width):
+                src = x * 4
+                dst = x * 3
+                rgb[dst : dst + 3] = current[src : src + 3]
+            rows.append(bytes(rgb))
+        else:
+            rows.append(bytes(current))
+        prev = current
+
+    return {"width": width, "height": height, "rows": rows}
+
+
+def unfilter_png_row(row: bytearray, prev: bytearray, bpp: int, filter_type: int) -> None:
+    for i in range(len(row)):
+        left = row[i - bpp] if i >= bpp else 0
+        up = prev[i]
+        up_left = prev[i - bpp] if i >= bpp else 0
+        if filter_type == 0:
+            value = row[i]
+        elif filter_type == 1:
+            value = row[i] + left
+        elif filter_type == 2:
+            value = row[i] + up
+        elif filter_type == 3:
+            value = row[i] + ((left + up) // 2)
+        elif filter_type == 4:
+            value = row[i] + paeth(left, up, up_left)
+        else:
+            raise ValueError(f"unsupported PNG filter {filter_type}")
+        row[i] = value & 0xFF
+
+
+def paeth(left: int, up: int, up_left: int) -> int:
+    estimate = left + up - up_left
+    left_distance = abs(estimate - left)
+    up_distance = abs(estimate - up)
+    up_left_distance = abs(estimate - up_left)
+    if left_distance <= up_distance and left_distance <= up_left_distance:
+        return left
+    if up_distance <= up_left_distance:
+        return up
+    return up_left
 
 
 if __name__ == "__main__":

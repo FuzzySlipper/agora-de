@@ -122,6 +122,8 @@ AGORA_DE_LIVE_SHELL_URL=http://127.0.0.1:7780/shell/dist/desktop/?surface=dock \
 AGORA_DE_LIVE_CATALOG_URL=http://127.0.0.1:7780/api/catalog/apps \
 AGORA_DE_LIVE_SURFACES_URL=http://127.0.0.1:7780/api/surfaces \
 AGORA_DE_LIVE_WORK_CONTROLS_URL=http://127.0.0.1:7780/api/work-surface-controls \
+AGORA_DE_LIVE_SURFACE_APP_ID=io.agorade.ShellPanel \
+AGORA_DE_LIVE_SURFACE_ROLE=panel \
 ./harness/live/check-den-k8.py
 ```
 
@@ -134,11 +136,15 @@ For route-only testing without systemd/socket checks:
   --shell-url http://127.0.0.1:7780/shell/dist/desktop/?surface=dock \
   --catalog-url http://127.0.0.1:7780/api/catalog/apps \
   --surfaces-url http://127.0.0.1:7780/api/surfaces \
-  --work-controls-url http://127.0.0.1:7780/api/work-surface-controls
+  --work-controls-url http://127.0.0.1:7780/api/work-surface-controls \
+  --surface-app-id io.agorade.ShellPanel \
+  --surface-role panel
 ```
 
-These route checks prove installed model/route shape. User-visible visual claims
-still require capture/readback evidence.
+The route checks prove installed model/route shape. The compositor surface
+readback adds mapped/visible and content-commit evidence. User-visible visual
+claims still require human confirmation or physical output capture until output
+pixel capture lands.
 
 For the den-k8 user-service restart and visibility playbook, see
 `docs/den-k8-visible-shell-runbook.md`.

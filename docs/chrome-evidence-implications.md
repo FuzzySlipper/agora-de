@@ -17,7 +17,7 @@ Do not promote native chrome to product source outside `chrome/`, and do not use
 | Option | Inspection impact | Live evidence implication |
 | --- | --- | --- |
 | Webview-hosted shell | DOM/model checks are useful for development, but final closure still needs compositor capture/readback. | den-k8 checks should verify shell routes, then require capture evidence for user-visible dock/panel claims. |
-| GTK4/WebKitGTK layer-shell chrome | Layer-shell gives stronger panel/dock placement and input behavior than the old GTK3 panel path, but visual truth still comes from compositor readback. | The default installed path should map background and panel surfaces; closure still requires human or capture evidence until physical output capture exists. |
+| GTK4/WebKitGTK layer-shell chrome | Layer-shell gives stronger panel/dock placement and input behavior than the old GTK3 panel path, but visual truth still comes from compositor/output readback. | The default installed path maps background and panel surfaces; closure uses physical output capture with expected shell-pixel classification. |
 | Compositor-hosted chrome | Strongest control over geometry and input, highest compositor coupling. | Requires backend decision update plus capture/readback evidence for every promoted shell claim. |
 
 ## Scenario Mapping
@@ -64,7 +64,8 @@ gtk4-layer-shell spike. The installed panel path now uses a repo-owned GTK4
 helper with the same layer-shell configuration.
 
 Mapped shell state alone remains insufficient. A user-visible chrome claim closes
-only with a nonblank capture packet or a stronger compositor readback packet.
+with a physical output capture packet whose pixel classifier reports the
+expected shell background, accent line, dock/panel region, and text-like pixels.
 
 ## Frame Count And Output Capture
 
@@ -74,16 +75,16 @@ layer-shell `client_commit`, but the bridge only increments `frame_count` for
 `frame_done`. Treat `frame_count: 0` as insufficient evidence, not as proof that
 GTK4 did not paint.
 
-The evidence ladder should grow in two directions:
+The evidence ladder has grown in two directions:
 
 - content-commit evidence for layer-shell surfaces, counted separately from true
   presented frames;
-- physical output capture for the active den-k8 monitor, which should become the
-  strongest visible-shell proof.
+- physical output capture for the active den-k8 monitor, now the strongest
+  visible-shell proof.
 
 The intended ordering is:
 
 1. mapped-only: insufficient for visual claims;
 2. content committed: the client submitted surface content;
 3. frame presented: compositor presentation metadata exists;
-4. capture visible: output/capture evidence confirms visible pixels.
+4. capture visible: physical output capture confirms expected shell pixels.
