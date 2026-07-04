@@ -201,5 +201,34 @@ func writeShellHTML(response http.ResponseWriter, request *http.Request) {
 		surface = "desktop"
 	}
 	response.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(response, "<!doctype html><html><head><title>agora-de shell</title></head><body data-surface=%q>agora-de shell: %s</body></html>", surface, surface)
+	fmt.Fprintf(response, `<!doctype html>
+<html>
+<head>
+  <title>agora-de shell</title>
+  <style>
+    html,
+    body {
+      background: #f8fafc;
+      color: #102027;
+      font: 600 22px system-ui, sans-serif;
+      height: 100%%;
+      margin: 0;
+    }
+    body {
+      align-items: center;
+      box-sizing: border-box;
+      display: flex;
+      gap: 18px;
+      padding: 0 28px;
+    }
+    .mark {
+      background: #00d1b2;
+      border-radius: 4px;
+      height: 40px;
+      width: 40px;
+    }
+  </style>
+</head>
+<body data-surface=%q><span class="mark"></span><span>agora-de shell: %s</span></body>
+</html>`, surface, surface)
 }

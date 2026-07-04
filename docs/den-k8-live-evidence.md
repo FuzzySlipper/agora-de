@@ -50,6 +50,7 @@ Current den-k8 installed-service surfaces observed on this host:
 | Compositor bridge | `/run/agent-os/compositor-bridge.sock` | Unix socket exists and accepts connection |
 | Compositor control | `/run/agent-os/compositor-control.sock` | Unix socket exists and accepts connection |
 | Capture artifacts | `/run/agent-os/captures` | capture JSON supplied to the runner |
+| Surface frame readback | `compositorctl list-surfaces` | selected surface mapped/visible and optional `frame_count` |
 
 The shell route currently proves installed shell availability, not visual
 correctness. Visual claims need capture evidence.
@@ -143,6 +144,27 @@ AGORA_DE_LIVE_SURFACES_URL=http://127.0.0.1:7780/api/surfaces \
 These route checks prove installed model/route shape. They do not close visual
 claims without capture/readback evidence.
 
+Run with compositor surface readback:
+
+```bash
+AGORA_DE_LIVE_SURFACE_APP_ID=io.agorade.ShellPanel \
+AGORA_DE_LIVE_SURFACE_ROLE=panel \
+./harness/live/check-den-k8.py
+```
+
+Require the selected surface to have presented a frame:
+
+```bash
+AGORA_DE_LIVE_REQUIRE_FRAME=1 \
+AGORA_DE_LIVE_SURFACE_APP_ID=io.agorade.ShellPanel \
+AGORA_DE_LIVE_SURFACE_ROLE=panel \
+./harness/live/check-den-k8.py
+```
+
+Frame readback is stronger than mapped-surface JSON and weaker than capture. A
+mapped layer-shell surface with `frame_count: 0` remains insufficient for a
+visual claim.
+
 Require capture evidence for the run to pass:
 
 ```bash
@@ -158,6 +180,10 @@ Useful overrides:
 - `AGORA_DE_LIVE_SOCKETS`
 - `AGORA_DE_LIVE_CAPTURE_JSON`
 - `AGORA_DE_LIVE_REQUIRE_CAPTURE`
+- `AGORA_DE_LIVE_COMPOSITORCTL`
+- `AGORA_DE_LIVE_SURFACE_APP_ID`
+- `AGORA_DE_LIVE_SURFACE_ROLE`
+- `AGORA_DE_LIVE_REQUIRE_FRAME`
 - `AGORA_DE_LIVE_CATALOG_URL`
 - `AGORA_DE_LIVE_SURFACES_URL`
 - `AGORA_DE_LIVE_WORK_CONTROLS_URL`

@@ -30,6 +30,7 @@ Suggested install paths:
 
 ```text
 ~/.config/systemd/user/agora-de-shellui.service
+~/.config/systemd/user/agora-de-shell-background.service
 ~/.config/systemd/user/agora-de-shell-panel.service
 ~/.config/agora-de/shellui.env
 ~/.local/bin/agora-de-shellui
@@ -42,11 +43,13 @@ Install and start:
 ```bash
 go build -C go -o ~/.local/bin/agora-de-shellui ./cmd/shellui
 install -D -m 0644 deploy/shellui/agora-de-shellui.user.service ~/.config/systemd/user/agora-de-shellui.service
+install -D -m 0644 deploy/shellui/agora-de-shell-background.user.service ~/.config/systemd/user/agora-de-shell-background.service
 install -D -m 0644 deploy/shellui/agora-de-shell-panel.user.service ~/.config/systemd/user/agora-de-shell-panel.service
 install -D -m 0755 deploy/shellui/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
 install -D -m 0644 deploy/shellui/shellui.user.env.example ~/.config/agora-de/shellui.env
 systemctl --user daemon-reload
 systemctl --user enable --now agora-de-shellui.service
+systemctl --user enable --now agora-de-shell-background.service
 systemctl --user enable --now agora-de-shell-panel.service
 ```
 
@@ -54,11 +57,11 @@ The user-service example uses `127.0.0.1:17780` to avoid colliding with the
 currently bound predecessor port `7780`. Move it to `7780` once that port is
 free or intentionally replaced.
 
-`agora-de-shell-panel.service` launches a layer-shell panel webview pointed at
-the user shellui service through `compositorctl`, then keeps systemd attached to
-the mapped surface and WebView client process. It is intentionally separate from
-the HTTP service so route evidence and visible-monitor evidence can be restarted
-independently.
+`agora-de-shell-background.service` and `agora-de-shell-panel.service` launch
+layer-shell WebViews pointed at the user shellui service, then keep systemd
+attached to the mapped surface and WebView client process. They are
+intentionally separate from the HTTP service so route evidence, full-screen
+background evidence, and panel evidence can be restarted independently.
 
 ## System Systemd
 
@@ -126,3 +129,6 @@ For route-only testing without systemd/socket checks:
 
 These route checks prove installed model/route shape. User-visible visual claims
 still require capture/readback evidence.
+
+For the den-k8 user-service restart and visibility playbook, see
+`docs/den-k8-visible-shell-runbook.md`.

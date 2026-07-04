@@ -1,0 +1,24 @@
+[Unit]
+Description=Agora DE Shell Background WebView (user service)
+After=agora-de-shellui.service
+Wants=agora-de-shellui.service
+
+[Service]
+Type=simple
+Environment=AGORA_DE_SHELL_SURFACE_URL=http://127.0.0.1:17780/shell/dist/desktop/?surface=background
+Environment=AGORA_DE_SHELL_SURFACE_ROLE=background
+Environment=AGORA_DE_SHELL_SURFACE_TITLE=AGORA-DE-SHELL-BACKGROUND
+Environment=AGORA_DE_SHELL_SURFACE_APP_ID=io.agorade.ShellBackground
+Environment=AGORA_DE_SHELL_SURFACE_WIDTH=2560
+Environment=AGORA_DE_SHELL_SURFACE_HEIGHT=1440
+ExecStart=%h/.local/bin/agora-de-shell-panel-supervisor
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

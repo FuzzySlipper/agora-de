@@ -5,14 +5,15 @@ IFS=$'\n\t'
 
 COMPOSITORCTL=${COMPOSITORCTL:-/usr/local/bin/compositorctl}
 WEBVIEW_LAUNCHER=${WEBVIEW_LAUNCHER:-/usr/local/bin/webview-launcher}
-PANEL_URL=${AGORA_DE_SHELL_PANEL_URL:-http://127.0.0.1:17780/shell/dist/desktop/?surface=dock}
-PANEL_ROLE=${AGORA_DE_SHELL_PANEL_ROLE:-panel}
-PANEL_TITLE=${AGORA_DE_SHELL_PANEL_TITLE:-AGORA-DE-SHELL-PANEL}
-PANEL_APP_ID=${AGORA_DE_SHELL_PANEL_APP_ID:-io.agorade.ShellPanel}
-PANEL_WIDTH=${AGORA_DE_SHELL_PANEL_WIDTH:-2560}
-PANEL_HEIGHT=${AGORA_DE_SHELL_PANEL_HEIGHT:-96}
-WAIT_TIMEOUT_MS=${AGORA_DE_SHELL_PANEL_WAIT_TIMEOUT_MS:-8000}
-POLL_INTERVAL_SECONDS=${AGORA_DE_SHELL_PANEL_POLL_INTERVAL_SECONDS:-1}
+SURFACE_URL=${AGORA_DE_SHELL_SURFACE_URL:-${AGORA_DE_SHELL_PANEL_URL:-http://127.0.0.1:17780/shell/dist/desktop/?surface=dock}}
+SURFACE_ROLE=${AGORA_DE_SHELL_SURFACE_ROLE:-${AGORA_DE_SHELL_PANEL_ROLE:-panel}}
+SURFACE_TITLE=${AGORA_DE_SHELL_SURFACE_TITLE:-${AGORA_DE_SHELL_PANEL_TITLE:-AGORA-DE-SHELL-PANEL}}
+SURFACE_APP_ID=${AGORA_DE_SHELL_SURFACE_APP_ID:-${AGORA_DE_SHELL_PANEL_APP_ID:-io.agorade.ShellPanel}}
+SURFACE_WIDTH=${AGORA_DE_SHELL_SURFACE_WIDTH:-${AGORA_DE_SHELL_PANEL_WIDTH:-2560}}
+SURFACE_HEIGHT=${AGORA_DE_SHELL_SURFACE_HEIGHT:-${AGORA_DE_SHELL_PANEL_HEIGHT:-96}}
+CLOSE_EXISTING=${AGORA_DE_SHELL_SURFACE_CLOSE_EXISTING:-true}
+WAIT_TIMEOUT_MS=${AGORA_DE_SHELL_SURFACE_WAIT_TIMEOUT_MS:-${AGORA_DE_SHELL_PANEL_WAIT_TIMEOUT_MS:-8000}}
+POLL_INTERVAL_SECONDS=${AGORA_DE_SHELL_SURFACE_POLL_INTERVAL_SECONDS:-${AGORA_DE_SHELL_PANEL_POLL_INTERVAL_SECONDS:-1}}
 
 surface_id=""
 launcher_pid=""
@@ -71,7 +72,38 @@ print(json.dumps({
     "surface_id": surface.get("id") or "",
     "client_pid": client.get("pid") or "",
 }))
-' "$PANEL_APP_ID" "$PANEL_ROLE"
+' "$SURFACE_APP_ID" "$SURFACE_ROLE"
+}
+
+close_existing_surfaces() {
+  "$COMPOSITORCTL" list-surfaces | python3 -c '
+import json
+import sys
+
+app_id = sys.argv[1]
+role = sys.argv[2]
+data = json.load(sys.stdin)
+for item in data.get("surfaces", []):
+    surface = item.get("surface") or {}
+    if surface.get("app_id") == app_id and surface.get("role") == role:
+        surface_id = surface.get("id") or ""
+        client = item.get("client") or {}
+        pid = client.get("pid") or ""
+        if surface_id:
+            print(f"{surface_id}\t{pid}")
+' "$SURFACE_APP_ID" "$SURFACE_ROLE" | while IFS= read -r existing_surface; do
+    surface_to_close=${existing_surface%%$'\t'*}
+    pid_to_kill=${existing_surface#*$'\t'}
+    if [[ "$pid_to_kill" == "$existing_surface" ]]; then
+      pid_to_kill=""
+    fi
+    log "terminating stale Agora DE shell surface_id=$surface_to_close app_id=$SURFACE_APP_ID role=$SURFACE_ROLE pid=${pid_to_kill:-unknown}"
+    if [[ -n "$pid_to_kill" ]]; then
+      kill "$pid_to_kill" >/dev/null 2>&1 || true
+    else
+      "$COMPOSITORCTL" surface close --surface "$surface_to_close" >/dev/null 2>&1 || true
+    fi
+  done
 }
 
 surface_present() {
@@ -100,7 +132,7 @@ cleanup() {
   local status=${1:-0}
   trap - TERM INT EXIT
   if [[ -n "$surface_id" ]]; then
-    log "closing Agora DE shell panel surface_id=$surface_id"
+    log "closing Agora DE shell surface_id=$surface_id"
     "$COMPOSITORCTL" surface close --surface "$surface_id" >/dev/null 2>&1 || true
   fi
   if [[ -n "$client_pid" ]]; then
@@ -121,15 +153,19 @@ need python3
 
 webview_args=(
   "$WEBVIEW_LAUNCHER"
-  --url "$PANEL_URL"
-  --role "$PANEL_ROLE"
-  --width "$PANEL_WIDTH"
-  --height "$PANEL_HEIGHT"
-  --title "$PANEL_TITLE"
-  --app-id "$PANEL_APP_ID"
+  --url "$SURFACE_URL"
+  --role "$SURFACE_ROLE"
+  --width "$SURFACE_WIDTH"
+  --height "$SURFACE_HEIGHT"
+  --title "$SURFACE_TITLE"
+  --app-id "$SURFACE_APP_ID"
 )
 
-log "launching Agora DE shell panel: url=$PANEL_URL role=$PANEL_ROLE title=$PANEL_TITLE app_id=$PANEL_APP_ID size=${PANEL_WIDTH}x${PANEL_HEIGHT}"
+if [[ "$CLOSE_EXISTING" == "true" ]]; then
+  close_existing_surfaces
+fi
+
+log "launching Agora DE shell surface: url=$SURFACE_URL role=$SURFACE_ROLE title=$SURFACE_TITLE app_id=$SURFACE_APP_ID size=${SURFACE_WIDTH}x${SURFACE_HEIGHT}"
 "${webview_args[@]}" &
 launcher_pid=$!
 
@@ -144,7 +180,7 @@ while true; do
   fi
   if [[ $(date +%s%3N) -ge $deadline_ms ]]; then
     rm -f "$surface_json"
-    log "panel launch did not map a matching surface before timeout"
+    log "shell surface launch did not map a matching surface before timeout"
     exit 1
   fi
   sleep 0.2
@@ -152,24 +188,24 @@ done
 rm -f "$surface_json"
 
 if [[ -z "$surface_id" ]]; then
-  log "panel launch returned an empty surface id"
+  log "shell surface launch returned an empty surface id"
   exit 1
 fi
 
 if ! process_present "$launcher_pid"; then
-  log "panel launcher process exited after mapping; monitoring client surface"
+  log "shell surface launcher process exited after mapping; monitoring client surface"
   launcher_pid=""
 fi
 
-log "Agora DE shell panel mapped surface_id=$surface_id launcher_pid=${launcher_pid:-exited} client_pid=${client_pid:-unknown}"
+log "Agora DE shell surface mapped surface_id=$surface_id launcher_pid=${launcher_pid:-exited} client_pid=${client_pid:-unknown}"
 
 while true; do
   if ! surface_present "$surface_id"; then
-    log "panel surface disappeared: $surface_id"
+    log "shell surface disappeared: $surface_id"
     exit 1
   fi
   if [[ -n "$client_pid" ]] && ! process_present "$client_pid"; then
-    log "panel client process exited: $client_pid"
+    log "shell surface client process exited: $client_pid"
     exit 1
   fi
   sleep "$POLL_INTERVAL_SECONDS"

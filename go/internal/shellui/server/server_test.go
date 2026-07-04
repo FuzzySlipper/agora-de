@@ -22,6 +22,9 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	if !strings.Contains(strings.ToLower(body), "<!doctype html>") {
 		t.Fatalf("shell body = %q, want doctype html", body)
 	}
+	if !strings.Contains(body, "#f8fafc") || !strings.Contains(body, "#00d1b2") {
+		t.Fatalf("shell body = %q, want high-contrast fallback paint styles", body)
+	}
 
 	var catalogResponse struct {
 		Apps []struct {

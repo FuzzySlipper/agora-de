@@ -54,6 +54,27 @@ def main() -> int:
         help="Optional installed-service capture JSON to classify into an EvidencePacket.",
     )
     parser.add_argument(
+        "--compositorctl",
+        default=os.environ.get("AGORA_DE_LIVE_COMPOSITORCTL", "compositorctl"),
+        help="compositorctl binary used for optional surface readback checks.",
+    )
+    parser.add_argument(
+        "--surface-app-id",
+        default=os.environ.get("AGORA_DE_LIVE_SURFACE_APP_ID", ""),
+        help="Optional compositor surface app id expected to be mapped.",
+    )
+    parser.add_argument(
+        "--surface-role",
+        default=os.environ.get("AGORA_DE_LIVE_SURFACE_ROLE", ""),
+        help="Optional compositor surface role expected with --surface-app-id.",
+    )
+    parser.add_argument(
+        "--require-frame",
+        action="store_true",
+        default=os.environ.get("AGORA_DE_LIVE_REQUIRE_FRAME", "") == "1",
+        help="Fail when the selected compositor surface has not presented a frame.",
+    )
+    parser.add_argument(
         "--catalog-url",
         default=os.environ.get("AGORA_DE_LIVE_CATALOG_URL", ""),
         help="Optional installed app catalog JSON route to validate.",
@@ -116,6 +137,18 @@ def main() -> int:
                 "AGORA_DE_LIVE_CAPTURE_JSON or --capture-json is required for capture evidence",
             )
         )
+
+    if args.surface_app_id:
+        surface_check, packet = check_compositor_surface(
+            args.compositorctl,
+            args.surface_app_id,
+            args.surface_role,
+            args.require_frame,
+            checked_at,
+        )
+        checks.append(surface_check)
+        if packet:
+            evidence_packets.append(packet)
 
     route_claims = [
         (
@@ -332,6 +365,115 @@ def unavailable_packet(scenario: str, checked_at: int) -> dict:
         "visualStatus": "unknown",
         "captureClassification": "not_visible",
     }
+
+
+def check_compositor_surface(
+    compositorctl: str,
+    app_id: str,
+    role: str,
+    require_frame: bool,
+    checked_at: int,
+) -> tuple[dict, dict | None]:
+    try:
+        completed = subprocess.run(
+            [compositorctl, "list-surfaces"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return failed_check(app_id, "surface-readback", f"compositorctl failed: {error}"), unavailable_packet(
+            "den-k8-compositor-surface-readback",
+            checked_at,
+        )
+
+    if completed.returncode != 0:
+        return failed_check(
+            app_id,
+            "surface-readback",
+            "compositorctl list-surfaces failed",
+            stderr=completed.stderr.strip(),
+        ), unavailable_packet("den-k8-compositor-surface-readback", checked_at)
+
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        return failed_check(app_id, "surface-readback", f"invalid compositorctl JSON: {error}"), unavailable_packet(
+            "den-k8-compositor-surface-readback",
+            checked_at,
+        )
+
+    matches = []
+    for item in payload.get("surfaces", []):
+        surface = item.get("surface") or {}
+        if surface.get("app_id") != app_id:
+            continue
+        if role and surface.get("role") != role:
+            continue
+        matches.append(item)
+
+    if not matches:
+        return failed_check(app_id, "surface-readback", "matching compositor surface was not mapped"), unavailable_packet(
+            "den-k8-compositor-surface-readback",
+            checked_at,
+        )
+
+    selected = sorted(matches, key=lambda item: item.get("updated_at") or "")[-1]
+    surface = selected.get("surface") or {}
+    frame_count = int(selected.get("frame_count") or 0)
+    visible = bool(selected.get("visible") or surface.get("visible"))
+    surface_id = surface.get("id") or app_id
+
+    packet = {
+        "scenario": "den-k8-compositor-surface-readback",
+        "capturedAtUnixMillis": checked_at,
+        "surfaceId": surface_id,
+        "visualStatus": "unknown",
+        "frameCount": frame_count,
+        "captureClassification": "frame_presented" if frame_count > 0 else "insufficient_mapped_only",
+    }
+
+    if not visible:
+        packet["captureClassification"] = "not_visible"
+        return failed_check(
+            surface_id,
+            "surface-readback",
+            "matching compositor surface is mapped but not visible",
+            appId=app_id,
+            role=surface.get("role"),
+            frameCount=frame_count,
+        ), packet
+
+    if require_frame and frame_count <= 0:
+        return failed_check(
+            surface_id,
+            "surface-readback",
+            "matching compositor surface is visible but has not presented a frame",
+            appId=app_id,
+            role=surface.get("role"),
+            frameCount=frame_count,
+        ), packet
+
+    if frame_count > 0:
+        return passed_check(
+            surface_id,
+            "surface-readback",
+            "matching compositor surface is visible and has presented a frame",
+            appId=app_id,
+            role=surface.get("role"),
+            frameCount=frame_count,
+        ), packet
+
+    return passed_check(
+        surface_id,
+        "surface-readback",
+        "matching compositor surface is visible but has no frame evidence",
+        appId=app_id,
+        role=surface.get("role"),
+        frameCount=frame_count,
+    ), packet
 
 
 def classify_capture_json(path: pathlib.Path, checked_at: int) -> tuple[dict, dict | None]:
