@@ -1,0 +1,15 @@
+[Unit]
+Description=Agora DE Shell UI
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/agora-de/shellui.env
+ExecStart=/opt/agora-de/bin/shellui
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

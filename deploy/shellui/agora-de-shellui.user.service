@@ -1,0 +1,19 @@
+[Unit]
+Description=Agora DE Shell UI (user service)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+EnvironmentFile=-%h/.config/agora-de/shellui.env
+ExecStart=%h/.local/bin/agora-de-shellui
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

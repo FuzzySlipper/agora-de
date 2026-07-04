@@ -1,0 +1,18 @@
+[Unit]
+Description=Agora DE Shell Panel WebView (user service)
+After=agora-de-shellui.service
+Wants=agora-de-shellui.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/agora-de-shell-panel-supervisor
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

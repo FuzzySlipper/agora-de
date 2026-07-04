@@ -46,6 +46,22 @@ func TestHandlerServesSurfaceViews(t *testing.T) {
 	}
 }
 
+func TestHandlerServesCustomPath(t *testing.T) {
+	handler := Handler{
+		Path: "/api/work-surface-controls",
+		Provider: func(*http.Request) ([]surfaces.SurfaceView, error) {
+			return []surfaces.SurfaceView{{ID: "view-42", OwnerUID: 60001}}, nil
+		},
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/work-surface-controls", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}
+
 func TestHandlerRejectsNonGet(t *testing.T) {
 	handler := New(func(*http.Request) ([]surfaces.SurfaceView, error) {
 		return nil, nil

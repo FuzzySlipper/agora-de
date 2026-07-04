@@ -13,6 +13,7 @@ type Provider func(*http.Request) ([]surfaces.SurfaceView, error)
 
 type Handler struct {
 	Provider Provider
+	Path     string
 }
 
 type surfacesResponse struct {
@@ -24,11 +25,11 @@ type errorResponse struct {
 }
 
 func New(provider Provider) Handler {
-	return Handler{Provider: provider}
+	return Handler{Provider: provider, Path: SurfacesPath}
 }
 
 func (handler Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != SurfacesPath {
+	if request.URL.Path != handler.path() {
 		http.NotFound(response, request)
 		return
 	}
@@ -49,6 +50,13 @@ func (handler Handler) ServeHTTP(response http.ResponseWriter, request *http.Req
 	}
 
 	writeJSON(response, http.StatusOK, surfacesResponse{Surfaces: views})
+}
+
+func (handler Handler) path() string {
+	if handler.Path == "" {
+		return SurfacesPath
+	}
+	return handler.Path
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

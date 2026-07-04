@@ -89,6 +89,17 @@ may_import = ["go/internal/surfacetrack"]
 lane = "go-shellui"
 may_import = ["go/internal/shellui/surfaces"]
 
+[go_package."go/internal/shellui/server"]
+lane = "go-shellui"
+may_import = [
+  "go/internal/appcatalog",
+  "go/internal/shellui/catalog",
+  "go/internal/shellui/catalogroute",
+  "go/internal/shellui/staticserve",
+  "go/internal/shellui/surfaceroute",
+  "go/internal/shellui/surfaces",
+]
+
 # Rust lanes
 
 [crate."de-rs/crates/foundation/de-ids"]
