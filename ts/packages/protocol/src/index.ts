@@ -1,5 +1,10 @@
 export type {
   AdminEscalationSummary,
+  AgentInfo,
+  AgentState,
+  AuditEvent,
+  CatalogApp,
+  CatalogAppsResponse,
   CaptureClassification,
   EvidencePacket,
   SurfaceEvent,

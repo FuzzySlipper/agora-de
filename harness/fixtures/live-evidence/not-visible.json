@@ -1,0 +1,26 @@
+{
+  "schema": "agora-de.den-k8-live-evidence.v1",
+  "host": "den-k8-fixture",
+  "checkedAtUnixMillis": 4,
+  "checks": [
+    {
+      "name": "capture-unknown.json",
+      "category": "capture",
+      "status": "fail",
+      "detail": "capture JSON does not prove visibility"
+    }
+  ],
+  "evidencePackets": [
+    {
+      "scenario": "den-k8-installed-service-capture",
+      "capturedAtUnixMillis": 4,
+      "visualStatus": "unknown",
+      "captureClassification": "not_visible"
+    }
+  ],
+  "summary": {
+    "status": "fail",
+    "passed": 0,
+    "failed": 1
+  }
+}

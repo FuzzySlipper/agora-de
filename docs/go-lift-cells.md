@@ -239,6 +239,50 @@ Does not own:
 This cell may depend on `appcatalog`, and only projects visible entries into
 shell view data.
 
+## `shellui/surfaces`
+
+Path:
+
+```text
+go/internal/shellui/surfaces
+```
+
+Owns:
+
+- shell-facing surface lifecycle view projection;
+- mapped/focused/denied-input response fields for shell consumers;
+- deterministic ordering for route output.
+
+Does not own:
+
+- Wayfire socket decoding;
+- compositor projection mutation;
+- HTTP routing;
+- input policy decisions.
+
+This cell may depend on `surfacetrack` for read-only surface snapshots.
+
+## `shellui/surfaceroute`
+
+Path:
+
+```text
+go/internal/shellui/surfaceroute
+```
+
+Owns:
+
+- HTTP exposure of shell surface lifecycle views at `/api/surfaces`;
+- method/path checks;
+- fail-closed unavailable-provider behavior.
+
+Does not own:
+
+- surface lifecycle projection;
+- Wayfire protocol decoding;
+- policy commands;
+- static shell asset serving.
+
 ## `shellui/catalogroute`
 
 Path:

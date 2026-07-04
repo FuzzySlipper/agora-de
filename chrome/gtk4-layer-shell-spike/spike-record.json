@@ -1,0 +1,24 @@
+{
+  "schema": "agora-de.gtk4-layer-shell-spike.v1",
+  "status": "inspectable_spike",
+  "toolkit": {
+    "ui": "GTK4",
+    "webview": "WebKitGTK",
+    "layerShell": "gtk4-layer-shell"
+  },
+  "targetSurfaces": [
+    "dock",
+    "panel",
+    "operator-overlay"
+  ],
+  "observations": {
+    "interaction": "Native shell chrome can own panel/dock input focus and delegate content/customization regions to WebKitGTK web views.",
+    "layering": "Layer-shell anchoring can keep dock and panel surfaces out of normal application toplevel management when compositor support is present.",
+    "deployment": "Product source belongs under chrome/; deploy/ should package built chrome artifacts only after the source architecture is chosen.",
+    "inspection": "Layer-shell chrome still requires compositor capture/readback evidence for user-visible claims; DOM-level checks are not sufficient."
+  },
+  "decision": {
+    "promoteToProductSource": false,
+    "reason": "Keep as an inspectable spike until den-k8 live evidence proves native layer-shell chrome is more reliable than webview-hosted shell chrome for dock/panel claims."
+  }
+}

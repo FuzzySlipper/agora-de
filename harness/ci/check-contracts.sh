@@ -11,3 +11,5 @@ cargo run \
   -p protocol-codegen \
   -- \
   --check "$GENERATED_TS"
+
+python3 "$ROOT/harness/depgraph/check-live-evidence.py" "$ROOT"

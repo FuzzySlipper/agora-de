@@ -79,6 +79,14 @@ func (projection *Projection) Surface(id string) (SurfaceState, bool) {
 	return state, ok
 }
 
+func (projection *Projection) Surfaces() []SurfaceState {
+	states := make([]SurfaceState, 0, len(projection.surfaces))
+	for _, state := range projection.surfaces {
+		states = append(states, state)
+	}
+	return states
+}
+
 func (projection *Projection) FocusedSurfaceID() string {
 	return projection.focusedID
 }

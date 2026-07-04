@@ -1,0 +1,26 @@
+{
+  "schema": "agora-de.den-k8-live-evidence.v1",
+  "host": "den-k8-fixture",
+  "checkedAtUnixMillis": 3,
+  "checks": [
+    {
+      "name": "capture-blank.json",
+      "category": "capture",
+      "status": "fail",
+      "detail": "capture JSON reports blank inspection"
+    }
+  ],
+  "evidencePackets": [
+    {
+      "scenario": "den-k8-installed-service-capture",
+      "capturedAtUnixMillis": 3,
+      "visualStatus": "blank",
+      "captureClassification": "blank_capture_failure"
+    }
+  ],
+  "summary": {
+    "status": "fail",
+    "passed": 0,
+    "failed": 1
+  }
+}

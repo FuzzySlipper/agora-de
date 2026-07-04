@@ -1,0 +1,26 @@
+{
+  "schema": "agora-de.den-k8-live-evidence.v1",
+  "host": "den-k8-fixture",
+  "checkedAtUnixMillis": 2,
+  "checks": [
+    {
+      "name": "capture-visible.json",
+      "category": "capture",
+      "status": "pass",
+      "detail": "capture JSON reports visible inspection"
+    }
+  ],
+  "evidencePackets": [
+    {
+      "scenario": "den-k8-installed-service-capture",
+      "capturedAtUnixMillis": 2,
+      "visualStatus": "visible",
+      "captureClassification": "capture_visible"
+    }
+  ],
+  "summary": {
+    "status": "pass",
+    "passed": 1,
+    "failed": 0
+  }
+}

@@ -1,6 +1,6 @@
 import { projectSurfaceLifecycle } from '@agora-de/domain';
 import type { SurfaceLifecycleView } from '@agora-de/domain';
-import type { ClassifiedError, DeResult, SurfaceEvent } from '@agora-de/protocol';
+import type { CatalogApp, ClassifiedError, DeResult, SurfaceEvent } from '@agora-de/protocol';
 
 export type AsyncState<T> =
   | { readonly kind: 'idle' }
@@ -21,4 +21,10 @@ export function surfaceLifecycleState(
   return result.ok
     ? dataState(projectSurfaceLifecycle(result.value))
     : { kind: 'error', error: result.error };
+}
+
+export function appCatalogState(
+  result: DeResult<readonly CatalogApp[]>,
+): AsyncState<readonly CatalogApp[]> {
+  return result.ok ? dataState(result.value) : { kind: 'error', error: result.error };
 }

@@ -10,3 +10,9 @@ impl ThemeToken {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogApp {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+}

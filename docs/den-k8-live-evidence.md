@@ -43,6 +43,9 @@ Current den-k8 installed-service surfaces observed on this host:
 | Service health | `agora-wayfire.service` | `systemctl is-active agora-wayfire.service` |
 | Service health | `agora-shell-panel.service` | `systemctl is-active agora-shell-panel.service` |
 | Shell UI | `http://127.0.0.1:7780/shell/dist/desktop/?surface=dock` | HTTP 200 shell HTML |
+| Shell UI claim | optional app catalog route | JSON payload with `apps` array |
+| Shell UI claim | optional surface lifecycle route | JSON payload with `surfaces` array |
+| Shell UI claim | optional work surface controls route | JSON payload with `surfaces` array |
 | Compositor/event bus | `/run/agent-os/bus.sock` | Unix socket exists and accepts connection |
 | Compositor bridge | `/run/agent-os/compositor-bridge.sock` | Unix socket exists and accepts connection |
 | Compositor control | `/run/agent-os/compositor-control.sock` | Unix socket exists and accepts connection |
@@ -67,6 +70,7 @@ Classification mapping:
 | Live observation | `visualStatus` | `captureClassification` |
 | --- | --- | --- |
 | Shell route/service/socket only, no capture | `unknown` | `insufficient_mapped_only` |
+| Valid installed JSON claim route, no capture | `unknown` | `insufficient_mapped_only` |
 | Presented frame metadata without capture | `unknown` | `frame_presented` |
 | Capture JSON with `visual_inspection.status == visible` | `visible` | `capture_visible` |
 | Capture JSON with `visual_inspection.status == blank` | `blank` | `blank_capture_failure` |
@@ -128,6 +132,17 @@ Run with capture evidence:
 AGORA_DE_LIVE_CAPTURE_JSON=/path/to/capture.json ./harness/live/check-den-k8.py
 ```
 
+Run with optional installed-service route claims:
+
+```bash
+AGORA_DE_LIVE_CATALOG_URL=http://127.0.0.1:7780/api/catalog/apps \
+AGORA_DE_LIVE_SURFACES_URL=http://127.0.0.1:7780/api/surfaces \
+./harness/live/check-den-k8.py
+```
+
+These route checks prove installed model/route shape. They do not close visual
+claims without capture/readback evidence.
+
 Require capture evidence for the run to pass:
 
 ```bash
@@ -143,6 +158,9 @@ Useful overrides:
 - `AGORA_DE_LIVE_SOCKETS`
 - `AGORA_DE_LIVE_CAPTURE_JSON`
 - `AGORA_DE_LIVE_REQUIRE_CAPTURE`
+- `AGORA_DE_LIVE_CATALOG_URL`
+- `AGORA_DE_LIVE_SURFACES_URL`
+- `AGORA_DE_LIVE_WORK_CONTROLS_URL`
 - `AGORA_DE_LIVE_TIMEOUT_SECONDS`
 
 This harness belongs under `harness/live/` because it checks an installed

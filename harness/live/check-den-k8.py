@@ -54,6 +54,21 @@ def main() -> int:
         help="Optional installed-service capture JSON to classify into an EvidencePacket.",
     )
     parser.add_argument(
+        "--catalog-url",
+        default=os.environ.get("AGORA_DE_LIVE_CATALOG_URL", ""),
+        help="Optional installed app catalog JSON route to validate.",
+    )
+    parser.add_argument(
+        "--surfaces-url",
+        default=os.environ.get("AGORA_DE_LIVE_SURFACES_URL", ""),
+        help="Optional installed surface lifecycle JSON route to validate.",
+    )
+    parser.add_argument(
+        "--work-controls-url",
+        default=os.environ.get("AGORA_DE_LIVE_WORK_CONTROLS_URL", ""),
+        help="Optional installed work surface controls JSON route to validate.",
+    )
+    parser.add_argument(
         "--require-capture",
         action="store_true",
         default=os.environ.get("AGORA_DE_LIVE_REQUIRE_CAPTURE", "") == "1",
@@ -101,6 +116,41 @@ def main() -> int:
                 "AGORA_DE_LIVE_CAPTURE_JSON or --capture-json is required for capture evidence",
             )
         )
+
+    route_claims = [
+        (
+            args.catalog_url,
+            "app-catalog-route",
+            "den-k8-app-catalog-route",
+            validate_catalog_payload,
+        ),
+        (
+            args.surfaces_url,
+            "surface-lifecycle-route",
+            "den-k8-surface-lifecycle-route",
+            validate_surfaces_payload,
+        ),
+        (
+            args.work_controls_url,
+            "work-surface-controls-route",
+            "den-k8-work-surface-controls-route",
+            validate_surfaces_payload,
+        ),
+    ]
+    for url, name, scenario, validator in route_claims:
+        if not url:
+            continue
+        route_check, packet = check_json_claim_route(
+            url,
+            name,
+            scenario,
+            args.timeout_seconds,
+            checked_at,
+            validator,
+        )
+        checks.append(route_check)
+        if packet:
+            evidence_packets.append(packet)
 
     failed = [check for check in checks if check["status"] != "pass"]
     result = {
@@ -190,6 +240,98 @@ def check_http_shell(url: str, timeout_seconds: float) -> dict:
     if "<!doctype html>" not in body.lower():
         return failed_check(url, "shell-ui", "response did not look like shell HTML", httpStatus=status)
     return passed_check(url, "shell-ui", "shell HTML route is available", httpStatus=status, contentType=content_type)
+
+
+def check_json_claim_route(url: str, name: str, scenario: str, timeout_seconds: float, checked_at: int, validator) -> tuple[dict, dict | None]:
+    request = urllib.request.Request(url, headers={"User-Agent": "agora-de-live-evidence/1"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            body = response.read(256 * 1024).decode("utf-8", errors="replace")
+            status = response.status
+            content_type = response.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as error:
+        return failed_check(url, name, f"HTTP status {error.code}", httpStatus=error.code), unavailable_packet(
+            scenario,
+            checked_at,
+        )
+    except urllib.error.URLError as error:
+        return failed_check(url, name, f"HTTP request failed: {error.reason}"), unavailable_packet(scenario, checked_at)
+
+    if status != 200:
+        return failed_check(url, name, f"HTTP status {status}", httpStatus=status), unavailable_packet(
+            scenario,
+            checked_at,
+        )
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        return failed_check(url, name, f"invalid JSON response: {error}", httpStatus=status), unavailable_packet(
+            scenario,
+            checked_at,
+        )
+
+    validation_error = validator(payload)
+    if validation_error:
+        return failed_check(
+            url,
+            name,
+            validation_error,
+            httpStatus=status,
+            contentType=content_type,
+        ), unavailable_packet(scenario, checked_at)
+
+    return passed_check(
+        url,
+        name,
+        "installed JSON claim route returned valid data",
+        httpStatus=status,
+        contentType=content_type,
+    ), {
+        "scenario": scenario,
+        "capturedAtUnixMillis": checked_at,
+        "visualStatus": "unknown",
+        "captureClassification": "insufficient_mapped_only",
+    }
+
+
+def validate_catalog_payload(payload: object) -> str | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("apps"), list):
+        return "catalog route response must contain apps array"
+    for app in payload["apps"]:
+        if not isinstance(app, dict):
+            return "catalog route app entry must be an object"
+        for field in ("id", "name", "icon"):
+            if not isinstance(app.get(field), str):
+                return f"catalog route app entry missing string {field}"
+    return None
+
+
+def validate_surfaces_payload(payload: object) -> str | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("surfaces"), list):
+        return "surface route response must contain surfaces array"
+    for surface in payload["surfaces"]:
+        if not isinstance(surface, dict):
+            return "surface route entry must be an object"
+        if not isinstance(surface.get("id"), str):
+            return "surface route entry missing string id"
+        if not isinstance(surface.get("ownerUid"), int):
+            return "surface route entry missing integer ownerUid"
+        for field in ("mapped", "focused"):
+            if not isinstance(surface.get(field), bool):
+                return f"surface route entry missing boolean {field}"
+        if not isinstance(surface.get("inputDeniedCount"), int):
+            return "surface route entry missing integer inputDeniedCount"
+    return None
+
+
+def unavailable_packet(scenario: str, checked_at: int) -> dict:
+    return {
+        "scenario": scenario,
+        "capturedAtUnixMillis": checked_at,
+        "visualStatus": "unknown",
+        "captureClassification": "not_visible",
+    }
 
 
 def classify_capture_json(path: pathlib.Path, checked_at: int) -> tuple[dict, dict | None]:

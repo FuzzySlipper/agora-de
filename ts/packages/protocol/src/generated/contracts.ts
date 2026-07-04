@@ -18,10 +18,41 @@ export interface ThemeToken {
   readonly value: string;
 }
 
+export interface CatalogApp {
+  readonly id: string;
+  readonly name: string;
+  readonly icon: string;
+}
+
+export interface CatalogAppsResponse {
+  readonly apps: readonly CatalogApp[];
+}
+
 export interface AdminEscalationSummary {
   readonly id: string;
   readonly requestedAtUnixMillis: number;
   readonly actorUid: number;
+  readonly summary: string;
+}
+
+export type AgentState =
+  | 'unknown'
+  | 'ready'
+  | 'busy'
+  | 'offline';
+
+export interface AgentInfo {
+  readonly uid: number;
+  readonly displayName: string;
+  readonly state: AgentState;
+}
+
+export interface AuditEvent {
+  readonly id: string;
+  readonly actorUid: number;
+  readonly action: string;
+  readonly subject: string;
+  readonly createdAtUnixMillis: number;
 }
 
 export type VisualStatus =

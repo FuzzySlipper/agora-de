@@ -1,0 +1,26 @@
+{
+  "schema": "agora-de.den-k8-live-evidence.v1",
+  "host": "den-k8-fixture",
+  "checkedAtUnixMillis": 1,
+  "checks": [
+    {
+      "name": "shell",
+      "category": "shell-ui",
+      "status": "pass",
+      "detail": "shell HTML route is available"
+    }
+  ],
+  "evidencePackets": [
+    {
+      "scenario": "den-k8-shell-http-installed-service",
+      "capturedAtUnixMillis": 1,
+      "visualStatus": "unknown",
+      "captureClassification": "insufficient_mapped_only"
+    }
+  ],
+  "summary": {
+    "status": "pass",
+    "passed": 1,
+    "failed": 0
+  }
+}
