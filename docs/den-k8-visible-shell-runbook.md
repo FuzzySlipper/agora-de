@@ -211,6 +211,28 @@ For task 4153, the live artifact
 showed the API-backed dock controls and passed the installed-service capture
 check.
 
+## Launch Loop
+
+Check the first app launch/focus/close loop through shellui:
+
+```bash
+./harness/live/check-shell-loop.py \
+  --base-url http://127.0.0.1:17780
+```
+
+The loop verifies:
+
+- `example-browser` is present and launchable in `/api/catalog/apps`.
+- `POST /api/catalog/launch` returns a tracked launch and surface id.
+- `/api/surfaces` reports the launched toplevel surface as running.
+- `POST /api/surfaces/action` accepts `focus` and `close`.
+- The closed surface disappears from running state.
+
+For task 4154, the launch loop passed 6/6 checks and the physical output
+artifact
+`/run/agent-os/artifacts/den-k8-live-4154/output-capture-1783172629534818648-4/output-capture-1783172629534818648-4.png`
+showed the launched app window plus dock running-state controls.
+
 ## GTK3 vs GTK4 Bake-Off
 
 Run the live GTK layer-shell comparison:

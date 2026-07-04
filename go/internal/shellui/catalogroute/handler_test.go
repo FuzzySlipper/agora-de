@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"agora-de.local/go/internal/shellui/catalog"
@@ -24,15 +25,20 @@ func TestHandlerServesCatalogViews(t *testing.T) {
 	if contentType := recorder.Header().Get("Content-Type"); contentType != "application/json" {
 		t.Fatalf("content-type = %q, want application/json", contentType)
 	}
-	var raw map[string][]map[string]string
+	var raw struct {
+		Apps []map[string]any `json:"apps"`
+	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &raw); err != nil {
 		t.Fatal(err)
 	}
-	if len(raw["apps"]) != 1 {
-		t.Fatalf("json apps = %d, want 1", len(raw["apps"]))
+	if len(raw.Apps) != 1 {
+		t.Fatalf("json apps = %d, want 1", len(raw.Apps))
 	}
-	if raw["apps"][0]["id"] != "browser" {
-		t.Fatalf("json app id = %q, want browser", raw["apps"][0]["id"])
+	if raw.Apps[0]["id"] != "browser" {
+		t.Fatalf("json app id = %q, want browser", raw.Apps[0]["id"])
+	}
+	if raw.Apps[0]["launchable"] != nil {
+		t.Fatalf("unexpected launchable field from test provider: %+v", raw.Apps[0])
 	}
 
 	var response struct {
@@ -46,6 +52,51 @@ func TestHandlerServesCatalogViews(t *testing.T) {
 	}
 	if response.Apps[0].ID != "browser" {
 		t.Fatalf("app id = %q, want browser", response.Apps[0].ID)
+	}
+}
+
+func TestHandlerLaunchesCatalogApp(t *testing.T) {
+	handler := New(
+		func(*http.Request) ([]catalog.AppView, error) {
+			return []catalog.AppView{{ID: "browser", Name: "Browser", Icon: "browser", Launchable: true}}, nil
+		},
+		func(_ *http.Request, request LaunchRequest) (LaunchResult, error) {
+			if request.AppID != "browser" {
+				t.Fatalf("app id = %q, want browser", request.AppID)
+			}
+			return LaunchResult{AppID: request.AppID, LaunchID: "launch-1", SurfaceID: "view-1", Status: "launched"}, nil
+		},
+	)
+
+	recorder := httptest.NewRecorder()
+	body := strings.NewReader(`{"appId":"browser"}`)
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LaunchPath, body))
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+	}
+	var response LaunchResult
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.LaunchID != "launch-1" || response.SurfaceID != "view-1" {
+		t.Fatalf("unexpected launch response: %+v", response)
+	}
+}
+
+func TestLaunchRejectsBadRequests(t *testing.T) {
+	handler := New(
+		func(*http.Request) ([]catalog.AppView, error) { return nil, nil },
+		func(*http.Request, LaunchRequest) (LaunchResult, error) {
+			t.Fatal("launch provider should not be called")
+			return LaunchResult{}, nil
+		},
+	)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LaunchPath, strings.NewReader(`{}`)))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
 }
 

@@ -75,6 +75,12 @@ running surface entries from `/api/surfaces`, workspace state, mapped-surface
 status, and a clock. This keeps the installed shell useful even before launch
 and focus actions are wired.
 
+The first launch loop is also shellui-backed: `POST /api/catalog/launch` maps a
+known catalog app to a compositor launch target, and `POST /api/surfaces/action`
+accepts `focus` and `close` for running work surfaces. Use
+`harness/live/check-shell-loop.py` to verify launch, running-state readback,
+focus, close, and stale-entry cleanup against the installed service.
+
 Those values are present in the user-service examples. The
 `?surface=background-fallback` route keeps the temporary background-owned
 taskbar available as a recovery path; it is not the default installed shape.

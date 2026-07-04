@@ -8,6 +8,11 @@ import (
 
 type SurfaceView struct {
 	ID                 string `json:"id"`
+	AppID              string `json:"appId,omitempty"`
+	Title              string `json:"title,omitempty"`
+	Role               string `json:"role,omitempty"`
+	SurfaceKind        string `json:"surfaceKind,omitempty"`
+	LaunchID           string `json:"launchId,omitempty"`
 	OwnerUID           int    `json:"ownerUid"`
 	Mapped             bool   `json:"mapped"`
 	Focused            bool   `json:"focused"`

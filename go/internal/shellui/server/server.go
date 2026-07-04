@@ -23,6 +23,7 @@ import (
 const (
 	DefaultListenAddress = "127.0.0.1:7780"
 	WorkControlsPath     = "/api/work-surface-controls"
+	SurfaceActionPath    = "/api/surfaces/action"
 
 	SurfaceProviderFixture       = "fixture"
 	SurfaceProviderCompositorctl = "compositorctl"
@@ -36,36 +37,40 @@ type Config struct {
 }
 
 func NewHandler(config Config) (http.Handler, error) {
-	catalogProvider, surfaceProvider, err := providers(config)
+	catalogProvider, launchProvider, surfaceProvider, err := providers(config)
 	if err != nil {
 		return nil, err
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(catalogroute.AppsPath, catalogroute.New(catalogProvider))
+	mux.Handle(catalogroute.AppsPath, catalogroute.New(catalogProvider, launchProvider))
+	mux.Handle(catalogroute.LaunchPath, catalogroute.New(catalogProvider, launchProvider))
 	mux.Handle(surfaceroute.SurfacesPath, surfaceroute.New(surfaceProvider))
 	mux.Handle(WorkControlsPath, surfaceroute.Handler{
 		Path:     WorkControlsPath,
 		Provider: surfaceProvider,
 	})
+	mux.Handle(SurfaceActionPath, surfaceActionHandler(config))
 	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot))
 	return mux, nil
 }
 
-func providers(config Config) (catalogroute.Provider, surfaceroute.Provider, error) {
+func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, error) {
 	if !config.FixtureProviders {
-		return nil, nil, fmt.Errorf("shellui live providers are not wired yet; enable fixture providers for deployment testing")
+		return nil, nil, nil, fmt.Errorf("shellui live providers are not wired yet; enable fixture providers for deployment testing")
 	}
 
-	apps := catalog.VisibleAppViews(fixtureCatalog())
+	appCatalog := fixtureCatalog()
+	apps := catalog.VisibleAppViews(appCatalog)
 	surfaceProvider, err := surfaceProvider(config)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return func(*http.Request) ([]catalog.AppView, error) {
+	catalogProvider := func(*http.Request) ([]catalog.AppView, error) {
 		return apps, nil
-	}, surfaceProvider, nil
+	}
+	return catalogProvider, launchProvider(config, appCatalog), surfaceProvider, nil
 }
 
 func fixtureCatalog() *appcatalog.Catalog {
@@ -77,6 +82,63 @@ func fixtureCatalog() *appcatalog.Catalog {
 		Icon: "example-browser",
 	})
 	return source
+}
+
+type launchTarget struct {
+	URL   string
+	Title string
+	AppID string
+}
+
+func launchTargets() map[string]launchTarget {
+	return map[string]launchTarget{
+		"example-browser": {
+			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=app-example",
+			Title: "Agora DE Example Browser",
+			AppID: "io.agorade.ExampleBrowser",
+		},
+	}
+}
+
+func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.LaunchProvider {
+	path := strings.TrimSpace(config.CompositorctlPath)
+	if path == "" {
+		path = "compositorctl"
+	}
+	targets := launchTargets()
+	return func(request *http.Request, launch catalogroute.LaunchRequest) (catalogroute.LaunchResult, error) {
+		entry, ok := appCatalog.Get(launch.AppID)
+		if !ok || entry.NoDisplay {
+			return catalogroute.LaunchResult{}, fmt.Errorf("app %q not found", launch.AppID)
+		}
+		target, ok := targets[launch.AppID]
+		if !ok {
+			return catalogroute.LaunchResult{}, fmt.Errorf("app %q is not launchable by shellui", launch.AppID)
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, path,
+			"launch",
+			"--url", target.URL,
+			"--webview-title", target.Title,
+			"--app-id", target.AppID,
+			"--expected-app-id", target.AppID,
+			"--wait-surface",
+			"--wait-timeout-ms", "5000",
+		).Output()
+		if err != nil {
+			return catalogroute.LaunchResult{}, fmt.Errorf("compositorctl launch: %w", err)
+		}
+		result, err := decodeCompositorctlLaunch(output)
+		if err != nil {
+			return catalogroute.LaunchResult{}, err
+		}
+		result.AppID = launch.AppID
+		if result.Status == "" {
+			result.Status = "launched"
+		}
+		return result, nil
+	}
 }
 
 func surfaceProvider(config Config) (surfaceroute.Provider, error) {
@@ -124,12 +186,17 @@ type compositorctlListSurfacesResponse struct {
 
 type compositorctlTrackedSurface struct {
 	Surface struct {
-		ID      string `json:"id"`
-		Visible bool   `json:"visible"`
+		ID          string `json:"id"`
+		AppID       string `json:"app_id"`
+		Title       string `json:"title"`
+		Role        string `json:"role"`
+		SurfaceKind string `json:"surface_kind"`
+		Visible     bool   `json:"visible"`
 	} `json:"surface"`
 	Client struct {
 		UID int `json:"uid"`
 	} `json:"client"`
+	LaunchID           string `json:"launch_id"`
 	LastEvent          string `json:"last_event"`
 	Focused            bool   `json:"focused"`
 	Visible            bool   `json:"visible"`
@@ -150,6 +217,11 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 		mapped := tracked.Visible || tracked.Surface.Visible || tracked.LastEvent != "unmapped"
 		views = append(views, surfaces.SurfaceView{
 			ID:                 tracked.Surface.ID,
+			AppID:              tracked.Surface.AppID,
+			Title:              tracked.Surface.Title,
+			Role:               tracked.Surface.Role,
+			SurfaceKind:        tracked.Surface.SurfaceKind,
+			LaunchID:           tracked.LaunchID,
 			OwnerUID:           tracked.Client.UID,
 			Mapped:             mapped,
 			Focused:            tracked.Focused,
@@ -159,6 +231,106 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 		})
 	}
 	return views, nil
+}
+
+type compositorctlLaunchResponse struct {
+	LaunchID string `json:"launch_id"`
+	Surface  struct {
+		Surface struct {
+			ID string `json:"id"`
+		} `json:"surface"`
+	} `json:"surface"`
+}
+
+func decodeCompositorctlLaunch(payload []byte) (catalogroute.LaunchResult, error) {
+	var response compositorctlLaunchResponse
+	if err := json.Unmarshal(payload, &response); err != nil {
+		return catalogroute.LaunchResult{}, fmt.Errorf("decode compositorctl launch: %w", err)
+	}
+	if response.LaunchID == "" {
+		return catalogroute.LaunchResult{}, fmt.Errorf("compositorctl launch missing launch_id")
+	}
+	return catalogroute.LaunchResult{
+		LaunchID:  response.LaunchID,
+		SurfaceID: response.Surface.Surface.ID,
+		Status:    "launched",
+	}, nil
+}
+
+type surfaceActionRequest struct {
+	Action    string `json:"action"`
+	SurfaceID string `json:"surfaceId"`
+}
+
+type surfaceActionResponse struct {
+	Action    string `json:"action"`
+	SurfaceID string `json:"surfaceId"`
+	Status    string `json:"status"`
+}
+
+func surfaceActionHandler(config Config) http.Handler {
+	path := strings.TrimSpace(config.CompositorctlPath)
+	if path == "" {
+		path = "compositorctl"
+	}
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != SurfaceActionPath {
+			http.NotFound(response, request)
+			return
+		}
+		if request.Method != http.MethodPost {
+			response.Header().Set("Allow", http.MethodPost)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		var action surfaceActionRequest
+		if err := json.NewDecoder(request.Body).Decode(&action); err != nil {
+			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid surface action request"})
+			return
+		}
+		action.SurfaceID = strings.TrimSpace(action.SurfaceID)
+		if action.SurfaceID == "" {
+			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "surfaceId is required"})
+			return
+		}
+		args, ok := surfaceActionArgs(action)
+		if !ok {
+			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "unsupported surface action"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+		defer cancel()
+		if output, err := exec.CommandContext(ctx, path, args...).CombinedOutput(); err != nil {
+			message := strings.TrimSpace(string(output))
+			if message == "" {
+				message = err.Error()
+			}
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": message})
+			return
+		}
+		writeJSON(response, http.StatusAccepted, surfaceActionResponse{
+			Action:    action.Action,
+			SurfaceID: action.SurfaceID,
+			Status:    "accepted",
+		})
+	})
+}
+
+func surfaceActionArgs(action surfaceActionRequest) ([]string, bool) {
+	switch action.Action {
+	case "focus":
+		return []string{"surface", "focus", "--surface", action.SurfaceID, "--timeout-ms", "2000"}, true
+	case "close":
+		return []string{"surface", "close", "--surface", action.SurfaceID, "--timeout-ms", "2000"}, true
+	default:
+		return nil, false
+	}
+}
+
+func writeJSON(response http.ResponseWriter, status int, value any) {
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(status)
+	_ = json.NewEncoder(response).Encode(value)
 }
 
 func shellAssetHandler(root string) http.Handler {
@@ -339,6 +511,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     button {
       font: inherit;
     }
+    button:disabled {
+      opacity: 0.55;
+    }
     .brand,
     .control,
     .workspace,
@@ -402,9 +577,26 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    button.dock-item {
+      cursor: pointer;
+    }
     .dock-item.focused {
       border-color: #00d1b2;
       box-shadow: inset 0 -3px 0 #00d1b2;
+    }
+    .surface-actions {
+      align-items: center;
+      display: inline-flex;
+      gap: 6px;
+    }
+    .surface-action {
+      background: #ffffff;
+      border: 2px solid #94a3b8;
+      border-radius: 4px;
+      color: #102027;
+      height: 44px;
+      min-width: 58px;
+      padding: 0 10px;
     }
     .spacer {
       flex: 1 1 auto;
@@ -459,6 +651,16 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return element;
     }
 
+    function button(label, className, onClick) {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = className;
+      element.textContent = label;
+      element.title = label;
+      element.addEventListener("click", onClick);
+      return element;
+    }
+
     function renderList(id, emptyLabel, values, mapper) {
       const target = document.getElementById(id);
       target.replaceChildren();
@@ -470,15 +672,23 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
 
     function render() {
-      renderList("apps-list", "no apps", state.apps, (app) => item(text(app.name, app.id)));
-      const mapped = state.surfaces.filter((surface) => surface.mapped);
-      renderList("running-list", "no running apps", mapped, (surface) => {
-        const label = surface.focused ? "focused " + surface.id : surface.id;
-        return item(label, surface.focused ? "focused" : "");
+      renderList("apps-list", "no apps", state.apps, (app) => {
+        const appButton = button(text(app.name, app.id), "dock-item", () => launchApp(app.id));
+        appButton.disabled = !app.launchable;
+        return appButton;
+      });
+      const workSurfaces = state.surfaces.filter((surface) => surface.mapped && surface.surfaceKind !== "layer_shell");
+      renderList("running-list", "no running apps", workSurfaces, (surface) => {
+        const group = document.createElement("span");
+        group.className = "surface-actions";
+        const label = text(surface.title, text(surface.appId, surface.id));
+        group.appendChild(button(label, "dock-item" + (surface.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus")));
+        group.appendChild(button("Close", "surface-action", () => actOnSurface(surface.id, "close")));
+        return group;
       });
       const status = document.getElementById("status-label");
-      status.textContent = mapped.length ? mapped.length + " mapped" : "ready";
-      status.className = "status " + (mapped.length ? "ready" : "warn");
+      status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
+      status.className = "status " + (workSurfaces.length ? "ready" : "warn");
     }
 
     async function loadJSON(path) {
@@ -501,6 +711,44 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       } catch (error) {
         const status = document.getElementById("status-label");
         status.textContent = "offline";
+        status.className = "status warn";
+      }
+    }
+
+    async function postJSON(path, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function launchApp(appId) {
+      const status = document.getElementById("status-label");
+      status.textContent = "launching";
+      status.className = "status ready";
+      try {
+        await postJSON("/api/catalog/launch", {appId});
+        await refresh();
+      } catch (error) {
+        status.textContent = "launch failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function actOnSurface(surfaceId, action) {
+      const status = document.getElementById("status-label");
+      status.textContent = action;
+      status.className = "status ready";
+      try {
+        await postJSON("/api/surfaces/action", {surfaceId, action});
+        await refresh();
+      } catch (error) {
+        status.textContent = action + " failed";
         status.className = "status warn";
       }
     }
