@@ -35,6 +35,13 @@ parts of the stack, especially credential attribution, surface lifecycle, and
 per-toplevel capture. Synchronous input deny and geometry control stay marked
 missing for the standard-protocol probe until a spike proves otherwise.
 
+The structured layout decision in `docs/compositor-backend-decision.md` narrows
+that reading: Wayfire remains the near-term installed backend, but stock
+Wayfire layout behavior is not layout authority. Structured layout stays in the
+Rust-owned generated backend contract unless a bounded Wayfire plugin proof can
+emit truthful post-layout geometry, workspace/zone state, focus/order, and
+command results without shell inference.
+
 The standard-protocol observation artifact currently maps:
 
 - `security-context-v1` / `wp_security_context_v1` to scoped app/sandbox
@@ -52,7 +59,9 @@ This keeps the strategic posture concrete:
 - shrink the custom compositor-specific surface when protocols can carry work;
 - keep synchronous deny visible as the likely irreducible enforcement core;
 - do not start a Smithay product build until the probe explains how small the
-  in-compositor core really is.
+  in-compositor core really is;
+- promote the Rust/Smithay layout spike if the Wayfire layout-authority proof
+  exceeds the documented churn budget.
 
 ## Updating The Matrix
 

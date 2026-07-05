@@ -1,7 +1,7 @@
 # Structured Window Handling
 
 Status: design record for Den task 4237, with live harness follow-through for
-Den task 4249.
+Den task 4249 and backend ownership decision follow-through for Den task 4251.
 
 ## Recommendation
 
@@ -195,6 +195,14 @@ Move layout ownership toward a Rust compositor or Smithay spike if:
 - the custom Wayfire plugin grows beyond the deny-plus-geometry core recorded
   in `docs/compositor-backend-decision.md`.
 
+Den task 4251 records the current decision in
+`docs/compositor-backend-decision.md`: Wayfire remains the installed evidence
+backend, but stock Wayfire/simple-tile is not accepted as structured layout
+authority. A narrow Wayfire plugin proof may keep that path only if it satisfies
+the criteria above within the documented churn budget; otherwise layout
+ownership moves to a Rust compositor or Smithay spike scoped to layout
+authority.
+
 ## Follow-Up Tasks
 
 - Den 4247: bridge structured layout action contract.
@@ -202,4 +210,4 @@ Move layout ownership toward a Rust compositor or Smithay spike if:
 - Den 4249: live structured-layout evidence harness.
 - Den 4250: agent-visible window labels and bounds overlay.
 - Den 4251: Wayfire layout plugin path versus Rust compositor ownership
-  decision.
+  decision recorded in `docs/compositor-backend-decision.md`.
