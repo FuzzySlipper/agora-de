@@ -119,6 +119,39 @@ wrappers around native apps unless a concrete compositor-supported embedding
 path is proven; wrapping would add another failure surface without solving
 native geometry authority.
 
+## Overlay Prototype
+
+Den task 4250 adds the first shell-owned prototype:
+
+- `?surface=overlay` renders a transparent top layer-shell surface.
+- `deploy/shellui/agora-de-shell-overlay.user.service` starts it as
+  `io.agorade.ShellOverlay`.
+- The overlay polls `/api/layout` and `/api/surfaces`.
+- Work surfaces with geometry receive visible numbered labels, app/title badges,
+  active/focus outline, zone hints, and bounds text.
+- `./harness/live/check-overlay-labels.py` launches two native apps, verifies the
+  overlay surface is mapped, focuses each app, captures after focus changes, and
+  closes launched surfaces.
+
+This is intentionally not a native-app wrapper. It is a separate shell-owned
+layer, so native clients remain normal compositor surfaces.
+
+Wayfire follow-up path:
+
+- keep the shell overlay as the near-term capture-visible evidence layer;
+- replace CSS-derived zone hints with compositor-provided zone rectangles once
+  Wayfire reports truthful post-layout geometry;
+- move labels/bounds into a small Wayfire plugin only if it can draw overlays
+  without taking pointer focus or depending on WebKit transparency behavior.
+
+Rust compositor follow-up path:
+
+- make labels, bounds, focus outline, and zone grid first-class compositor
+  annotations in the layout model;
+- emit the same generated layout contract to shellui for panel/status rendering;
+- keep screenshot/capture evidence authoritative by drawing overlays in the
+  compositor scene graph after native surfaces and before the final output.
+
 ## Evidence Harness Requirements
 
 The live harness lives at `./harness/live/check-structured-layout.py` and runs

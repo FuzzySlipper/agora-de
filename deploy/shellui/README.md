@@ -32,6 +32,7 @@ Suggested install paths:
 ~/.config/systemd/user/agora-de-shellui.service
 ~/.config/systemd/user/agora-de-shell-background.service
 ~/.config/systemd/user/agora-de-shell-panel.service
+~/.config/systemd/user/agora-de-shell-overlay.service
 ~/.config/agora-de/shellui.env
 ~/.local/bin/agora-de-shellui
 ~/.local/bin/agora-de-gtk4-layer-shell-webview
@@ -46,6 +47,7 @@ go build -C go -o ~/.local/bin/agora-de-shellui ./cmd/shellui
 install -D -m 0644 deploy/shellui/agora-de-shellui.user.service ~/.config/systemd/user/agora-de-shellui.service
 install -D -m 0644 deploy/shellui/agora-de-shell-background.user.service ~/.config/systemd/user/agora-de-shell-background.service
 install -D -m 0644 deploy/shellui/agora-de-shell-panel.user.service ~/.config/systemd/user/agora-de-shell-panel.service
+install -D -m 0644 deploy/shellui/agora-de-shell-overlay.user.service ~/.config/systemd/user/agora-de-shell-overlay.service
 install -D -m 0755 deploy/shellui/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
 install -D -m 0755 deploy/shellui/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
 install -D -m 0644 deploy/shellui/shellui.user.env.example ~/.config/agora-de/shellui.env
@@ -53,16 +55,18 @@ systemctl --user daemon-reload
 systemctl --user enable --now agora-de-shellui.service
 systemctl --user enable --now agora-de-shell-background.service
 systemctl --user enable --now agora-de-shell-panel.service
+systemctl --user enable --now agora-de-shell-overlay.service
 ```
 
 The user-service example uses `127.0.0.1:17780` to avoid colliding with the
 currently bound predecessor port `7780`. Move it to `7780` once that port is
 free or intentionally replaced.
 
-`agora-de-shell-background.service` launches the background shell and
-`agora-de-shell-panel.service` launches the dock/panel shell. Both use the
-repo-owned GTK4/WebKit 6 + gtk4-layer-shell helper by default. On the current
-den-k8 host GTK4 layer-shell support requires:
+`agora-de-shell-background.service` launches the background shell,
+`agora-de-shell-panel.service` launches the dock/panel shell, and
+`agora-de-shell-overlay.service` launches the agent-visible label/bounds
+overlay. All use the repo-owned GTK4/WebKit 6 + gtk4-layer-shell helper by
+default. On the current den-k8 host GTK4 layer-shell support requires:
 
 ```text
 GDK_BACKEND=wayland
@@ -73,6 +77,11 @@ The default dock/panel route is API-backed. `?surface=dock` renders the Agora DE
 brand, `Apps`, `Refresh`, and `Status` controls, app entries from
 `/api/catalog/apps`, running surface entries from `/api/surfaces`, workspace
 state, mapped-surface status, and a clock.
+
+The overlay route is `?surface=overlay`. It is a transparent top layer-shell
+surface driven by `/api/layout` and `/api/surfaces`; it renders stable numbered
+labels, app/title badges, focus indication, zone hints, and geometry bounds over
+native work surfaces without wrapping those apps in a webview.
 
 The first workspace model is intentionally conservative. `/api/workspaces`
 reports one active `workspace-1`, and `POST /api/workspaces/action` with
@@ -142,6 +151,11 @@ Use `harness/live/check-native-launch.py` for the governed installed-app path.
 It requires the agora-de compositorctl path, verifies an allowlisted catalog app
 such as `Alacritty.desktop`, launches it through shellui, captures `HDMI-A-1`,
 and closes the native surface.
+
+Use `harness/live/check-overlay-labels.py` for the agent overlay path. It
+requires `io.agorade.ShellOverlay` to be mapped, launches at least two native
+apps through shellui, focuses each app, captures the physical output after focus
+changes, and closes the launched surfaces.
 
 The `Status` control launches `?surface=operator`, a read-only shell status
 utility backed by `/api/operator/status`. It exposes service/socket/output and

@@ -102,6 +102,30 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		}
 	}
 
+	overlay := responseBody(t, handler, "/shell/dist/desktop/?surface=overlay")
+	for _, want := range []string{
+		"agora-de agent overlay",
+		`data-surface="overlay"`,
+		`id="agent-overlay-surface"`,
+		`id="overlay-labels"`,
+		`class="zone-hint">primary`,
+		`class="zone-hint">secondary`,
+		`className = "window-box"`,
+		`className = "number"`,
+		`className = "bounds"`,
+		`surface.focused ? " focused"`,
+		`geometry.x + "," + geometry.y`,
+		`/api/layout`,
+		`/api/surfaces`,
+	} {
+		if !strings.Contains(overlay, want) {
+			t.Fatalf("overlay body missing %q: %s", want, overlay)
+		}
+	}
+	if strings.Contains(overlay, `class="panel"`) || strings.Contains(overlay, "agora-de shell: overlay") {
+		t.Fatalf("overlay body = %q, should not use panel or background fallback content", overlay)
+	}
+
 	background := responseBody(t, handler, "/shell/dist/desktop/?surface=background")
 	if strings.Contains(background, `class="panel"`) {
 		t.Fatalf("background body = %q, should not use panel fallback content", background)

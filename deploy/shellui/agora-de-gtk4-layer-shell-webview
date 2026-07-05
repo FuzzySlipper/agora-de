@@ -13,7 +13,7 @@ def main() -> int:
         description="Launch an agora-de GTK4/WebKit layer-shell surface."
     )
     parser.add_argument("--url", required=True)
-    parser.add_argument("--role", choices=("background", "panel"), required=True)
+    parser.add_argument("--role", choices=("background", "panel", "overlay"), required=True)
     parser.add_argument("--width", type=int, required=True)
     parser.add_argument("--height", type=int, required=True)
     parser.add_argument("--title", required=True)
@@ -23,10 +23,11 @@ def main() -> int:
     try:
         import gi
 
+        gi.require_version("Gdk", "4.0")
         gi.require_version("Gtk", "4.0")
         gi.require_version("WebKit", "6.0")
         gi.require_version("Gtk4LayerShell", "1.0")
-        from gi.repository import Gio, GLib, Gtk, Gtk4LayerShell, WebKit
+        from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell, WebKit
     except Exception as exc:
         print(f"DEPENDENCY_MISSING GTK4 stack: {exc}", flush=True)
         return 2
@@ -48,6 +49,13 @@ def main() -> int:
             configure_layer_shell(Gtk4LayerShell, self.window, args.role, args.app_id)
 
             webview = WebKit.WebView()
+            if args.role == "overlay":
+                rgba = Gdk.RGBA()
+                rgba.red = 0.0
+                rgba.green = 0.0
+                rgba.blue = 0.0
+                rgba.alpha = 0.0
+                webview.set_background_color(rgba)
             webview.load_uri(args.url)
             self.window.set_child(webview)
             self.window.connect("destroy", lambda *_args: self.quit())
@@ -85,6 +93,19 @@ def configure_layer_shell(Gtk4LayerShell, window, role: str, namespace: str) -> 
             Gtk4LayerShell.Edge.RIGHT,
         ):
             Gtk4LayerShell.set_anchor(window, edge, True)
+        return
+
+    if role == "overlay":
+        Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.TOP)
+        for edge in (
+            Gtk4LayerShell.Edge.TOP,
+            Gtk4LayerShell.Edge.BOTTOM,
+            Gtk4LayerShell.Edge.LEFT,
+            Gtk4LayerShell.Edge.RIGHT,
+        ):
+            Gtk4LayerShell.set_anchor(window, edge, True)
+        if hasattr(Gtk4LayerShell, "KeyboardMode") and hasattr(Gtk4LayerShell, "set_keyboard_mode"):
+            Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.NONE)
         return
 
     Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.TOP)

@@ -146,6 +146,11 @@ func New(config Config) http.Handler {
 			defer cancel()
 			output, err := exec.CommandContext(ctx, path, "layout", "get").CombinedOutput()
 			if err != nil {
+				errorClass, _ := parseCompositorctlError(strings.TrimSpace(string(output)))
+				if errorClass == "backend_unsupported" && config.SurfaceProvider != nil {
+					writeJSON(response, http.StatusOK, layoutResponse{Layout: collectLayoutState(request, config.SurfaceProvider)})
+					return
+				}
 				writeCompositorctlError(response, output, err)
 				return
 			}
@@ -416,8 +421,8 @@ func writeCompositorctlError(response http.ResponseWriter, output []byte, err er
 func parseCompositorctlError(message string) (string, string) {
 	message = strings.TrimSpace(message)
 	const prefix = "server["
-	if strings.HasPrefix(message, prefix) {
-		rest := strings.TrimPrefix(message, prefix)
+	if start := strings.Index(message, prefix); start >= 0 {
+		rest := strings.TrimPrefix(message[start:], prefix)
 		if end := strings.Index(rest, "]"); end > 0 {
 			errorClass := rest[:end]
 			clean := strings.TrimSpace(strings.TrimPrefix(rest[end+1:], ":"))

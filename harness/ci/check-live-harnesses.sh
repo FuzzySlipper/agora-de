@@ -8,7 +8,8 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-installed-catalog.py" \
   "$ROOT/harness/live/check-shell-loop.py" \
   "$ROOT/harness/live/check-native-launch.py" \
-  "$ROOT/harness/live/check-structured-layout.py"
+  "$ROOT/harness/live/check-structured-layout.py" \
+  "$ROOT/harness/live/check-overlay-labels.py"
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -20,6 +21,7 @@ expectations = {
     "harness/live/check-shell-loop.py": "agora-de.shell-loop-live.v1",
     "harness/live/check-native-launch.py": "agora-de.native-launch-live.v1",
     "harness/live/check-structured-layout.py": "agora-de.structured-layout-live.v1",
+    "harness/live/check-overlay-labels.py": "agora-de.overlay-labels-live.v1",
 }
 for relative, schema in expectations.items():
     text = (root / relative).read_text(encoding="utf-8")
@@ -50,6 +52,23 @@ for required in [
 ]:
     if required not in structured:
         raise SystemExit(f"check-structured-layout.py missing required evidence hook {required!r}")
+
+overlay = (root / "harness/live/check-overlay-labels.py").read_text(encoding="utf-8")
+for required in [
+    "/usr/local/bin/compositorctl",
+    "den-k8-overlay-labels-visible",
+    "io.agorade.ShellOverlay",
+    "/shell/dist/desktop/?surface=overlay",
+    "agent-overlay-surface",
+    "/api/catalog/launch",
+    "/api/surfaces/action",
+    "/api/layout",
+    "focus-sequence",
+    "layout-labels",
+    "cleanup",
+]:
+    if required not in overlay:
+        raise SystemExit(f"check-overlay-labels.py missing required evidence hook {required!r}")
 PY
 
 echo "live harness static checks: OK"

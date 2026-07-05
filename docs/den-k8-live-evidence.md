@@ -109,6 +109,7 @@ Current visible-shell scenario packets:
 | `den-k8-shell-launch-visible` | Launch-loop capture taken after an app surface is running and focused. |
 | `den-k8-native-launch-visible` | Governed native app launch capture taken after an allowlisted installed app is running and focused. |
 | `den-k8-structured-layout-visible` | Structured layout capture taken after two or more native apps are running and focusable. |
+| `den-k8-overlay-labels-visible` | Agent overlay capture taken after native app focus changes with labels and bounds visible. |
 
 ## Failure Taxonomy
 
@@ -296,6 +297,28 @@ focus/close actions, `/api/layout`, and `/api/layout/action`. It distinguishes
 `visibility`, `focus`, `occlusion-overlap`, `capture`, and `cleanup` failures.
 Zone assignment may pass as backend-unsupported only when the final layout still
 proves either distinct expected zones or non-overlapping geometry.
+
+Run the agent-visible overlay label loop with capture evidence:
+
+```bash
+./harness/live/check-overlay-labels.py \
+  --base-url http://127.0.0.1:17780 \
+  --app-id Alacritty.desktop \
+  --app-id foot.desktop \
+  --expected-app-id Alacritty \
+  --expected-app-id foot \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-overlay-labels \
+  --require-capture
+```
+
+The overlay-labels runner emits `agora-de.overlay-labels-live.v1`. It requires
+the installed `io.agorade.ShellOverlay` layer-shell surface, verifies the
+`?surface=overlay` route has layout-driven label and bounds hooks, launches two
+or more native work surfaces, proves stable layout labels and geometry, focuses
+each target, captures after focus changes, and closes launched surfaces.
+Failures are split into `overlay-route`, `overlay-surface`, `layout-labels`,
+`focus`, `capture`, and `cleanup`.
 
 Validate desktop-entry catalog import separately from the visible fixture launch
 service by running a temporary shellui with `--catalog-provider desktop_entries`
