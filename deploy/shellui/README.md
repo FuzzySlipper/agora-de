@@ -79,6 +79,23 @@ reports one active `workspace-1`, and `POST /api/workspaces/action` with
 `{"workspaceId":"workspace-1","action":"activate"}` confirms that workspace
 state without pretending multi-workspace compositor placement exists yet.
 
+Catalog provider settings:
+
+```text
+AGORA_DE_SHELLUI_CATALOG_PROVIDER=fixture
+AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS=/usr/share/applications:/home/agent/.local/share/applications
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=
+```
+
+`fixture` is still the live default because it includes the explicit
+`example-browser` and `shell-status` launch targets used by the installed
+evidence loops. `desktop_entries` imports installed `.desktop` entries from the
+configured roots and exposes them through `/api/catalog/apps`, but entries
+without an explicit shellui launch target render as non-launchable until the
+native launch boundary exists. See `docs/native-launch-policy.md` for the
+current launchability contract.
+
 The first launch loop is also shellui-backed: `POST /api/catalog/launch` maps a
 known catalog app to a compositor launch target, and `POST /api/surfaces/action`
 accepts `focus` and `close` for running work surfaces. Use
@@ -172,6 +189,44 @@ readback adds mapped/visible and content-commit evidence. User-visible visual
 claims close with physical output capture and expected shell-pixel
 classification. The launch-loop harness can run the app lifecycle and capture
 the monitor in one pass with `--output-name HDMI-A-1 --require-capture`.
+
+To validate the desktop-entry catalog provider without replacing the visible
+fixture launch service, run a sidecar shellui on a temporary port:
+
+```bash
+cd /home/dev/agora-de/go
+go run ./cmd/shellui \
+  --listen 127.0.0.1:17782 \
+  --catalog-provider desktop_entries \
+  --desktop-entry-roots /usr/share/applications:/home/agent/.local/share/applications \
+  --surface-provider fixture
+```
+
+Then check the imported catalog route from another shell:
+
+```bash
+./harness/live/check-installed-catalog.py \
+  --catalog-url http://127.0.0.1:17782/api/catalog/apps \
+  --min-apps 1 \
+  --require-all-nonlaunchable
+```
+
+The `--require-all-nonlaunchable` assertion matches
+`docs/native-launch-policy.md`: installed entries are discoverable, but native
+launch remains deferred until a governed launcher boundary exists.
+
+Native desktop-entry launch has an explicit off switch and remains disabled in
+the installed examples:
+
+```text
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled
+```
+
+The implementation path for later live evidence is
+`AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=structured_compositorctl` plus an
+allowlist of desktop-entry ids. That mode expects compositorctl to support the
+structured `--arg` launch contract from `docs/native-launch-boundary-design.md`;
+do not enable it against a bridge that only supports `-cmd` strings.
 
 For the den-k8 user-service restart and visibility playbook, see
 `docs/den-k8-visible-shell-runbook.md`.

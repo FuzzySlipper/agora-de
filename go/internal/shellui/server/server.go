@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"agora-de.local/go/internal/appcatalog"
+	"agora-de.local/go/internal/nativelaunch"
+	"agora-de.local/go/internal/session"
 	"agora-de.local/go/internal/shellui/catalog"
 	"agora-de.local/go/internal/shellui/catalogroute"
 	"agora-de.local/go/internal/shellui/staticserve"
@@ -29,15 +31,29 @@ const (
 	WorkspacesPath       = "/api/workspaces"
 	WorkspaceActionPath  = "/api/workspaces/action"
 
-	SurfaceProviderFixture       = "fixture"
-	SurfaceProviderCompositorctl = "compositorctl"
+	SurfaceProviderFixture                      = "fixture"
+	SurfaceProviderCompositorctl                = "compositorctl"
+	CatalogProviderFixture                      = "fixture"
+	CatalogProviderDesktopEntries               = "desktop_entries"
+	NativeLaunchProviderDisabled                = "disabled"
+	NativeLaunchProviderStructuredCompositorctl = "structured_compositorctl"
 )
 
 type Config struct {
-	StaticRoot        string
-	FixtureProviders  bool
-	SurfaceProvider   string
-	CompositorctlPath string
+	StaticRoot               string
+	FixtureProviders         bool
+	CatalogProvider          string
+	DesktopEntryRoots        []string
+	SurfaceProvider          string
+	CompositorctlPath        string
+	NativeLaunchProvider     string
+	NativeLaunchAllowlist    []string
+	NativeLaunchRequesterUID int
+	NativeLaunchRequesterGID int
+	NativeLaunchSessionToken string
+	NativeLaunchOutputName   string
+	NativeLaunchHome         string
+	NativeLaunchWorkingDir   string
 }
 
 func NewHandler(config Config) (http.Handler, error) {
@@ -67,8 +83,14 @@ func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvide
 		return nil, nil, nil, fmt.Errorf("shellui live providers are not wired yet; enable fixture providers for deployment testing")
 	}
 
-	appCatalog := fixtureCatalog()
-	apps := catalog.VisibleAppViews(appCatalog)
+	appCatalog, err := catalogSource(config)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	apps, err := launchAwareAppViews(config, appCatalog)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	surfaceProvider, err := surfaceProvider(config)
 	if err != nil {
 		return nil, nil, nil, err
@@ -78,6 +100,77 @@ func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvide
 		return apps, nil
 	}
 	return catalogProvider, launchProvider(config, appCatalog), surfaceProvider, nil
+}
+
+func catalogSource(config Config) (*appcatalog.Catalog, error) {
+	mode := strings.TrimSpace(config.CatalogProvider)
+	if mode == "" {
+		mode = CatalogProviderFixture
+	}
+	switch mode {
+	case CatalogProviderFixture:
+		return fixtureCatalog(), nil
+	case CatalogProviderDesktopEntries:
+		return appcatalog.ImportDesktopEntries(config.DesktopEntryRoots...)
+	default:
+		return nil, fmt.Errorf("unknown catalog provider %q", mode)
+	}
+}
+
+func nativeLaunchMode(config Config) (string, error) {
+	mode := strings.TrimSpace(config.NativeLaunchProvider)
+	if mode == "" {
+		mode = NativeLaunchProviderDisabled
+	}
+	switch mode {
+	case NativeLaunchProviderDisabled, NativeLaunchProviderStructuredCompositorctl:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("unknown native launch provider %q", mode)
+	}
+}
+
+func setFrom(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			set[value] = true
+		}
+	}
+	return set
+}
+
+func environmentMap(values []string) map[string]string {
+	environment := make(map[string]string, len(values))
+	for _, value := range values {
+		key, raw, ok := strings.Cut(value, "=")
+		if ok && key != "" {
+			environment[key] = raw
+		}
+	}
+	return environment
+}
+
+func launchAwareAppViews(config Config, source *appcatalog.Catalog) ([]catalog.AppView, error) {
+	views := catalog.VisibleAppViews(source)
+	targets := launchTargets()
+	nativeMode, err := nativeLaunchMode(config)
+	if err != nil {
+		return nil, err
+	}
+	nativeAllowlist := setFrom(config.NativeLaunchAllowlist)
+	for index := range views {
+		if _, ok := targets[views[index].ID]; ok {
+			continue
+		}
+		entry, ok := source.Get(views[index].ID)
+		views[index].Launchable = ok &&
+			nativeMode == NativeLaunchProviderStructuredCompositorctl &&
+			nativeAllowlist[views[index].ID] &&
+			nativelaunch.CanPrepare(entry)
+	}
+	return views, nil
 }
 
 func fixtureCatalog() *appcatalog.Catalog {
@@ -124,39 +217,77 @@ func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.
 		path = "compositorctl"
 	}
 	targets := launchTargets()
+	nativeAllowlist := setFrom(config.NativeLaunchAllowlist)
 	return func(request *http.Request, launch catalogroute.LaunchRequest) (catalogroute.LaunchResult, error) {
 		entry, ok := appCatalog.Get(launch.AppID)
 		if !ok || entry.NoDisplay {
 			return catalogroute.LaunchResult{}, fmt.Errorf("app %q not found", launch.AppID)
 		}
 		target, ok := targets[launch.AppID]
-		if !ok {
-			return catalogroute.LaunchResult{}, fmt.Errorf("app %q is not launchable by shellui", launch.AppID)
+		if ok {
+			return launchWebviewTarget(request, path, launch.AppID, target)
 		}
-		ctx, cancel := context.WithTimeout(request.Context(), 8*time.Second)
-		defer cancel()
-		output, err := exec.CommandContext(ctx, path,
-			"launch",
-			"--url", target.URL,
-			"--webview-title", target.Title,
-			"--app-id", target.AppID,
-			"--expected-app-id", target.AppID,
-			"--wait-surface",
-			"--wait-timeout-ms", "5000",
-		).Output()
-		if err != nil {
-			return catalogroute.LaunchResult{}, fmt.Errorf("compositorctl launch: %w", err)
-		}
-		result, err := decodeCompositorctlLaunch(output)
+
+		nativeMode, err := nativeLaunchMode(config)
 		if err != nil {
 			return catalogroute.LaunchResult{}, err
 		}
-		result.AppID = launch.AppID
-		if result.Status == "" {
-			result.Status = "launched"
+		if nativeMode != NativeLaunchProviderStructuredCompositorctl || !nativeAllowlist[launch.AppID] {
+			return catalogroute.LaunchResult{}, fmt.Errorf("app %q is not launchable by shellui", launch.AppID)
 		}
-		return result, nil
+		return launchNativeTarget(request, config, path, launch.AppID, entry)
 	}
+}
+
+func launchWebviewTarget(request *http.Request, path string, appID string, target launchTarget) (catalogroute.LaunchResult, error) {
+	ctx, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, path,
+		"launch",
+		"--url", target.URL,
+		"--webview-title", target.Title,
+		"--app-id", target.AppID,
+		"--expected-app-id", target.AppID,
+		"--wait-surface",
+		"--wait-timeout-ms", "5000",
+	).Output()
+	if err != nil {
+		return catalogroute.LaunchResult{}, fmt.Errorf("compositorctl launch: %w", err)
+	}
+	result, err := decodeCompositorctlLaunch(output)
+	if err != nil {
+		return catalogroute.LaunchResult{}, err
+	}
+	result.AppID = appID
+	if result.Status == "" {
+		result.Status = "launched"
+	}
+	return result, nil
+}
+
+func launchNativeTarget(request *http.Request, config Config, path string, appID string, entry appcatalog.Entry) (catalogroute.LaunchResult, error) {
+	ctx, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	result, err := nativelaunch.New(nativelaunch.CompositorctlBridge{Path: path}).Launch(ctx, nativelaunch.Request{
+		Entry:              entry,
+		RequesterUID:       config.NativeLaunchRequesterUID,
+		RequesterGID:       config.NativeLaunchRequesterGID,
+		SessionToken:       session.Token(config.NativeLaunchSessionToken),
+		AuditCorrelationID: "shellui:" + appID,
+		OutputName:         config.NativeLaunchOutputName,
+		WorkingDirectory:   config.NativeLaunchWorkingDir,
+		HomeDirectory:      config.NativeLaunchHome,
+		BaseEnvironment:    environmentMap(os.Environ()),
+	})
+	if err != nil {
+		return catalogroute.LaunchResult{}, err
+	}
+	return catalogroute.LaunchResult{
+		AppID:     appID,
+		LaunchID:  result.LaunchID,
+		SurfaceID: result.SurfaceID,
+		Status:    string(result.Status),
+	}, nil
 }
 
 func surfaceProvider(config Config) (surfaceroute.Provider, error) {

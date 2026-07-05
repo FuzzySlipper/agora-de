@@ -157,6 +157,35 @@ Does not own:
 `launchlife` may depend on `session` for token identity, but session does not
 depend back on launch lifecycle behavior.
 
+## `nativelaunch`
+
+Path:
+
+```text
+go/internal/nativelaunch
+```
+
+Owns:
+
+- native desktop-entry argv construction without shell evaluation;
+- native launch request validation;
+- launcher environment allowlist and working-directory policy;
+- the narrow bridge-facing launch request shape.
+
+Does not own:
+
+- app catalog import;
+- session token creation;
+- compositor surface tracking;
+- shell HTTP routing;
+- arbitrary `Exec` execution from shellui.
+
+This cell is the first implementation boundary from
+`docs/native-launch-boundary-design.md`. It can prepare governed launch
+requests, but installed desktop entries remain non-launchable in shellui until
+the compositor bridge exposes a structured argv launch contract and live
+evidence proves the full path.
+
 ## `capture`
 
 Path:
@@ -200,6 +229,23 @@ Owns:
 - launchable app metadata;
 - conservative `.desktop` entry import;
 - visible catalog entry projection.
+
+Current `.desktop` import rules:
+
+- only the `[Desktop Entry]` group is consumed;
+- exact, unlocalized keys are used for `Type`, `Name`, `Exec`, `Icon`,
+  `NoDisplay`, and `Hidden`;
+- only `Type=Application` entries are imported into the catalog;
+- hidden and no-display entries remain modelled but are excluded from visible
+  projections;
+- Exec field codes are normalized conservatively for launchability metadata,
+  but this cell does not launch processes.
+
+The launch policy lives in `docs/native-launch-policy.md`. `ExecTokens` are
+metadata until a governed native-launch boundary exists.
+
+The planned first native-launch owner is described in
+`docs/native-launch-boundary-design.md` as `go/internal/nativelaunch`.
 
 Does not own:
 

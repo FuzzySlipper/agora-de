@@ -254,6 +254,21 @@ capture is visible and the expected shell pixels are present while the launched
 app is mapped. The runner waits briefly before capture so the dock's polling
 loop can reflect the running-app entry in the visible panel.
 
+Validate desktop-entry catalog import separately from the visible fixture launch
+service by running a temporary shellui with `--catalog-provider desktop_entries`
+and checking it with:
+
+```bash
+./harness/live/check-installed-catalog.py \
+  --catalog-url http://127.0.0.1:17782/api/catalog/apps \
+  --min-apps 1 \
+  --require-all-nonlaunchable
+```
+
+The runner emits `agora-de.installed-catalog-live.v1`. Under the current native
+launch policy, the imported installed entries must be visible in the catalog and
+non-launchable in shellui.
+
 Imported capture JSON remains supported:
 
 ```bash

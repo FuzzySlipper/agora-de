@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"agora-de.local/go/internal/shellui/server"
@@ -15,15 +17,35 @@ func main() {
 	listen := flag.String("listen", env("AGORA_DE_SHELLUI_LISTEN", server.DefaultListenAddress), "HTTP listen address")
 	staticRoot := flag.String("static-root", os.Getenv("AGORA_DE_SHELLUI_STATIC_ROOT"), "optional shell static asset root")
 	fixtureProviders := flag.Bool("fixture-providers", envBool("AGORA_DE_SHELLUI_FIXTURE_PROVIDERS", true), "serve deterministic deployment-testing providers")
+	catalogProvider := flag.String("catalog-provider", env("AGORA_DE_SHELLUI_CATALOG_PROVIDER", server.CatalogProviderFixture), "catalog provider: fixture or desktop_entries")
+	desktopEntryRoots := flag.String("desktop-entry-roots", env("AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS", ""), "desktop entry roots for desktop_entries catalog provider")
 	surfaceProvider := flag.String("surface-provider", env("AGORA_DE_SHELLUI_SURFACE_PROVIDER", server.SurfaceProviderFixture), "surface provider: fixture or compositorctl")
 	compositorctlPath := flag.String("compositorctl", env("AGORA_DE_SHELLUI_COMPOSITORCTL", "compositorctl"), "compositorctl path for live surface provider")
+	nativeLaunchProvider := flag.String("native-launch-provider", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER", server.NativeLaunchProviderDisabled), "native launch provider: disabled or structured_compositorctl")
+	nativeLaunchAllowlist := flag.String("native-launch-allowlist", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST", ""), "comma-separated desktop entry ids allowed for native launch")
+	nativeLaunchUID := flag.Int("native-launch-uid", envInt("AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID", 0), "requester uid for native launch")
+	nativeLaunchGID := flag.Int("native-launch-gid", envInt("AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID", 0), "requester gid for native launch")
+	nativeLaunchSessionToken := flag.String("native-launch-session-token", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN", ""), "session token for native launch")
+	nativeLaunchOutput := flag.String("native-launch-output", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT", ""), "output name for native launch placement")
+	nativeLaunchHome := flag.String("native-launch-home", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME", os.Getenv("HOME")), "home directory used as native launch cwd default")
+	nativeLaunchWorkingDir := flag.String("native-launch-working-dir", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR", ""), "explicit native launch working directory")
 	flag.Parse()
 
 	handler, err := server.NewHandler(server.Config{
-		StaticRoot:        *staticRoot,
-		FixtureProviders:  *fixtureProviders,
-		SurfaceProvider:   *surfaceProvider,
-		CompositorctlPath: *compositorctlPath,
+		StaticRoot:               *staticRoot,
+		FixtureProviders:         *fixtureProviders,
+		CatalogProvider:          *catalogProvider,
+		DesktopEntryRoots:        splitPathList(*desktopEntryRoots),
+		SurfaceProvider:          *surfaceProvider,
+		CompositorctlPath:        *compositorctlPath,
+		NativeLaunchProvider:     *nativeLaunchProvider,
+		NativeLaunchAllowlist:    splitCSV(*nativeLaunchAllowlist),
+		NativeLaunchRequesterUID: *nativeLaunchUID,
+		NativeLaunchRequesterGID: *nativeLaunchGID,
+		NativeLaunchSessionToken: *nativeLaunchSessionToken,
+		NativeLaunchOutputName:   *nativeLaunchOutput,
+		NativeLaunchHome:         *nativeLaunchHome,
+		NativeLaunchWorkingDir:   *nativeLaunchWorkingDir,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -54,4 +76,40 @@ func envBool(name string, fallback bool) bool {
 		return fallback
 	}
 	return value == "1" || value == "true" || value == "yes"
+}
+
+func envInt(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func splitPathList(value string) []string {
+	items := filepath.SplitList(value)
+	roots := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			roots = append(roots, item)
+		}
+	}
+	return roots
+}
+
+func splitCSV(value string) []string {
+	items := strings.Split(value, ",")
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			values = append(values, item)
+		}
+	}
+	return values
 }

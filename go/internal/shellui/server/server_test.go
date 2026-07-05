@@ -238,6 +238,150 @@ printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client
 	}
 }
 
+func TestHandlerCanUseDesktopEntryCatalogProvider(t *testing.T) {
+	root := t.TempDir()
+	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
+Type=Application
+Name=Terminal
+Exec=terminal %U
+Icon=terminal
+`)
+	writeServerDesktopEntry(t, root, "hidden.desktop", `[Desktop Entry]
+Type=Application
+Name=Hidden
+Exec=hidden
+NoDisplay=true
+`)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		CatalogProvider:   CatalogProviderDesktopEntries,
+		DesktopEntryRoots: []string{root},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var response struct {
+		Apps []struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			Icon       string `json:"icon"`
+			Launchable bool   `json:"launchable"`
+		} `json:"apps"`
+	}
+	decodeRoute(t, handler, "/api/catalog/apps", &response)
+	if len(response.Apps) != 1 {
+		t.Fatalf("apps = %d, want 1: %+v", len(response.Apps), response.Apps)
+	}
+	app := response.Apps[0]
+	if app.ID != "terminal.desktop" || app.Name != "Terminal" || app.Icon != "terminal" {
+		t.Fatalf("unexpected app: %+v", app)
+	}
+	if app.Launchable {
+		t.Fatalf("imported native app should not be launchable without explicit target: %+v", app)
+	}
+}
+
+func TestHandlerLaunchesAllowlistedNativeAppThroughStructuredProvider(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	root := t.TempDir()
+	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
+Type=Application
+Name=Terminal
+Exec=terminal --title %c
+Icon=terminal
+`)
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	command := filepath.Join(dir, "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' "$@" >> "$CALL_LOG"
+printf '%s\n' '{"launch_id":"native-launch","surface":{"surface":{"id":"native-view"}},"status":"launched"}'
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CALL_LOG", logPath)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:         true,
+		CatalogProvider:          CatalogProviderDesktopEntries,
+		DesktopEntryRoots:        []string{root},
+		CompositorctlPath:        command,
+		NativeLaunchProvider:     NativeLaunchProviderStructuredCompositorctl,
+		NativeLaunchAllowlist:    []string{"terminal.desktop"},
+		NativeLaunchRequesterUID: 1000,
+		NativeLaunchRequesterGID: 1000,
+		NativeLaunchSessionToken: "session-1",
+		NativeLaunchOutputName:   "HDMI-A-1",
+		NativeLaunchHome:         t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var catalogResponse struct {
+		Apps []struct {
+			ID         string `json:"id"`
+			Launchable bool   `json:"launchable"`
+		} `json:"apps"`
+	}
+	decodeRoute(t, handler, "/api/catalog/apps", &catalogResponse)
+	if len(catalogResponse.Apps) != 1 || catalogResponse.Apps[0].ID != "terminal.desktop" || !catalogResponse.Apps[0].Launchable {
+		t.Fatalf("native catalog app not launchable through structured provider: %+v", catalogResponse.Apps)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/catalog/launch", strings.NewReader(`{"appId":"terminal.desktop"}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	var launchResponse struct {
+		AppID     string `json:"appId"`
+		LaunchID  string `json:"launchId"`
+		SurfaceID string `json:"surfaceId"`
+		Status    string `json:"status"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &launchResponse); err != nil {
+		t.Fatal(err)
+	}
+	if launchResponse.AppID != "terminal.desktop" || launchResponse.LaunchID != "native-launch" || launchResponse.SurfaceID != "native-view" || launchResponse.Status != "launched" {
+		t.Fatalf("unexpected launch response: %+v", launchResponse)
+	}
+
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callText := string(calls)
+	if strings.Contains(callText, "--cmd") || strings.Contains(callText, "terminal --title Terminal") {
+		t.Fatalf("native launch used shell-shaped command: %s", callText)
+	}
+	for _, want := range []string{
+		"launch",
+		"--arg",
+		"terminal",
+		"--title",
+		"Terminal",
+		"--session-token",
+		"session-1",
+		"--audit-correlation-id",
+		"shellui:terminal.desktop",
+		"--output",
+		"HDMI-A-1",
+		"--wait-surface",
+	} {
+		if !strings.Contains(callText, want) {
+			t.Fatalf("structured native launch missing %q: %s", want, callText)
+		}
+	}
+}
+
 func TestHandlerMarksDeadCompositorctlClientUnmapped(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture is Unix-specific")
@@ -455,5 +599,12 @@ func decodeRoute(t *testing.T, handler http.Handler, path string, value any) {
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), value); err != nil {
 		t.Fatalf("%s JSON decode: %v", path, err)
+	}
+}
+
+func writeServerDesktopEntry(t *testing.T, root string, name string, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

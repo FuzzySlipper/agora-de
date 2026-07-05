@@ -17,7 +17,7 @@ func VisibleAppViews(source *appcatalog.Catalog) []AppView {
 			ID:         entry.ID,
 			Name:       entry.Name,
 			Icon:       entry.Icon,
-			Launchable: entry.Exec != "",
+			Launchable: entry.Launchable(),
 		})
 	}
 	return views
