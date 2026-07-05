@@ -107,7 +107,7 @@ def first_malformed_app(apps: list[object]) -> str | None:
     for index, app in enumerate(apps):
         if not isinstance(app, dict):
             return f"catalog entry {index} must be an object"
-        for field in ("id", "name", "icon"):
+        for field in ("id", "name", "icon", "iconKind", "iconRef", "iconLabel", "category"):
             if not isinstance(app.get(field), str):
                 return f"catalog entry {index} missing string {field}"
         if "launchable" in app and not isinstance(app["launchable"], bool):
@@ -138,6 +138,8 @@ def finish(checks: list[dict], checked_at: int, app_count: int, apps: list[objec
                     "name": app.get("name"),
                     "launchable": app.get("launchable") is True,
                     "disabledReason": app.get("disabledReason") or "",
+                    "category": app.get("category") or "",
+                    "iconKind": app.get("iconKind") or "",
                 }
             )
     result = {

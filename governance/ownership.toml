@@ -104,6 +104,7 @@ may_import = [
   "go/internal/shellui/staticserve",
   "go/internal/shellui/surfaceroute",
   "go/internal/shellui/surfaces",
+  "go/internal/shellui/theme",
 ]
 
 # Rust lanes

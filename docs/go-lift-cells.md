@@ -381,7 +381,8 @@ harness/fixtures/theme/agora-default-theme.json
 ```
 
 Theme support is intentionally constrained to the token/sanitizer contract from
-the successor lesson packet.
+the successor lesson packet. The current token/evidence boundary is documented
+in `docs/theme-boundary.md`.
 
 ## `shellui/widgets`
 

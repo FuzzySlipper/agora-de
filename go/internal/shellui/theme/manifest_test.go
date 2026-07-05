@@ -24,8 +24,13 @@ func TestDecodeManifestFixture(t *testing.T) {
 	if manifest.Name != "Agora Observatory" {
 		t.Fatalf("theme name = %q, want Agora Observatory", manifest.Name)
 	}
-	if len(manifest.Tokens) != 3 {
-		t.Fatalf("token count = %d, want 3", len(manifest.Tokens))
+	if len(manifest.Tokens) != len(DefaultTokens()) {
+		t.Fatalf("token count = %d, want %d", len(manifest.Tokens), len(DefaultTokens()))
+	}
+	for name, value := range DefaultTokens() {
+		if manifest.Tokens[name] != value {
+			t.Fatalf("theme token %s = %q, want %q", name, manifest.Tokens[name], value)
+		}
 	}
 }
 
@@ -37,12 +42,38 @@ func TestDecodeManifestRejectsNonAgoraToken(t *testing.T) {
 }
 
 func TestSafeTokenCSS(t *testing.T) {
-	css, err := SafeTokenCSS(map[string]string{"--agora-bg": "#101418"})
+	css, err := SafeTokenCSS(map[string]string{"--agora-bg": "#101418", "--agora-accent": "#46b3a5"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Index(css, "--agora-accent") > strings.Index(css, "--agora-bg") {
+		t.Fatalf("generated css should be deterministic and sorted: %q", css)
+	}
 	if !strings.Contains(css, "--agora-bg: #101418;") {
 		t.Fatalf("generated css = %q", css)
+	}
+}
+
+func TestDefaultTokenDefinitionsSeparateEvidenceMarkers(t *testing.T) {
+	definitions := DefaultTokenDefinitions()
+	if len(definitions) != len(DefaultTokens()) {
+		t.Fatalf("definition count = %d, want %d", len(definitions), len(DefaultTokens()))
+	}
+
+	roles := map[string]TokenRole{}
+	for _, definition := range definitions {
+		roles[definition.Name] = definition.Role
+	}
+	for _, name := range []string{TokenEvidenceBackground, TokenEvidenceAccent, TokenEvidenceStrong} {
+		if roles[name] != RoleEvidence {
+			t.Fatalf("token %s role = %q, want %q", name, roles[name], RoleEvidence)
+		}
+	}
+	if roles[TokenBackground] == RoleEvidence || roles[TokenAccent] == RoleEvidence {
+		t.Fatalf("presentation tokens should not be classified as evidence markers: %+v", roles)
+	}
+	if css := MustDefaultTokenCSS(); !strings.Contains(css, TokenEvidenceAccent) || !strings.Contains(css, TokenPanelHeight) {
+		t.Fatalf("default CSS missing centralized tokens: %s", css)
 	}
 }
 
@@ -58,4 +89,3 @@ func TestValidateSafeVisualCSSRejectsLayoutAndExfiltration(t *testing.T) {
 		}
 	}
 }
-

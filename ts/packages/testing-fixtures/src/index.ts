@@ -1,10 +1,13 @@
 import { appLauncherViewModel } from '@agora-de/feature-app-launcher';
+import { appLauncherThemeVars } from '@agora-de/feature-app-launcher';
 import { agentHealthViewModel } from '@agora-de/feature-agent-health';
 import { auditTailViewModel } from '@agora-de/feature-audit-tail';
 import { escalationsViewModel } from '@agora-de/feature-escalations';
+import { taskbarThemeVars } from '@agora-de/feature-taskbar';
 import { projectSurfaceLifecycle } from '@agora-de/domain';
 import { dataState, appCatalogState, surfaceLifecycleState } from '@agora-de/store';
 import { desktopShellComposition, operatorConsoleComposition } from '@agora-de/shell';
+import { evidenceThemeTokenNames, shellThemeTokens } from '@agora-de/theme';
 import { catalogAppsPath, decodeCatalogAppsResponse } from '@agora-de/transport';
 import { workSurfaceControlsViewModel } from '@agora-de/feature-work-surface-controls';
 import type {
@@ -229,5 +232,20 @@ export function assertShellRenderClaimFixtures(): void {
     !operator.modelClaims.includes('agent-health-ready-busy-counts')
   ) {
     throw new Error('operator console fixture should name boundary projection claims');
+  }
+}
+
+export function assertThemeFixture(): void {
+  if (!evidenceThemeTokenNames.includes(shellThemeTokens.evidenceAccent)) {
+    throw new Error('theme fixture should identify evidence accent separately from presentation accent');
+  }
+  if (evidenceThemeTokenNames.includes(shellThemeTokens.accent)) {
+    throw new Error('presentation accent should remain changeable without being a visual evidence marker');
+  }
+  if (taskbarThemeVars.border !== 'var(--agora-evidence-accent)') {
+    throw new Error('taskbar should consume the stable evidence accent through theme tokens');
+  }
+  if (appLauncherThemeVars.itemBackground !== 'var(--agora-surface-raised)') {
+    throw new Error('app launcher should consume shell theme surface tokens');
   }
 }

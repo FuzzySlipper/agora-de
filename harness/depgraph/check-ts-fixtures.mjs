@@ -5,5 +5,6 @@ fixtures.assertSurfaceLifecycleFixture();
 fixtures.assertAppCatalogVerticalFixture();
 fixtures.assertOperatorFeatureFixtures();
 fixtures.assertShellRenderClaimFixtures();
+fixtures.assertThemeFixture();
 
 console.log('TypeScript fixtures: OK');

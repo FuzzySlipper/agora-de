@@ -2,6 +2,7 @@ package theme
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -32,7 +33,13 @@ func ValidateToken(name string, value string) error {
 func SafeTokenCSS(tokens map[string]string) (string, error) {
 	var builder strings.Builder
 	builder.WriteString(":root {\n")
-	for name, value := range tokens {
+	names := make([]string, 0, len(tokens))
+	for name := range tokens {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		value := tokens[name]
 		if err := ValidateToken(name, value); err != nil {
 			return "", err
 		}
@@ -55,4 +62,3 @@ func ValidateSafeVisualCSS(css string) error {
 	}
 	return nil
 }
-

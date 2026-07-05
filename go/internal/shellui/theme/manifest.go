@@ -36,4 +36,3 @@ func DecodeManifest(reader io.Reader) (Manifest, error) {
 	}
 	return manifest, nil
 }
-

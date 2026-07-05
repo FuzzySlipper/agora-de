@@ -776,11 +776,14 @@ def classify_shell_output_pixels(path: pathlib.Path) -> tuple[dict | None, str]:
 
     light_background = 0
     black_pixels = 0
-    accent_pixels = 0
-    panel_dark_pixels = 0
+    evidence_accent_pixels = 0
+    evidence_strong_pixels = 0
     text_like_pixels = 0
     main_text_max_y = max(1, int(height * 0.85))
     panel_start = max(0, height - 140)
+    min_evidence_accent_pixels = max(128, width // 4)
+    min_evidence_strong_pixels = 512
+    min_text_like_pixels = 64
 
     for y, row in enumerate(rows):
         for x in range(width):
@@ -791,20 +794,21 @@ def classify_shell_output_pixels(path: pathlib.Path) -> tuple[dict | None, str]:
             if r >= 235 and g >= 235 and b >= 235:
                 light_background += 1
             if r <= 30 and g >= 170 and b >= 140:
-                accent_pixels += 1
+                evidence_accent_pixels += 1
             if y >= panel_start and r <= 45 and g <= 70 and b <= 80:
-                panel_dark_pixels += 1
-            if y < main_text_max_y and x < max(480, width // 4) and r <= 90 and g <= 110 and b <= 125:
+                evidence_strong_pixels += 1
+            dark_text_like = r <= 90 and g <= 110 and b <= 125
+            light_text_like = r >= 180 and g >= 190 and b >= 200
+            if y < main_text_max_y and x < max(480, width // 4) and (dark_text_like or light_text_like):
                 text_like_pixels += 1
 
     light_ratio = light_background / total
     black_ratio = black_pixels / total
     shell_visible = (
         black_ratio < 0.95
-        and light_ratio > 0.45
-        and accent_pixels >= max(128, width // 4)
-        and panel_dark_pixels >= 512
-        and text_like_pixels >= 64
+        and evidence_accent_pixels >= min_evidence_accent_pixels
+        and evidence_strong_pixels >= min_evidence_strong_pixels
+        and text_like_pixels >= min_text_like_pixels
     )
 
     if shell_visible:
@@ -819,10 +823,11 @@ def classify_shell_output_pixels(path: pathlib.Path) -> tuple[dict | None, str]:
         "shellVisible": shell_visible,
         "width": width,
         "height": height,
+        "themeEvidenceContract": "agora-de.theme-evidence.v1",
         "lightBackgroundRatio": round(light_ratio, 4),
         "blackPixelRatio": round(black_ratio, 4),
-        "accentPixels": accent_pixels,
-        "panelDarkPixels": panel_dark_pixels,
+        "evidenceAccentPixels": evidence_accent_pixels,
+        "evidenceStrongPixels": evidence_strong_pixels,
         "textLikePixels": text_like_pixels,
     }, ""
 

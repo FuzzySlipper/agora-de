@@ -1,6 +1,7 @@
 import type { FeatureManifest } from '@agora-de/domain';
 import type { CatalogApp } from '@agora-de/protocol';
 import type { AsyncState } from '@agora-de/store';
+import { themeVar } from '@agora-de/theme';
 
 export const appLauncherFeatureManifest = {
   id: 'feature-app-launcher',
@@ -9,6 +10,16 @@ export const appLauncherFeatureManifest = {
 } as const satisfies FeatureManifest;
 
 export const featureAppLauncher = appLauncherFeatureManifest.id;
+
+export const appLauncherThemeVars = {
+  itemBackground: themeVar('surfaceRaised'),
+  itemBorder: themeVar('borderSubtle'),
+  itemDisabledBorder: themeVar('border'),
+  iconBackground: themeVar('evidenceStrong'),
+  iconForeground: themeVar('background'),
+  metaForeground: themeVar('textMuted'),
+  accent: themeVar('accent'),
+} as const;
 
 export interface AppLauncherItemView {
   readonly id: string;

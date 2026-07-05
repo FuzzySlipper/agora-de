@@ -19,15 +19,18 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 
 	assertStatus(t, handler, "/shell/dist/desktop/?surface=dock", http.StatusOK)
 	body := responseBody(t, handler, "/shell/dist/desktop/?surface=dock")
+	assertNoStore(t, handler, "/shell/dist/desktop/?surface=dock")
+	assertNoStore(t, handler, "/api/catalog/apps")
 	if !strings.Contains(strings.ToLower(body), "<!doctype html>") {
 		t.Fatalf("shell body = %q, want doctype html", body)
 	}
-	if !strings.Contains(body, "#f8fafc") || !strings.Contains(body, "#00d1b2") {
-		t.Fatalf("shell body = %q, want high-contrast fallback paint styles", body)
+	if !strings.Contains(body, "--agora-bg") || !strings.Contains(body, "var(--agora-evidence-accent)") {
+		t.Fatalf("shell body = %q, want centralized theme tokens", body)
 	}
 	for _, want := range []string{
 		`class="panel"`,
 		`id="apps-button"`,
+		`aria-pressed="false"`,
 		`id="app-search"`,
 		`id="apps-section"`,
 		`id="refresh-button"`,
@@ -37,6 +40,11 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`id="workspace-label"`,
 		`id="status-label"`,
 		`id="clock-label"`,
+		`className = "app-icon"`,
+		`className = "app-meta"`,
+		`apps-open`,
+		`Hide Apps`,
+		`setAttribute("aria-pressed"`,
 		`/api/catalog/apps`,
 		`/api/catalog/launch`,
 		`/api/surfaces`,
@@ -84,6 +92,10 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 			ID         string `json:"id"`
 			Name       string `json:"name"`
 			Icon       string `json:"icon"`
+			IconKind   string `json:"iconKind"`
+			IconRef    string `json:"iconRef"`
+			IconLabel  string `json:"iconLabel"`
+			Category   string `json:"category"`
 			Launchable bool   `json:"launchable"`
 			Reason     string `json:"disabledReason"`
 		} `json:"apps"`
@@ -95,6 +107,9 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	seen := map[string]bool{}
 	for _, app := range catalogResponse.Apps {
 		seen[app.ID] = app.Launchable
+		if app.IconKind == "" || app.IconRef == "" || app.IconLabel == "" || app.Category == "" {
+			t.Fatalf("catalog app missing icon/category projection: %+v", app)
+		}
 	}
 	for _, id := range []string{"example-browser", "shell-status"} {
 		if !seen[id] {
@@ -287,6 +302,57 @@ NoDisplay=true
 	}
 	if app.Reason != "native launch disabled" {
 		t.Fatalf("disabled reason = %q, want native launch disabled", app.Reason)
+	}
+}
+
+func TestHandlerLaunchesBuiltInStatusOutsideActiveCatalog(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	root := t.TempDir()
+	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
+Type=Application
+Name=Terminal
+Exec=terminal
+Icon=terminal
+`)
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	command := filepath.Join(dir, "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' "$*" >> "$CALL_LOG"
+printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-view"}}}'
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CALL_LOG", logPath)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		CatalogProvider:   CatalogProviderDesktopEntries,
+		DesktopEntryRoots: []string{root},
+		CompositorctlPath: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/catalog/launch", strings.NewReader(`{"appId":"shell-status"}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status launch status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"launch", "surface=operator", "--expected-app-id io.agorade.ShellStatus"} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("status launch compositorctl calls missing %q: %s", want, calls)
+		}
 	}
 }
 
@@ -599,6 +665,18 @@ func responseBody(t *testing.T, handler http.Handler, path string) string {
 		t.Fatalf("%s status = %d, want %d", path, recorder.Code, http.StatusOK)
 	}
 	return recorder.Body.String()
+}
+
+func assertNoStore(t *testing.T, handler http.Handler, path string) {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	if got := recorder.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("%s Cache-Control = %q, want no-store", path, got)
+	}
+	if got := recorder.Header().Get("Pragma"); got != "no-cache" {
+		t.Fatalf("%s Pragma = %q, want no-cache", path, got)
+	}
 }
 
 func decodeRoute(t *testing.T, handler http.Handler, path string, value any) {

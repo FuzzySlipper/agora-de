@@ -21,6 +21,7 @@ import (
 	"agora-de.local/go/internal/shellui/staticserve"
 	"agora-de.local/go/internal/shellui/surfaceroute"
 	"agora-de.local/go/internal/shellui/surfaces"
+	"agora-de.local/go/internal/shellui/theme"
 )
 
 const (
@@ -75,7 +76,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux.Handle(WorkspacesPath, workspacesHandler(surfaceProvider))
 	mux.Handle(WorkspaceActionPath, workspaceActionHandler(surfaceProvider))
 	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot))
-	return mux, nil
+	return noStore(mux), nil
 }
 
 func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, error) {
@@ -193,16 +194,18 @@ func nativeDisabledReason(mode string, allowlisted bool, entry appcatalog.Entry)
 func fixtureCatalog() *appcatalog.Catalog {
 	source := appcatalog.NewCatalog()
 	source.Add(appcatalog.Entry{
-		ID:   "example-browser",
-		Name: "Example Browser",
-		Exec: "example-browser --new-window %u",
-		Icon: "example-browser",
+		ID:         "example-browser",
+		Name:       "Example Browser",
+		Exec:       "example-browser --new-window %u",
+		Icon:       "example-browser",
+		Categories: []string{"Network", "WebBrowser"},
 	})
 	source.Add(appcatalog.Entry{
-		ID:   "shell-status",
-		Name: "Shell Status",
-		Exec: "agora-de-shell-status",
-		Icon: "preferences-system",
+		ID:         "shell-status",
+		Name:       "Shell Status",
+		Exec:       "agora-de-shell-status",
+		Icon:       "preferences-system",
+		Categories: []string{"System", "Settings"},
 	})
 	return source
 }
@@ -236,13 +239,13 @@ func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.
 	targets := launchTargets()
 	nativeAllowlist := setFrom(config.NativeLaunchAllowlist)
 	return func(request *http.Request, launch catalogroute.LaunchRequest) (catalogroute.LaunchResult, error) {
-		entry, ok := appCatalog.Get(launch.AppID)
-		if !ok || entry.NoDisplay {
-			return catalogroute.LaunchResult{}, fmt.Errorf("app %q not found", launch.AppID)
-		}
 		target, ok := targets[launch.AppID]
 		if ok {
 			return launchWebviewTarget(request, path, launch.AppID, target)
+		}
+		entry, ok := appCatalog.Get(launch.AppID)
+		if !ok || entry.NoDisplay {
+			return catalogroute.LaunchResult{}, fmt.Errorf("app %q not found", launch.AppID)
 		}
 
 		nativeMode, err := nativeLaunchMode(config)
@@ -832,6 +835,19 @@ func writeJSON(response http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(response).Encode(value)
 }
 
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		setNoStore(response)
+		next.ServeHTTP(response, request)
+	})
+}
+
+func setNoStore(response http.ResponseWriter) {
+	response.Header().Set("Cache-Control", "no-store, max-age=0")
+	response.Header().Set("Pragma", "no-cache")
+	response.Header().Set("Expires", "0")
+}
+
 func shellAssetHandler(root string) http.Handler {
 	var resolver staticserve.Resolver
 	var hasRoot bool
@@ -909,11 +925,12 @@ func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTa
 <head>
   <title>agora-de shell</title>
   <style>
+%s
     html,
     body {
-      background: #f8fafc;
-      color: #102027;
-      font: 600 22px system-ui, sans-serif;
+      background: var(--agora-bg);
+      color: var(--agora-fg);
+      font: var(--agora-font-background);
       height: 100%%;
       margin: 0;
     }
@@ -930,37 +947,37 @@ func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTa
       padding: 0 28px;
     }
     .mark {
-      background: #00d1b2;
-      border-radius: 4px;
+      background: var(--agora-evidence-accent);
+      border-radius: var(--agora-radius-control);
       height: 40px;
       width: 40px;
     }
     .taskbar {
       align-items: center;
-      background: #f8fafc;
-      border-top: 4px solid #00d1b2;
-      box-shadow: inset 0 1px 0 #cbd5e1;
+      background: var(--agora-surface);
+      border-top: 4px solid var(--agora-evidence-accent);
+      box-shadow: inset 0 1px 0 var(--agora-border-subtle);
       box-sizing: border-box;
       display: flex;
       gap: 18px;
-      min-height: 96px;
+      min-height: var(--agora-panel-height);
       padding: 0 28px;
     }
     .badge {
       align-items: center;
-      background: #102027;
-      border-radius: 4px;
-      color: #f8fafc;
+      background: var(--agora-evidence-strong);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-bg);
       display: inline-flex;
-      height: 44px;
+      height: var(--agora-control-height);
       justify-content: center;
       min-width: 132px;
       padding: 0 16px;
     }
     .slot {
       align-items: center;
-      border: 2px solid #94a3b8;
-      border-radius: 4px;
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
       display: inline-flex;
       height: 40px;
       padding: 0 14px;
@@ -973,23 +990,24 @@ func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTa
     <span>agora-de shell: %s</span>
   </main>%s
 </body>
-</html>`, rows, bodyClass, escapedSurface, escapedSurface, taskbarHTML)
+</html>`, theme.MustDefaultTokenCSS(), rows, bodyClass, escapedSurface, escapedSurface, taskbarHTML)
 }
 
 func writeOperatorHTML(response http.ResponseWriter) {
-	fmt.Fprint(response, `<!doctype html>
+	fmt.Fprintf(response, `<!doctype html>
 <html>
 <head>
   <title>agora-de shell status</title>
   <meta name="color-scheme" content="light">
   <style>
+%s
     html,
     body {
-      background: #f8fafc;
-      color: #102027;
-      font: 600 16px system-ui, sans-serif;
+      background: var(--agora-bg);
+      color: var(--agora-fg);
+      font: var(--agora-font-status);
       margin: 0;
-      min-height: 100%;
+      min-height: 100%%;
     }
     body {
       box-sizing: border-box;
@@ -1000,7 +1018,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
     header,
     section {
       max-width: 1120px;
-      width: 100%;
+      width: 100%%;
     }
     header {
       align-items: center;
@@ -1018,47 +1036,47 @@ func writeOperatorHTML(response http.ResponseWriter) {
       margin-bottom: 10px;
     }
     .mark {
-      background: #00d1b2;
-      border-radius: 4px;
+      background: var(--agora-evidence-accent);
+      border-radius: var(--agora-radius-control);
       height: 36px;
       width: 36px;
     }
     .overall {
-      border: 2px solid #94a3b8;
-      border-radius: 4px;
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
       margin-left: auto;
       min-width: 96px;
       padding: 10px 14px;
       text-align: center;
     }
     .overall.ok {
-      border-color: #00d1b2;
+      border-color: var(--agora-accent);
     }
     .overall.warn {
-      border-color: #eab308;
+      border-color: var(--agora-warning);
     }
     table {
       border-collapse: collapse;
-      width: 100%;
+      width: 100%%;
     }
     th,
     td {
-      border-bottom: 1px solid #cbd5e1;
+      border-bottom: 1px solid var(--agora-border-subtle);
       padding: 9px 8px;
       text-align: left;
       vertical-align: top;
     }
     th {
-      color: #475569;
+      color: var(--agora-text-muted);
       font-size: 13px;
       text-transform: uppercase;
     }
     code {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
+      background: var(--agora-surface-raised);
+      border: 1px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
       display: block;
-      font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+      font: var(--agora-font-code);
       margin: 8px 0;
       overflow-wrap: anywhere;
       padding: 10px;
@@ -1069,7 +1087,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     }
     .muted {
-      color: #475569;
+      color: var(--agora-text-muted);
     }
   </style>
 </head>
@@ -1209,7 +1227,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
     setInterval(refresh, 5000);
   </script>
 </body>
-</html>`)
+</html>`, theme.MustDefaultTokenCSS())
 }
 
 func writePanelHTML(response http.ResponseWriter, surface string) {
@@ -1220,10 +1238,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
   <title>agora-de shell panel</title>
   <meta name="color-scheme" content="light">
   <style>
+%s
     html,
     body {
-      background: #f8fafc !important;
-      color: #102027;
+      background: var(--agora-bg) !important;
+      color: var(--agora-fg);
       height: 100%%;
       margin: 0;
       overflow: hidden;
@@ -1233,18 +1252,18 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       align-items: stretch;
       box-sizing: border-box;
       display: flex;
-      font: 600 18px system-ui, sans-serif;
+      font: var(--agora-font-panel);
     }
     .panel {
       align-items: center;
-      background: #f8fafc;
-      border-top: 4px solid #00d1b2;
-      box-shadow: inset 0 1px 0 #cbd5e1;
+      background: var(--agora-surface);
+      border-top: 4px solid var(--agora-evidence-accent);
+      box-shadow: inset 0 1px 0 var(--agora-border-subtle);
       box-sizing: border-box;
       display: flex;
-      gap: 14px;
-      min-height: 96px;
-      padding: 0 22px;
+      gap: var(--agora-panel-gap);
+      min-height: var(--agora-panel-height);
+      padding: 0 var(--agora-panel-padding-x);
       width: 100vw;
     }
     button {
@@ -1259,36 +1278,36 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     .status,
     .clock {
       align-items: center;
-      border-radius: 4px;
+      border-radius: var(--agora-radius-control);
       display: inline-flex;
-      height: 44px;
+      height: var(--agora-control-height);
       justify-content: center;
       padding: 0 16px;
       white-space: nowrap;
     }
     .brand {
-      background: #102027;
-      color: #f8fafc;
+      background: var(--agora-evidence-strong);
+      color: var(--agora-bg);
       min-width: 132px;
     }
     .control {
-      background: #00d1b2;
+      background: var(--agora-accent);
       border: 0;
-      color: #102027;
+      color: var(--agora-fg);
       min-width: 94px;
     }
     .control.secondary {
-      background: #ffffff;
-      border: 2px solid #94a3b8;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
     }
     .app-search {
-      background: #ffffff;
-      border: 2px solid #94a3b8;
-      border-radius: 4px;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
       box-sizing: border-box;
-      color: #102027;
+      color: var(--agora-fg);
       font: inherit;
-      height: 44px;
+      height: var(--agora-control-height);
       min-width: 124px;
       padding: 0 12px;
       width: 124px;
@@ -1296,11 +1315,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     .workspace,
     .status,
     .clock {
-      border: 2px solid #94a3b8;
-      color: #102027;
+      border: 2px solid var(--agora-border);
+      color: var(--agora-fg);
     }
     button.workspace {
-      background: #ffffff;
+      background: var(--agora-surface-raised);
       font: inherit;
     }
     .dock-section {
@@ -1316,6 +1335,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     .apps.expanded {
       flex: 1 1 860px;
     }
+    .panel.apps-open .apps {
+      flex: 1 1 auto;
+    }
     .app-list {
       align-items: center;
       display: flex;
@@ -1323,7 +1345,8 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 0;
       overflow: hidden;
     }
-    .apps.expanded .app-list {
+    .apps.expanded .app-list,
+    .panel.apps-open .app-list {
       overflow-x: auto;
       padding-bottom: 2px;
     }
@@ -1331,14 +1354,17 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       flex: 1 1 auto;
       overflow: hidden;
     }
+    .panel.apps-open .running {
+      display: none;
+    }
     .dock-item {
       align-items: center;
-      background: #ffffff;
-      border: 2px solid #cbd5e1;
-      border-radius: 4px;
-      color: #102027;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
       display: inline-flex;
-      height: 44px;
+      height: var(--agora-control-height);
       max-width: 180px;
       min-width: 86px;
       overflow: hidden;
@@ -1350,29 +1376,48 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       cursor: pointer;
     }
     .dock-item.app-item {
-      align-items: flex-start;
-      flex-direction: column;
+      align-items: center;
+      gap: 8px;
       justify-content: center;
       line-height: 1.05;
+      max-width: 220px;
+    }
+    .app-icon {
+      align-items: center;
+      background: var(--agora-evidence-strong);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-bg);
+      display: inline-flex;
+      flex: 0 0 auto;
+      font-size: 13px;
+      height: 26px;
+      justify-content: center;
+      width: 26px;
+    }
+    .app-copy {
+      display: block;
+      min-width: 0;
     }
     .app-name,
+    .app-meta,
     .app-reason {
       display: block;
       max-width: 100%%;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .app-meta,
     .app-reason {
-      color: #475569;
+      color: var(--agora-text-muted);
       font-size: 12px;
       margin-top: 3px;
     }
     .dock-item.disabled {
-      border-color: #94a3b8;
+      border-color: var(--agora-border);
     }
     .dock-item.focused {
-      border-color: #00d1b2;
-      box-shadow: inset 0 -3px 0 #00d1b2;
+      border-color: var(--agora-accent);
+      box-shadow: inset 0 -3px 0 var(--agora-accent);
     }
     .surface-actions {
       align-items: center;
@@ -1380,11 +1425,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       gap: 6px;
     }
     .surface-action {
-      background: #ffffff;
-      border: 2px solid #94a3b8;
-      border-radius: 4px;
-      color: #102027;
-      height: 44px;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      height: var(--agora-control-height);
       min-width: 58px;
       padding: 0 10px;
     }
@@ -1396,20 +1441,20 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 88px;
     }
     .status.ready {
-      border-color: #00d1b2;
+      border-color: var(--agora-accent);
     }
     .status.warn {
-      border-color: #eab308;
+      border-color: var(--agora-warning);
     }
     .muted {
-      color: #475569;
+      color: var(--agora-text-muted);
     }
   </style>
 </head>
 <body data-surface="%s">
   <main class="panel" aria-label="Agora DE shell panel">
     <span class="brand">agora-de</span>
-    <button class="control" id="apps-button" type="button">Apps</button>
+    <button class="control" id="apps-button" type="button" aria-pressed="false">Apps</button>
     <button class="control secondary" id="refresh-button" type="button">Refresh</button>
     <button class="control secondary" id="operator-button" type="button">Status</button>
     <section class="dock-section apps" id="apps-section" aria-label="Applications">
@@ -1481,22 +1526,40 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const name = document.createElement("span");
       name.className = "app-name";
       name.textContent = label;
-      element.appendChild(name);
+      const icon = document.createElement("span");
+      icon.className = "app-icon";
+      icon.textContent = text(app.iconLabel, label.slice(0, 1).toUpperCase());
+      icon.title = text(app.iconRef, text(app.icon, ""));
+      const copy = document.createElement("span");
+      copy.className = "app-copy";
+      copy.appendChild(name);
       if (reason) {
         const detail = document.createElement("span");
         detail.className = "app-reason";
         detail.textContent = reason;
-        element.appendChild(detail);
+        copy.appendChild(detail);
+      } else {
+        const category = document.createElement("span");
+        category.className = "app-meta";
+        category.textContent = text(app.category, "Other");
+        copy.appendChild(category);
       }
+      element.appendChild(icon);
+      element.appendChild(copy);
       return element;
     }
 
     function render() {
+      document.querySelector(".panel").className = "panel" + (state.appsExpanded ? " apps-open" : "");
       document.getElementById("apps-section").className = "dock-section apps" + (state.appsExpanded ? " expanded" : "");
       const query = state.appQuery.trim().toLowerCase();
       const apps = query
-        ? state.apps.filter((app) => (text(app.name, app.id) + " " + text(app.id, "")).toLowerCase().includes(query))
+        ? state.apps.filter((app) => (text(app.name, app.id) + " " + text(app.id, "") + " " + text(app.category, "")).toLowerCase().includes(query))
         : state.apps;
+      const appsButton = document.getElementById("apps-button");
+      appsButton.textContent = state.appsExpanded ? "Hide Apps" : "Apps";
+      appsButton.title = state.appsExpanded ? "Hide applications" : state.apps.length + " apps";
+      appsButton.setAttribute("aria-pressed", state.appsExpanded ? "true" : "false");
       renderList("apps-list", query ? "no matches" : "no apps", apps, renderApp, state.appsExpanded ? 12 : 4);
       const workSurfaces = state.surfaces.filter((surface) => surface.mapped && surface.surfaceKind !== "layer_shell");
       renderList("running-list", "no running apps", workSurfaces, (surface) => {
@@ -1508,8 +1571,13 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         return group;
       });
       const status = document.getElementById("status-label");
-      status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
-      status.className = "status " + (workSurfaces.length ? "ready" : "warn");
+      if (state.appsExpanded) {
+        status.textContent = apps.length + " apps";
+        status.className = "status ready";
+      } else {
+        status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
+        status.className = "status " + (workSurfaces.length ? "ready" : "warn");
+      }
       const workspace = document.getElementById("workspace-label");
       workspace.textContent = text(state.workspace.name, "workspace 1");
       workspace.title = state.workspace.surfaceCount ? state.workspace.surfaceCount + " work surfaces" : "workspace 1";
@@ -1625,5 +1693,5 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     setInterval(refresh, 3000);
   </script>
 </body>
-</html>`, escapedSurface, escapedSurface)
+</html>`, theme.MustDefaultTokenCSS(), escapedSurface, escapedSurface)
 }

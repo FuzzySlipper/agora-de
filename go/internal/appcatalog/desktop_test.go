@@ -34,6 +34,9 @@ func TestParseDesktopEntryFixture(t *testing.T) {
 	if entry.Icon != "example-browser" {
 		t.Fatalf("icon = %q, want example-browser", entry.Icon)
 	}
+	if len(entry.Categories) != 0 {
+		t.Fatalf("categories = %+v, want empty fixture categories", entry.Categories)
+	}
 	if entry.NoDisplay {
 		t.Fatal("fixture should be visible")
 	}
@@ -53,6 +56,7 @@ Type=Application
 Name=Zeta
 Exec=zeta %u
 Icon=zeta
+Categories=Utility;System;
 `)
 	writeDesktopEntry(t, root, "alpha.desktop", `[Desktop Entry]
 Type=Application
@@ -98,6 +102,9 @@ Name=Malformed
 	if got := strings.Join(entries[1].ExecTokens, " "); got != "zeta" {
 		t.Fatalf("zeta exec tokens = %q, want zeta", got)
 	}
+	if got := strings.Join(entries[1].Categories, ","); got != "Utility,System" {
+		t.Fatalf("zeta categories = %q, want Utility,System", got)
+	}
 }
 
 func TestImportDesktopEntriesUsesFirstRootPrecedence(t *testing.T) {
@@ -141,6 +148,13 @@ func TestNormalizeExecHandlesCommonFieldCodesConservatively(t *testing.T) {
 	}
 	if _, ok := NormalizeExec(`"unterminated`); ok {
 		t.Fatal("NormalizeExec accepted unterminated quote")
+	}
+}
+
+func TestParseCategoriesTrimsSkipsEmptyAndDeduplicates(t *testing.T) {
+	got := ParseCategories(" Utility ;System;;Utility; ")
+	if strings.Join(got, ",") != "Utility,System" {
+		t.Fatalf("categories = %+v, want Utility,System", got)
 	}
 }
 

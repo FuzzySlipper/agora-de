@@ -2,9 +2,28 @@
   "id": "agora-default",
   "name": "Agora Observatory",
   "tokens": {
-    "--agora-bg": "#101418",
-    "--agora-fg": "#f4f7f8",
-    "--agora-accent": "#46b3a5"
+    "--agora-accent": "#5eead4",
+    "--agora-bg": "#0f172a",
+    "--agora-border": "#64748b",
+    "--agora-border-subtle": "#334155",
+    "--agora-control-height": "44px",
+    "--agora-evidence-accent": "#00d1b2",
+    "--agora-evidence-bg": "#0f172a",
+    "--agora-evidence-strong": "#020617",
+    "--agora-fg": "#e5eef7",
+    "--agora-font-background": "600 22px var(--agora-font-family)",
+    "--agora-font-code": "600 13px ui-monospace, SFMono-Regular, Menlo, monospace",
+    "--agora-font-family": "system-ui, sans-serif",
+    "--agora-font-panel": "600 18px var(--agora-font-family)",
+    "--agora-font-status": "600 16px var(--agora-font-family)",
+    "--agora-panel-gap": "14px",
+    "--agora-panel-height": "96px",
+    "--agora-panel-padding-x": "22px",
+    "--agora-radius-control": "4px",
+    "--agora-surface": "#111827",
+    "--agora-surface-raised": "#1f2937",
+    "--agora-surface-strong": "#020617",
+    "--agora-text-muted": "#94a3b8",
+    "--agora-warning": "#fbbf24"
   }
 }
-

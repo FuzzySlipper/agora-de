@@ -19,6 +19,7 @@ type Entry struct {
 	ExecTokens    []string
 	ExecSupported bool
 	Icon          string
+	Categories    []string
 	NoDisplay     bool
 	Hidden        bool
 }
@@ -63,6 +64,7 @@ func ParseDesktopEntry(id string, reader io.Reader) (Entry, error) {
 		ExecTokens:    tokens,
 		ExecSupported: execSupported,
 		Icon:          values["Icon"],
+		Categories:    ParseCategories(values["Categories"]),
 		NoDisplay:     parseDesktopBool(values["NoDisplay"]),
 		Hidden:        parseDesktopBool(values["Hidden"]),
 	}
@@ -251,4 +253,18 @@ func splitExec(value string) ([]string, bool) {
 
 func parseDesktopBool(value string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), "true")
+}
+
+func ParseCategories(value string) []string {
+	seen := map[string]bool{}
+	categories := []string{}
+	for _, item := range strings.Split(value, ";") {
+		item = strings.TrimSpace(item)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		categories = append(categories, item)
+	}
+	return categories
 }

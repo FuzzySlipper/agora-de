@@ -1,0 +1,49 @@
+# Agora DE Theme Boundary
+
+Agora DE theme authority starts in `go/internal/shellui/theme` and is mirrored
+for TypeScript shell code by `@agora-de/theme`.
+
+The token contract is intentionally narrow:
+
+- normal presentation uses `presentation`, `state`, `layout`, and `typography`
+  tokens;
+- physical-display evidence uses `evidence` tokens;
+- arbitrary CSS, layout-capable theme overrides, imports, and URL-bearing values
+  remain outside the supported customization surface.
+
+## Authoritative Tokens
+
+The default dark manifest is represented by `theme.DefaultTokenDefinitions()`
+and `harness/fixtures/theme/agora-default-theme.json`. Go-rendered
+fallback/live shell HTML injects `theme.MustDefaultTokenCSS()` and consumes
+`var(--agora-*)` tokens rather than owning colors, radii, and panel dimensions
+directly.
+
+TypeScript feature libraries consume the same token vocabulary through
+`@agora-de/theme`. Feature packages may expose component-specific token maps,
+such as `taskbarThemeVars` or `appLauncherThemeVars`, but they should not invent
+unrelated visual constants in feature code.
+
+## Evidence Tokens
+
+The following tokens are stable evidence markers:
+
+- `--agora-evidence-bg`
+- `--agora-evidence-accent`
+- `--agora-evidence-strong`
+
+The live physical-output classifier in `harness/live/check-den-k8.py` keys on
+these visible markers through the `agora-de.theme-evidence.v1` contract and can
+recognize light or dark text presentation. Normal theme iteration can change
+`--agora-bg`, `--agora-accent`, borders, typography, and surfaces without
+necessarily changing the classifier, but evidence token changes require
+updating the live evidence classifier and fixtures together.
+
+## Customization Path
+
+Later user-facing theme customization should validate manifests through
+`go/internal/shellui/theme.DecodeManifest` and generate CSS with
+`SafeTokenCSS`. The sanitizer accepts only `--agora-*` token declarations and
+rejects layout/exfiltration-oriented CSS fragments. This keeps visual
+customization separate from compositor, session, launch, and governance
+plumbing.
