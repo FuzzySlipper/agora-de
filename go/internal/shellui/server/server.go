@@ -165,12 +165,29 @@ func launchAwareAppViews(config Config, source *appcatalog.Catalog) ([]catalog.A
 			continue
 		}
 		entry, ok := source.Get(views[index].ID)
-		views[index].Launchable = ok &&
+		launchable := ok &&
 			nativeMode == NativeLaunchProviderStructuredCompositorctl &&
 			nativeAllowlist[views[index].ID] &&
 			nativelaunch.CanPrepare(entry)
+		views[index].Launchable = launchable
+		if !launchable {
+			views[index].DisabledReason = nativeDisabledReason(nativeMode, nativeAllowlist[views[index].ID], entry)
+		}
 	}
 	return views, nil
+}
+
+func nativeDisabledReason(mode string, allowlisted bool, entry appcatalog.Entry) string {
+	switch {
+	case !nativelaunch.CanPrepare(entry):
+		return "unsupported desktop entry"
+	case mode == NativeLaunchProviderDisabled:
+		return "native launch disabled"
+	case !allowlisted:
+		return "not enabled for native launch"
+	default:
+		return "not launchable"
+	}
 }
 
 func fixtureCatalog() *appcatalog.Catalog {
@@ -1264,6 +1281,18 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       background: #ffffff;
       border: 2px solid #94a3b8;
     }
+    .app-search {
+      background: #ffffff;
+      border: 2px solid #94a3b8;
+      border-radius: 4px;
+      box-sizing: border-box;
+      color: #102027;
+      font: inherit;
+      height: 44px;
+      min-width: 124px;
+      padding: 0 12px;
+      width: 124px;
+    }
     .workspace,
     .status,
     .clock {
@@ -1281,8 +1310,22 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 0;
     }
     .apps {
-      flex: 0 1 520px;
+      flex: 0 1 680px;
       overflow: hidden;
+    }
+    .apps.expanded {
+      flex: 1 1 860px;
+    }
+    .app-list {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .apps.expanded .app-list {
+      overflow-x: auto;
+      padding-bottom: 2px;
     }
     .running {
       flex: 1 1 auto;
@@ -1305,6 +1348,27 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
     button.dock-item {
       cursor: pointer;
+    }
+    .dock-item.app-item {
+      align-items: flex-start;
+      flex-direction: column;
+      justify-content: center;
+      line-height: 1.05;
+    }
+    .app-name,
+    .app-reason {
+      display: block;
+      max-width: 100%%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .app-reason {
+      color: #475569;
+      font-size: 12px;
+      margin-top: 3px;
+    }
+    .dock-item.disabled {
+      border-color: #94a3b8;
     }
     .dock-item.focused {
       border-color: #00d1b2;
@@ -1348,8 +1412,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     <button class="control" id="apps-button" type="button">Apps</button>
     <button class="control secondary" id="refresh-button" type="button">Refresh</button>
     <button class="control secondary" id="operator-button" type="button">Status</button>
-    <section class="dock-section apps" id="apps-list" aria-label="Applications">
-      <span class="dock-item muted">loading apps</span>
+    <section class="dock-section apps" id="apps-section" aria-label="Applications">
+      <input class="app-search" id="app-search" type="search" aria-label="Search apps" placeholder="Search">
+      <span class="app-list" id="apps-list">
+        <span class="dock-item muted">loading apps</span>
+      </span>
     </section>
     <section class="dock-section running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
@@ -1363,7 +1430,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       apps: [],
       surfaces: [],
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
-      surface: %q
+      surface: %q,
+      appQuery: "",
+      appsExpanded: false
     };
 
     function text(value, fallback) {
@@ -1389,22 +1458,46 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return element;
     }
 
-    function renderList(id, emptyLabel, values, mapper) {
+    function renderList(id, emptyLabel, values, mapper, limit) {
       const target = document.getElementById(id);
       target.replaceChildren();
       if (!values.length) {
         target.appendChild(item(emptyLabel, "muted"));
         return;
       }
-      values.slice(0, 4).forEach((value) => target.appendChild(mapper(value)));
+      values.slice(0, limit || 4).forEach((value) => target.appendChild(mapper(value)));
+    }
+
+    function renderApp(app) {
+      const label = text(app.name, app.id);
+      const reason = text(app.disabledReason, app.launchable ? "" : "not launchable");
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = "dock-item app-item" + (app.launchable ? "" : " disabled");
+      element.disabled = !app.launchable;
+      element.title = reason ? label + " - " + reason : label;
+      element.addEventListener("click", () => launchApp(app.id));
+
+      const name = document.createElement("span");
+      name.className = "app-name";
+      name.textContent = label;
+      element.appendChild(name);
+      if (reason) {
+        const detail = document.createElement("span");
+        detail.className = "app-reason";
+        detail.textContent = reason;
+        element.appendChild(detail);
+      }
+      return element;
     }
 
     function render() {
-      renderList("apps-list", "no apps", state.apps, (app) => {
-        const appButton = button(text(app.name, app.id), "dock-item", () => launchApp(app.id));
-        appButton.disabled = !app.launchable;
-        return appButton;
-      });
+      document.getElementById("apps-section").className = "dock-section apps" + (state.appsExpanded ? " expanded" : "");
+      const query = state.appQuery.trim().toLowerCase();
+      const apps = query
+        ? state.apps.filter((app) => (text(app.name, app.id) + " " + text(app.id, "")).toLowerCase().includes(query))
+        : state.apps;
+      renderList("apps-list", query ? "no matches" : "no apps", apps, renderApp, state.appsExpanded ? 12 : 4);
       const workSurfaces = state.surfaces.filter((surface) => surface.mapped && surface.surfaceKind !== "layer_shell");
       renderList("running-list", "no running apps", workSurfaces, (surface) => {
         const group = document.createElement("span");
@@ -1501,6 +1594,14 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
     }
 
+    function toggleApps() {
+      state.appsExpanded = !state.appsExpanded;
+      render();
+      if (state.appsExpanded) {
+        document.getElementById("app-search").focus();
+      }
+    }
+
     function updateClock() {
       const now = new Date();
       document.getElementById("clock-label").textContent = now.toLocaleTimeString([], {
@@ -1509,7 +1610,12 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       });
     }
 
-    document.getElementById("apps-button").addEventListener("click", refresh);
+    document.getElementById("apps-button").addEventListener("click", toggleApps);
+    document.getElementById("app-search").addEventListener("input", (event) => {
+      state.appQuery = event.target.value;
+      state.appsExpanded = true;
+      render();
+    });
     document.getElementById("refresh-button").addEventListener("click", refresh);
     document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
     document.getElementById("workspace-label").addEventListener("click", activateWorkspace);

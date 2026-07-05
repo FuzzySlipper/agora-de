@@ -28,6 +28,8 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	for _, want := range []string{
 		`class="panel"`,
 		`id="apps-button"`,
+		`id="app-search"`,
+		`id="apps-section"`,
 		`id="refresh-button"`,
 		`id="operator-button"`,
 		`id="apps-list"`,
@@ -83,6 +85,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 			Name       string `json:"name"`
 			Icon       string `json:"icon"`
 			Launchable bool   `json:"launchable"`
+			Reason     string `json:"disabledReason"`
 		} `json:"apps"`
 	}
 	decodeRoute(t, handler, "/api/catalog/apps", &catalogResponse)
@@ -268,6 +271,7 @@ NoDisplay=true
 			Name       string `json:"name"`
 			Icon       string `json:"icon"`
 			Launchable bool   `json:"launchable"`
+			Reason     string `json:"disabledReason"`
 		} `json:"apps"`
 	}
 	decodeRoute(t, handler, "/api/catalog/apps", &response)
@@ -280,6 +284,9 @@ NoDisplay=true
 	}
 	if app.Launchable {
 		t.Fatalf("imported native app should not be launchable without explicit target: %+v", app)
+	}
+	if app.Reason != "native launch disabled" {
+		t.Fatalf("disabled reason = %q, want native launch disabled", app.Reason)
 	}
 }
 
@@ -328,11 +335,15 @@ printf '%s\n' '{"launch_id":"native-launch","surface":{"surface":{"id":"native-v
 		Apps []struct {
 			ID         string `json:"id"`
 			Launchable bool   `json:"launchable"`
+			Reason     string `json:"disabledReason"`
 		} `json:"apps"`
 	}
 	decodeRoute(t, handler, "/api/catalog/apps", &catalogResponse)
 	if len(catalogResponse.Apps) != 1 || catalogResponse.Apps[0].ID != "terminal.desktop" || !catalogResponse.Apps[0].Launchable {
 		t.Fatalf("native catalog app not launchable through structured provider: %+v", catalogResponse.Apps)
+	}
+	if catalogResponse.Apps[0].Reason != "" {
+		t.Fatalf("allowlisted native app disabled reason = %q, want empty", catalogResponse.Apps[0].Reason)
 	}
 
 	recorder := httptest.NewRecorder()

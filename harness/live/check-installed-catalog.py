@@ -23,6 +23,11 @@ def main() -> int:
         action="store_true",
         help="Require every visible app to be non-launchable under the current native-launch policy.",
     )
+    parser.add_argument(
+        "--require-disabled-reasons",
+        action="store_true",
+        help="Require non-launchable entries to carry disabledReason text.",
+    )
     parser.add_argument("--timeout-seconds", type=float, default=5)
     args = parser.parse_args()
 
@@ -77,6 +82,13 @@ def main() -> int:
             checks.append(failed("native-launch-policy", f"unexpected launchable installed entries: {sample}"))
         else:
             checks.append(passed("native-launch-policy", "all installed entries are non-launchable"))
+    if args.require_disabled_reasons:
+        missing_reason = [app for app in nonlaunchable if not app.get("disabledReason")]
+        if missing_reason:
+            sample = ", ".join(app["id"] for app in missing_reason[:5])
+            checks.append(failed("disabled-reasons", f"non-launchable entries missing disabledReason: {sample}"))
+        else:
+            checks.append(passed("disabled-reasons", "non-launchable entries include disabled reasons"))
 
     return finish(checks, checked_at, len(apps), apps)
 
@@ -125,6 +137,7 @@ def finish(checks: list[dict], checked_at: int, app_count: int, apps: list[objec
                     "id": app.get("id"),
                     "name": app.get("name"),
                     "launchable": app.get("launchable") is True,
+                    "disabledReason": app.get("disabledReason") or "",
                 }
             )
     result = {
