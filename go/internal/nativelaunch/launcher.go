@@ -80,7 +80,11 @@ func New(bridge Bridge) Launcher {
 }
 
 func CanPrepare(entry appcatalog.Entry) bool {
-	return entry.Visible() && entry.ExecSupported && len(entry.ExecTokens) > 0
+	if !entry.Visible() {
+		return false
+	}
+	_, err := BuildArgv(entry, "/usr/share/applications/"+entry.ID)
+	return err == nil
 }
 
 func (launcher Launcher) Launch(ctx context.Context, request Request) (Result, error) {

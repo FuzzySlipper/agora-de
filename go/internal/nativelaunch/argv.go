@@ -59,10 +59,11 @@ func BuildArgv(entry appcatalog.Entry, desktopFilePath string) ([]string, error)
 				return nil, fmt.Errorf("%w: unterminated field code", ErrUnsupportedFieldCode)
 			}
 			index++
-			if err := appendFieldCode(&current, entry, desktopFilePath, execValue[index]); err != nil {
+			wrote, err := appendFieldCode(&current, entry, desktopFilePath, execValue[index])
+			if err != nil {
 				return nil, err
 			}
-			tokenStarted = true
+			tokenStarted = tokenStarted || wrote
 		default:
 			current.WriteByte(character)
 			tokenStarted = true
@@ -80,24 +81,54 @@ func BuildArgv(entry appcatalog.Entry, desktopFilePath string) ([]string, error)
 	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
 		return nil, fmt.Errorf("%w: missing executable", ErrInvalidRequest)
 	}
-	return args, nil
+	return applyLaunchHints(args), nil
 }
 
-func appendFieldCode(builder *strings.Builder, entry appcatalog.Entry, desktopFilePath string, code byte) error {
+func applyLaunchHints(args []string) []string {
+	if len(args) == 0 || !isChromiumFamilyExecutable(args[0]) || hasOzonePlatformArg(args) {
+		return args
+	}
+	result := append([]string(nil), args...)
+	return append(result, "--ozone-platform=wayland")
+}
+
+func isChromiumFamilyExecutable(executable string) bool {
+	name := filepath.Base(strings.TrimSpace(executable))
+	switch name {
+	case "brave", "brave-browser", "chromium", "chromium-browser", "google-chrome", "google-chrome-stable":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasOzonePlatformArg(args []string) bool {
+	for _, arg := range args[1:] {
+		if arg == "--ozone-platform" || strings.HasPrefix(arg, "--ozone-platform=") ||
+			arg == "--ozone-platform-hint" || strings.HasPrefix(arg, "--ozone-platform-hint=") {
+			return true
+		}
+	}
+	return false
+}
+
+func appendFieldCode(builder *strings.Builder, entry appcatalog.Entry, desktopFilePath string, code byte) (bool, error) {
 	switch code {
 	case '%':
 		builder.WriteByte('%')
+		return true, nil
 	case 'c':
 		builder.WriteString(entry.Name)
+		return true, nil
 	case 'k':
 		if !filepath.IsAbs(desktopFilePath) {
-			return fmt.Errorf("%w: %%k requires absolute desktop file path", ErrInvalidRequest)
+			return false, fmt.Errorf("%w: %%k requires absolute desktop file path", ErrInvalidRequest)
 		}
 		builder.WriteString(desktopFilePath)
+		return true, nil
 	case 'i', 'f', 'F', 'u', 'U':
-		return fmt.Errorf("%w: %%%c", ErrUnsupportedFieldCode, code)
+		return false, nil
 	default:
-		return fmt.Errorf("%w: %%%c", ErrUnsupportedFieldCode, code)
+		return false, fmt.Errorf("%w: %%%c", ErrUnsupportedFieldCode, code)
 	}
-	return nil
 }

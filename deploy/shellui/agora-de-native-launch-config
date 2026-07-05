@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE'
 Usage:
   agora-de-native-launch-config enable-alacritty [--restart]
+  agora-de-native-launch-config enable-all [--restart]
   agora-de-native-launch-config disable [--restart]
 
 Environment:
@@ -34,7 +35,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${command}" in
-  enable-alacritty | disable)
+  enable-alacritty | enable-all | disable)
     ;;
   *)
     usage >&2
@@ -69,6 +70,12 @@ if command == "enable-alacritty":
         **common,
         "AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER": "structured_compositorctl",
         "AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST": "Alacritty.desktop",
+    }
+elif command == "enable-all":
+    updates = {
+        **common,
+        "AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER": "structured_compositorctl",
+        "AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST": "*",
     }
 else:
     updates = {

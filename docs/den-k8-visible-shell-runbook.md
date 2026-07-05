@@ -121,6 +121,13 @@ Wayfire through `openvt -c 1 -f -s -- runuser -u agent -- sg seat`; `openvt -w`
 can report status 8 after failing to deallocate VT1, and `openvt -e` did not
 start Wayfire reliably on this host.
 
+Native toplevel window visibility is controlled by
+`deploy/compositor/agora-de-wayfire-window-visibility-config`. The current
+installed state enables Wayfire's `decoration` plugin and sets
+`preferred_decoration_mode = server`, giving borderless native apps a visible
+title bar/border while leaving client-decorated apps and layer-shell chrome
+alone. See `docs/den-k8-window-visibility.md` for rollback and evidence.
+
 If the live host gets into a stale compositor/session state, install the
 recovery helper once and then use the sudoers-backed kill-all command:
 

@@ -95,8 +95,10 @@ configured roots and exposes them through `/api/catalog/apps`, but entries
 without an explicit shellui launch target render as non-launchable unless
 `structured_compositorctl` is enabled and the desktop-entry id is allowlisted.
 Allowlist matching is by id such as `Alacritty.desktop`, not executable path or
-display label. See `docs/native-launch-boundary-design.md` for the current
-launchability contract and disabled-code vocabulary.
+display label. The special allowlist value `*` enables every installed entry
+that the structured launcher can safely prepare. See
+`docs/native-launch-boundary-design.md` for the current launchability contract
+and disabled-code vocabulary.
 
 Minimal den-k8 governed native launch settings:
 
@@ -112,6 +114,11 @@ AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME=/home/agent
 AGORA_DE_SHELLUI_COMPOSITORCTL=/home/agent/.local/bin/agora-de-compositorctl
 ```
 
+For the local den-k8 development install, use
+`AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=*` or
+`~/.local/bin/agora-de-native-launch-config enable-all --restart` to make every
+structured-launchable installed entry clickable.
+
 Rollback is setting `AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled`,
 clearing `AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST`, and restarting
 `agora-de-shellui.service`.
@@ -121,6 +128,7 @@ The helper script keeps that edit copy/paste-safe:
 ```bash
 install -D -m 0755 deploy/shellui/agora-de-native-launch-config ~/.local/bin/agora-de-native-launch-config
 ~/.local/bin/agora-de-native-launch-config enable-alacritty --restart
+~/.local/bin/agora-de-native-launch-config enable-all --restart
 ~/.local/bin/agora-de-native-launch-config disable --restart
 ```
 

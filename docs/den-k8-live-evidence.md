@@ -290,7 +290,10 @@ The runner emits `agora-de.installed-catalog-live.v1`. With native launch
 disabled or no allowlist, imported installed entries must be visible in the
 catalog and non-launchable in shellui with stable `disabledCode` values. With
 `structured_compositorctl` enabled, only explicitly allowlisted desktop-entry
-ids such as `Alacritty.desktop` should become launchable.
+ids such as `Alacritty.desktop` should become launchable. On the current
+den-k8 development install, `AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=*` is
+used so every installed entry that can be prepared by the structured argv
+launcher is launchable.
 
 Structured native launch evidence for task 4176 used the agora-de
 `go/cmd/compositorctl` binary built to `/home/agent/.local/bin/agora-de-compositorctl`.

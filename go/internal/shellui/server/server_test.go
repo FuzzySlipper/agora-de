@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"agora-de.local/go/internal/shellui/catalog"
 )
 
 func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
@@ -71,6 +73,8 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`className = "app-detail"`,
 		`id="policy-status"`,
 		`dataset.disabledCode`,
+		`height: calc(100vh - 32px)`,
+		`overflow-y: auto`,
 		`launchable / " + disabled + " disabled`,
 		`/api/catalog/launch`,
 		`io.agorade.ShellLauncher`,
@@ -451,6 +455,61 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("launcher compositorctl calls missing %q: %s", want, calls)
 		}
+	}
+}
+
+func TestHandlerLaunchesNativeAppsWithAllowAllWildcard(t *testing.T) {
+	root := t.TempDir()
+	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
+Type=Application
+Name=Terminal
+Exec=terminal --title %c
+Icon=terminal
+`)
+	writeServerDesktopEntry(t, root, "browser.desktop", `[Desktop Entry]
+Type=Application
+Name=Browser
+Exec=browser %Z
+Icon=browser
+`)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:      true,
+		CatalogProvider:       CatalogProviderDesktopEntries,
+		DesktopEntryRoots:     []string{root},
+		NativeLaunchProvider:  NativeLaunchProviderStructuredCompositorctl,
+		NativeLaunchAllowlist: []string{NativeLaunchAllowAll},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var response struct {
+		Apps []struct {
+			ID         string `json:"id"`
+			Launchable bool   `json:"launchable"`
+			Code       string `json:"disabledCode"`
+			Reason     string `json:"disabledReason"`
+		} `json:"apps"`
+	}
+	decodeRoute(t, handler, "/api/catalog/apps", &response)
+	apps := map[string]struct {
+		Launchable bool
+		Code       string
+		Reason     string
+	}{}
+	for _, app := range response.Apps {
+		apps[app.ID] = struct {
+			Launchable bool
+			Code       string
+			Reason     string
+		}{Launchable: app.Launchable, Code: app.Code, Reason: app.Reason}
+	}
+	if !apps["terminal.desktop"].Launchable || apps["terminal.desktop"].Code != "" || apps["terminal.desktop"].Reason != "" {
+		t.Fatalf("wildcard should make preparable app launchable: %+v", apps["terminal.desktop"])
+	}
+	if apps["browser.desktop"].Launchable || apps["browser.desktop"].Code != catalog.DisabledCodeUnsupportedDesktopEntry {
+		t.Fatalf("wildcard should not make unsupported desktop entry launchable: %+v", apps["browser.desktop"])
 	}
 }
 

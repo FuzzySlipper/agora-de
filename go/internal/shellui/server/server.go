@@ -38,6 +38,7 @@ const (
 	CatalogProviderDesktopEntries               = "desktop_entries"
 	NativeLaunchProviderDisabled                = "disabled"
 	NativeLaunchProviderStructuredCompositorctl = "structured_compositorctl"
+	NativeLaunchAllowAll                        = "*"
 
 	NativeDisabledCodeProviderDisabled = "native_launch_disabled"
 	NativeDisabledCodeNotAllowlisted   = "native_launch_not_allowlisted"
@@ -170,18 +171,23 @@ func launchAwareAppViews(config Config, source *appcatalog.Catalog) ([]catalog.A
 			continue
 		}
 		entry, ok := source.Get(views[index].ID)
+		allowlisted := nativeLaunchAllowed(nativeAllowlist, views[index].ID)
 		launchable := ok &&
 			nativeMode == NativeLaunchProviderStructuredCompositorctl &&
-			nativeAllowlist[views[index].ID] &&
+			allowlisted &&
 			nativelaunch.CanPrepare(entry)
 		views[index].Launchable = launchable
 		if !launchable {
-			disabled := nativeDisabledState(nativeMode, nativeAllowlist[views[index].ID], entry)
+			disabled := nativeDisabledState(nativeMode, allowlisted, entry)
 			views[index].DisabledCode = disabled.Code
 			views[index].DisabledReason = disabled.Reason
 		}
 	}
 	return views, nil
+}
+
+func nativeLaunchAllowed(allowlist map[string]bool, appID string) bool {
+	return allowlist[NativeLaunchAllowAll] || allowlist[appID]
 }
 
 type nativeDisabled struct {
@@ -191,10 +197,10 @@ type nativeDisabled struct {
 
 func nativeDisabledState(mode string, allowlisted bool, entry appcatalog.Entry) nativeDisabled {
 	switch {
-	case !nativelaunch.CanPrepare(entry):
-		return nativeDisabled{Code: catalog.DisabledCodeUnsupportedDesktopEntry, Reason: "unsupported desktop entry"}
 	case mode == NativeLaunchProviderDisabled:
 		return nativeDisabled{Code: NativeDisabledCodeProviderDisabled, Reason: "native launch disabled"}
+	case !nativelaunch.CanPrepare(entry):
+		return nativeDisabled{Code: catalog.DisabledCodeUnsupportedDesktopEntry, Reason: "unsupported desktop entry"}
 	case !allowlisted:
 		return nativeDisabled{Code: NativeDisabledCodeNotAllowlisted, Reason: "not enabled for native launch"}
 	default:
@@ -268,7 +274,7 @@ func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.
 		if err != nil {
 			return catalogroute.LaunchResult{}, err
 		}
-		if nativeMode != NativeLaunchProviderStructuredCompositorctl || !nativeAllowlist[launch.AppID] {
+		if nativeMode != NativeLaunchProviderStructuredCompositorctl || !nativeLaunchAllowed(nativeAllowlist, launch.AppID) {
 			return catalogroute.LaunchResult{}, fmt.Errorf("app %q is not launchable by shellui", launch.AppID)
 		}
 		return launchNativeTarget(request, config, path, launch.AppID, entry)
@@ -1272,7 +1278,8 @@ func writeLauncherHTML(response http.ResponseWriter) {
     body {
       box-sizing: border-box;
       display: grid;
-      min-height: 100vh;
+      height: 100vh;
+      min-height: 0;
       padding: 16px;
     }
     .launcher {
@@ -1282,7 +1289,8 @@ func writeLauncherHTML(response http.ResponseWriter) {
       box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
       display: grid;
       grid-template-rows: auto 1fr auto;
-      min-height: 520px;
+      height: calc(100vh - 32px);
+      min-height: 0;
       overflow: hidden;
     }
     .launcher-header {
@@ -1326,6 +1334,7 @@ func writeLauncherHTML(response http.ResponseWriter) {
       display: grid;
       grid-template-columns: 176px minmax(0, 1fr);
       min-height: 0;
+      overflow: hidden;
     }
     .categories {
       background: var(--agora-evidence-strong);
@@ -1353,7 +1362,9 @@ func writeLauncherHTML(response http.ResponseWriter) {
     .apps {
       display: grid;
       grid-template-rows: auto 1fr;
+      min-height: 0;
       min-width: 0;
+      overflow: hidden;
     }
     .summary {
       border-bottom: 1px solid var(--agora-border-subtle);

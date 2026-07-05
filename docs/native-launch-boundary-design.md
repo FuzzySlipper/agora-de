@@ -84,15 +84,13 @@ prove that native launch accepts a structured argv vector, for example by adding
 a repeated `--arg` or `--argv-json` option. If the only available bridge command
 is an ambiguous command string, native installed entries stay non-launchable.
 
-Field-code handling for the first implementation:
+Field-code handling for plain launcher clicks:
 
 - `%%`: literal `%`;
 - `%c`: app display name as a single argument;
 - `%k`: absolute desktop-file path as a single argument;
-- `%i`: either structured icon arguments according to the desktop-entry spec or
-  a documented unsupported-field rejection;
-- `%f`, `%F`, `%u`, `%U`: unsupported until shellui can supply selected files or
-  URLs intentionally;
+- `%i`, `%f`, `%F`, `%u`, `%U`: omitted because a launcher click supplies no
+  icon arguments, selected files, or selected URLs;
 - unknown field codes: reject before process launch.
 
 Relative executable names resolve only through an explicit `PATH` allowlist.
@@ -178,8 +176,10 @@ AGORA_DE_SHELLUI_COMPOSITORCTL=/home/agent/.local/bin/agora-de-compositorctl
 
 The allowlist matches the desktop-entry id exactly, for example
 `Alacritty.desktop`. It does not match executable paths, display labels, icon
-names, or category names. Unknown native launch provider values are rejected at
-shellui startup. Rollback is setting
+names, or category names. The special value `*` enables every installed entry
+that the structured launcher can safely prepare; entries with unsupported field
+codes remain visible but disabled. Unknown native launch provider values are
+rejected at shellui startup. Rollback is setting
 `AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled` and clearing
 `AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST`.
 
