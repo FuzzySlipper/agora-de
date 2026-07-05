@@ -228,6 +228,11 @@ func launchTargets() map[string]launchTarget {
 			Title: "Agora DE Shell Status",
 			AppID: "io.agorade.ShellStatus",
 		},
+		"shell-launcher": {
+			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=launcher",
+			Title: "Agora DE App Launcher",
+			AppID: "io.agorade.ShellLauncher",
+		},
 	}
 }
 
@@ -897,6 +902,10 @@ func writeShellHTML(response http.ResponseWriter, request *http.Request) {
 		writePanelHTML(response, surface)
 		return
 	}
+	if surface == "launcher" {
+		writeLauncherHTML(response)
+		return
+	}
 	if surface == "operator" {
 		writeOperatorHTML(response)
 		return
@@ -1230,6 +1239,370 @@ func writeOperatorHTML(response http.ResponseWriter) {
 </html>`, theme.MustDefaultTokenCSS())
 }
 
+func writeLauncherHTML(response http.ResponseWriter) {
+	fmt.Fprintf(response, `<!doctype html>
+<html>
+<head>
+  <title>agora-de app launcher</title>
+  <meta name="color-scheme" content="dark">
+  <style>
+%s
+    html,
+    body {
+      background: var(--agora-bg);
+      color: var(--agora-fg);
+      font: var(--agora-font-status);
+      height: 100%%;
+      margin: 0;
+      overflow: hidden;
+      width: 100%%;
+    }
+    body {
+      box-sizing: border-box;
+      display: grid;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .launcher {
+      background: var(--agora-surface);
+      border: 1px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 520px;
+      overflow: hidden;
+    }
+    .launcher-header {
+      align-items: center;
+      border-bottom: 1px solid var(--agora-border-subtle);
+      display: flex;
+      gap: 12px;
+      padding: 14px;
+    }
+    .mark {
+      background: var(--agora-evidence-accent);
+      border-radius: var(--agora-radius-control);
+      height: 28px;
+      width: 28px;
+    }
+    .title {
+      font-weight: 700;
+      min-width: 120px;
+    }
+    .search {
+      background: var(--agora-surface-raised);
+      border: 1px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      flex: 1 1 auto;
+      font: inherit;
+      height: var(--agora-control-height);
+      min-width: 180px;
+      padding: 0 12px;
+    }
+    .close {
+      background: var(--agora-surface-raised);
+      border: 1px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      font: inherit;
+      height: var(--agora-control-height);
+      min-width: 72px;
+    }
+    .launcher-body {
+      display: grid;
+      grid-template-columns: 176px minmax(0, 1fr);
+      min-height: 0;
+    }
+    .categories {
+      background: var(--agora-evidence-strong);
+      border-right: 1px solid var(--agora-border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .category {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      font: inherit;
+      min-height: 36px;
+      padding: 0 10px;
+      text-align: left;
+    }
+    .category.active {
+      background: var(--agora-surface-raised);
+      border-color: var(--agora-accent);
+    }
+    .apps {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-width: 0;
+    }
+    .summary {
+      border-bottom: 1px solid var(--agora-border-subtle);
+      color: var(--agora-text-muted);
+      font-size: 13px;
+      padding: 10px 14px;
+    }
+    .app-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .app {
+      align-items: center;
+      background: var(--agora-surface-raised);
+      border: 1px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 34px minmax(0, 1fr);
+      min-height: 54px;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    .app:disabled {
+      opacity: 0.72;
+    }
+    .app-icon {
+      align-items: center;
+      background: var(--agora-evidence-strong);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      display: inline-flex;
+      font-size: 14px;
+      height: 34px;
+      justify-content: center;
+      width: 34px;
+    }
+    .app-name,
+    .app-detail {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .app-detail {
+      color: var(--agora-text-muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+    .footer {
+      align-items: center;
+      border-top: 1px solid var(--agora-border-subtle);
+      color: var(--agora-text-muted);
+      display: flex;
+      font-size: 13px;
+      justify-content: space-between;
+      min-height: 42px;
+      padding: 0 14px;
+    }
+  </style>
+</head>
+<body data-surface="launcher">
+  <main class="launcher" aria-label="Agora DE app launcher">
+    <header class="launcher-header">
+      <span class="mark"></span>
+      <span class="title">Applications</span>
+      <input class="search" id="app-search" type="search" aria-label="Search apps" placeholder="Search">
+      <button class="close" id="close-button" type="button">Close</button>
+    </header>
+    <section class="launcher-body">
+      <nav class="categories" id="categories" aria-label="Application categories"></nav>
+      <section class="apps" aria-label="Applications">
+        <div class="summary" id="summary">loading apps</div>
+        <div class="app-list" id="app-list"></div>
+      </section>
+    </section>
+    <footer class="footer">
+      <span id="status">loading</span>
+      <span>native launch disabled</span>
+    </footer>
+  </main>
+  <script>
+    const state = {
+      apps: [],
+      query: "",
+      category: "All"
+    };
+
+    function text(value, fallback) {
+      const trimmed = String(value || "").trim();
+      return trimmed || fallback;
+    }
+
+    function categories() {
+      const names = new Set(["All"]);
+      state.apps.forEach((app) => names.add(text(app.category, "Other")));
+      return Array.from(names).sort((left, right) => left === "All" ? -1 : right === "All" ? 1 : left.localeCompare(right));
+    }
+
+    function filteredApps() {
+      const query = state.query.trim().toLowerCase();
+      return state.apps.filter((app) => {
+        const category = text(app.category, "Other");
+        if (state.category !== "All" && category !== state.category) {
+          return false;
+        }
+        if (!query) {
+          return true;
+        }
+        const haystack = [
+          text(app.name, app.id),
+          text(app.id, ""),
+          category,
+          ...(Array.isArray(app.categories) ? app.categories : [])
+        ].join(" ").toLowerCase();
+        return haystack.includes(query);
+      });
+    }
+
+    function renderCategories() {
+      const target = document.getElementById("categories");
+      target.replaceChildren();
+      categories().forEach((category) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "category" + (category === state.category ? " active" : "");
+        button.textContent = category;
+        button.addEventListener("click", () => {
+          state.category = category;
+          render();
+        });
+        target.appendChild(button);
+      });
+    }
+
+    function renderApp(app) {
+      const label = text(app.name, app.id);
+      const reason = text(app.disabledReason, app.launchable ? "" : "not launchable");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "app";
+      button.disabled = !app.launchable;
+      button.title = reason ? label + " - " + reason : label;
+      button.addEventListener("click", () => launchApp(app.id));
+
+      const icon = document.createElement("span");
+      icon.className = "app-icon";
+      icon.textContent = text(app.iconLabel, label.slice(0, 1).toUpperCase());
+      icon.title = text(app.iconRef, text(app.icon, ""));
+      const copy = document.createElement("span");
+      const name = document.createElement("span");
+      name.className = "app-name";
+      name.textContent = label;
+      const detail = document.createElement("span");
+      detail.className = "app-detail";
+      detail.textContent = reason ? reason : text(app.category, "Other");
+      copy.appendChild(name);
+      copy.appendChild(detail);
+      button.appendChild(icon);
+      button.appendChild(copy);
+      return button;
+    }
+
+    function render() {
+      renderCategories();
+      const apps = filteredApps();
+      const list = document.getElementById("app-list");
+      list.replaceChildren();
+      if (!apps.length) {
+        const empty = document.createElement("div");
+        empty.className = "app-detail";
+        empty.textContent = "no matching apps";
+        list.appendChild(empty);
+      } else {
+        apps.forEach((app) => list.appendChild(renderApp(app)));
+      }
+      document.getElementById("summary").textContent = apps.length + " of " + state.apps.length + " apps";
+      document.getElementById("status").textContent = state.category + (state.query ? " search" : "");
+    }
+
+    async function loadJSON(path) {
+      const response = await fetch(path, {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function postJSON(path, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function refresh() {
+      try {
+        const catalog = await loadJSON("/api/catalog/apps");
+        state.apps = Array.isArray(catalog.apps) ? catalog.apps : [];
+        render();
+      } catch (error) {
+        document.getElementById("summary").textContent = "catalog offline";
+        document.getElementById("status").textContent = "offline";
+      }
+    }
+
+    async function launcherSurface() {
+      const surfaces = await loadJSON("/api/surfaces");
+      return (Array.isArray(surfaces.surfaces) ? surfaces.surfaces : []).find((surface) =>
+        surface.mapped && surface.appId === "io.agorade.ShellLauncher"
+      );
+    }
+
+    async function closeLauncher() {
+      try {
+        const surface = await launcherSurface();
+        if (surface) {
+          await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "close"});
+        } else {
+          window.close();
+        }
+      } catch (error) {
+        window.close();
+      }
+    }
+
+    async function launchApp(appId) {
+      document.getElementById("status").textContent = "launching";
+      try {
+        await postJSON("/api/catalog/launch", {appId});
+      } catch (error) {
+        document.getElementById("status").textContent = "launch failed";
+      }
+    }
+
+    document.getElementById("app-search").addEventListener("input", (event) => {
+      state.query = event.target.value;
+      render();
+    });
+    document.getElementById("close-button").addEventListener("click", closeLauncher);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeLauncher();
+      }
+    });
+    refresh().then(() => document.getElementById("app-search").focus());
+  </script>
+</body>
+</html>`, theme.MustDefaultTokenCSS())
+}
+
 func writePanelHTML(response http.ResponseWriter, surface string) {
 	escapedSurface := html.EscapeString(surface)
 	fmt.Fprintf(response, `<!doctype html>
@@ -1457,12 +1830,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     <button class="control" id="apps-button" type="button" aria-pressed="false">Apps</button>
     <button class="control secondary" id="refresh-button" type="button">Refresh</button>
     <button class="control secondary" id="operator-button" type="button">Status</button>
-    <section class="dock-section apps" id="apps-section" aria-label="Applications">
-      <input class="app-search" id="app-search" type="search" aria-label="Search apps" placeholder="Search">
-      <span class="app-list" id="apps-list">
-        <span class="dock-item muted">loading apps</span>
-      </span>
-    </section>
     <section class="dock-section running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
     </section>
@@ -1475,9 +1842,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       apps: [],
       surfaces: [],
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
-      surface: %q,
-      appQuery: "",
-      appsExpanded: false
+      surface: %q
     };
 
     function text(value, fallback) {
@@ -1513,55 +1878,23 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       values.slice(0, limit || 4).forEach((value) => target.appendChild(mapper(value)));
     }
 
-    function renderApp(app) {
-      const label = text(app.name, app.id);
-      const reason = text(app.disabledReason, app.launchable ? "" : "not launchable");
-      const element = document.createElement("button");
-      element.type = "button";
-      element.className = "dock-item app-item" + (app.launchable ? "" : " disabled");
-      element.disabled = !app.launchable;
-      element.title = reason ? label + " - " + reason : label;
-      element.addEventListener("click", () => launchApp(app.id));
-
-      const name = document.createElement("span");
-      name.className = "app-name";
-      name.textContent = label;
-      const icon = document.createElement("span");
-      icon.className = "app-icon";
-      icon.textContent = text(app.iconLabel, label.slice(0, 1).toUpperCase());
-      icon.title = text(app.iconRef, text(app.icon, ""));
-      const copy = document.createElement("span");
-      copy.className = "app-copy";
-      copy.appendChild(name);
-      if (reason) {
-        const detail = document.createElement("span");
-        detail.className = "app-reason";
-        detail.textContent = reason;
-        copy.appendChild(detail);
-      } else {
-        const category = document.createElement("span");
-        category.className = "app-meta";
-        category.textContent = text(app.category, "Other");
-        copy.appendChild(category);
-      }
-      element.appendChild(icon);
-      element.appendChild(copy);
-      return element;
+    function launcherSurface() {
+      return state.surfaces.find((surface) =>
+        surface.mapped && surface.appId === "io.agorade.ShellLauncher"
+      );
     }
 
     function render() {
-      document.querySelector(".panel").className = "panel" + (state.appsExpanded ? " apps-open" : "");
-      document.getElementById("apps-section").className = "dock-section apps" + (state.appsExpanded ? " expanded" : "");
-      const query = state.appQuery.trim().toLowerCase();
-      const apps = query
-        ? state.apps.filter((app) => (text(app.name, app.id) + " " + text(app.id, "") + " " + text(app.category, "")).toLowerCase().includes(query))
-        : state.apps;
+      const launcher = launcherSurface();
       const appsButton = document.getElementById("apps-button");
-      appsButton.textContent = state.appsExpanded ? "Hide Apps" : "Apps";
-      appsButton.title = state.appsExpanded ? "Hide applications" : state.apps.length + " apps";
-      appsButton.setAttribute("aria-pressed", state.appsExpanded ? "true" : "false");
-      renderList("apps-list", query ? "no matches" : "no apps", apps, renderApp, state.appsExpanded ? 12 : 4);
-      const workSurfaces = state.surfaces.filter((surface) => surface.mapped && surface.surfaceKind !== "layer_shell");
+      appsButton.textContent = launcher ? "Hide Apps" : "Apps";
+      appsButton.title = launcher ? "Close applications" : state.apps.length + " apps";
+      appsButton.setAttribute("aria-pressed", launcher ? "true" : "false");
+      const workSurfaces = state.surfaces.filter((surface) =>
+        surface.mapped &&
+        surface.surfaceKind !== "layer_shell" &&
+        surface.appId !== "io.agorade.ShellLauncher"
+      );
       renderList("running-list", "no running apps", workSurfaces, (surface) => {
         const group = document.createElement("span");
         group.className = "surface-actions";
@@ -1571,8 +1904,8 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         return group;
       });
       const status = document.getElementById("status-label");
-      if (state.appsExpanded) {
-        status.textContent = apps.length + " apps";
+      if (launcher) {
+        status.textContent = "apps open";
         status.className = "status ready";
       } else {
         status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
@@ -1662,12 +1995,22 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
     }
 
-    function toggleApps() {
-      state.appsExpanded = !state.appsExpanded;
-      render();
-      if (state.appsExpanded) {
-        document.getElementById("app-search").focus();
+    async function toggleApps() {
+      const status = document.getElementById("status-label");
+      const launcher = launcherSurface();
+      if (launcher) {
+        status.textContent = "closing apps";
+        status.className = "status ready";
+        try {
+          await postJSON("/api/surfaces/action", {surfaceId: launcher.id, action: "close"});
+          await refresh();
+        } catch (error) {
+          status.textContent = "close failed";
+          status.className = "status warn";
+        }
+        return;
       }
+      await launchApp("shell-launcher");
     }
 
     function updateClock() {
@@ -1679,11 +2022,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
 
     document.getElementById("apps-button").addEventListener("click", toggleApps);
-    document.getElementById("app-search").addEventListener("input", (event) => {
-      state.appQuery = event.target.value;
-      state.appsExpanded = true;
-      render();
-    });
     document.getElementById("refresh-button").addEventListener("click", refresh);
     document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
     document.getElementById("workspace-label").addEventListener("click", activateWorkspace);

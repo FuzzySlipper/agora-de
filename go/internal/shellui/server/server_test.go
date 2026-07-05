@@ -31,20 +31,15 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`class="panel"`,
 		`id="apps-button"`,
 		`aria-pressed="false"`,
-		`id="app-search"`,
-		`id="apps-section"`,
 		`id="refresh-button"`,
 		`id="operator-button"`,
-		`id="apps-list"`,
 		`id="running-list"`,
 		`id="workspace-label"`,
 		`id="status-label"`,
 		`id="clock-label"`,
-		`className = "app-icon"`,
-		`className = "app-meta"`,
-		`apps-open`,
 		`Hide Apps`,
 		`setAttribute("aria-pressed"`,
+		`io.agorade.ShellLauncher`,
 		`/api/catalog/apps`,
 		`/api/catalog/launch`,
 		`/api/surfaces`,
@@ -56,6 +51,31 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("shell body missing %q: %s", want, body)
+		}
+	}
+	for _, notWant := range []string{`id="apps-section"`, `id="apps-list"`, `id="app-search"`} {
+		if strings.Contains(body, notWant) {
+			t.Fatalf("panel body should not include horizontal app list hook %q: %s", notWant, body)
+		}
+	}
+
+	launcher := responseBody(t, handler, "/shell/dist/desktop/?surface=launcher")
+	for _, want := range []string{
+		"agora-de app launcher",
+		`class="launcher"`,
+		`id="app-search"`,
+		`id="categories"`,
+		`id="app-list"`,
+		`id="close-button"`,
+		`className = "app-icon"`,
+		`className = "app-detail"`,
+		`native launch disabled`,
+		`io.agorade.ShellLauncher`,
+		`/api/catalog/apps`,
+		`/api/surfaces/action`,
+	} {
+		if !strings.Contains(launcher, want) {
+			t.Fatalf("launcher body missing %q: %s", want, launcher)
 		}
 	}
 
@@ -354,6 +374,22 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 			t.Fatalf("status launch compositorctl calls missing %q: %s", want, calls)
 		}
 	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/catalog/launch", strings.NewReader(`{"appId":"shell-launcher"}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("launcher launch status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	calls, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"surface=launcher", "--expected-app-id io.agorade.ShellLauncher"} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("launcher compositorctl calls missing %q: %s", want, calls)
+		}
+	}
 }
 
 func TestHandlerLaunchesAllowlistedNativeAppThroughStructuredProvider(t *testing.T) {
@@ -572,6 +608,22 @@ esac
 	for _, want := range []string{"surface=operator", "--expected-app-id io.agorade.ShellStatus"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("status launch compositorctl calls missing %q: %s", want, calls)
+		}
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/catalog/launch", strings.NewReader(`{"appId":"shell-launcher"}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("launcher launch status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	calls, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"surface=launcher", "--expected-app-id io.agorade.ShellLauncher"} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("launcher compositorctl calls missing %q: %s", want, calls)
 		}
 	}
 }
