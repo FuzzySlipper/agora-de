@@ -173,10 +173,12 @@ agora-de-compositorctl launch \
   --wait-surface
 ```
 
-This command starts the argv vector without shell evaluation. For the current
-den-k8 transition it still uses `AGORA_DE_READBACK_COMPOSITORCTL` or
-`/usr/local/bin/compositorctl` for surface readback while the compositor backend
-is being lifted.
+This command starts the argv vector without shell evaluation. Surface readback
+now uses the same agora-de `compositorctl` control-socket client as shellui.
+The control socket is served by the agora-de compositor bridge daemon once
+`deploy/compositor/install-compositor-bridge-service.sh` has replaced the
+predecessor unit. The remaining runtime dependency is the Wayfire plugin loaded
+by the active Wayfire session.
 
 ## Required Tests
 

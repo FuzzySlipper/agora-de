@@ -3,7 +3,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-COMPOSITORCTL=${COMPOSITORCTL:-/usr/local/bin/compositorctl}
+COMPOSITORCTL=${COMPOSITORCTL:-/home/agent/.local/bin/agora-de-compositorctl}
 WEBVIEW_LAUNCHER=${WEBVIEW_LAUNCHER:-${AGORA_DE_SHELL_WEBVIEW_LAUNCHER:-$HOME/.local/bin/agora-de-gtk4-layer-shell-webview}}
 SURFACE_URL=${AGORA_DE_SHELL_SURFACE_URL:-${AGORA_DE_SHELL_PANEL_URL:-http://127.0.0.1:17780/shell/dist/desktop/?surface=dock}}
 SURFACE_ROLE=${AGORA_DE_SHELL_SURFACE_ROLE:-${AGORA_DE_SHELL_PANEL_ROLE:-panel}}

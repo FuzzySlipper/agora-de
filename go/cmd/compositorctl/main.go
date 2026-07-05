@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -15,7 +16,15 @@ import (
 	"time"
 )
 
-const defaultReadbackCompositorctl = "/usr/local/bin/compositorctl"
+const defaultCompositorControlSocket = "/run/agent-os/compositor-control.sock"
+
+const (
+	methodListSurfaces  = "list_surfaces"
+	methodListOutputs   = "list_outputs"
+	methodCaptureOutput = "capture_output"
+	methodFocusSurface  = "focus_surface"
+	methodCloseSurface  = "close_surface"
+)
 
 var listSurfacesFunc = listSurfaces
 
@@ -31,9 +40,24 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		usage(stderr)
 		return errors.New("command is required")
 	}
+	pretty := false
+	if args[0] == "--pretty" {
+		pretty = true
+		args = args[1:]
+		if len(args) == 0 {
+			usage(stderr)
+			return errors.New("command is required")
+		}
+	}
 	switch args[0] {
 	case "launch":
 		return runLaunch(args[1:], stdout)
+	case "list-surfaces":
+		return callAndPrint(methodListSurfaces, nil, stdout, pretty)
+	case "output":
+		return runOutput(args[1:], stdout, pretty)
+	case "surface":
+		return runSurface(args[1:], stdout, pretty)
 	default:
 		usage(stderr)
 		return fmt.Errorf("unsupported command %q", args[0])
@@ -41,10 +65,13 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func usage(output io.Writer) {
-	fmt.Fprintln(output, `Usage: compositorctl <command> [flags]
+	fmt.Fprintln(output, `Usage: compositorctl [--pretty] <command> [flags]
 
 Commands:
-  launch   Launch a native process from a structured argv vector`)
+  launch         Launch a native process from a structured argv vector
+  list-surfaces  List tracked compositor surfaces
+  output         List outputs or capture a physical output
+  surface        Focus or close a tracked surface`)
 }
 
 type repeatedFlag []string
@@ -63,6 +90,13 @@ func runLaunch(args []string, stdout io.Writer) error {
 	var environment repeatedFlag
 	fs := flag.NewFlagSet("launch", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	rawURL := fs.String("url", "", "remote URL to open in a webview")
+	rawPath := fs.String("path", "", "local HTML file to open in a webview")
+	webviewTitle := fs.String("webview-title", "", "webview window title")
+	webviewAppID := fs.String("app-id", "", "webview application id")
+	expectedAppID := fs.String("expected-app-id", "", "expected compositor app id")
+	webviewWidth := fs.Int("width", 1280, "webview width")
+	webviewHeight := fs.Int("height", 800, "webview height")
 	cwd := fs.String("cwd", "", "working directory")
 	uid := fs.Uint("uid", 0, "requester uid")
 	gid := fs.Uint("gid", 0, "requester gid")
@@ -76,13 +110,35 @@ func runLaunch(args []string, stdout io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if len(argv) == 0 {
-		return errors.New("launch requires at least one --arg")
+	webviewLaunch := *rawURL != "" || *rawPath != ""
+	if webviewLaunch {
+		if len(argv) > 0 {
+			return errors.New("--url/--path cannot be combined with --arg")
+		}
+		if *rawURL != "" && *rawPath != "" {
+			return errors.New("only one of --url or --path may be provided")
+		}
+		built, err := buildWebviewArgv(webviewLaunchRequest{
+			URL:           *rawURL,
+			Path:          *rawPath,
+			Title:         *webviewTitle,
+			AppID:         *webviewAppID,
+			ExpectedAppID: *expectedAppID,
+			Width:         *webviewWidth,
+			Height:        *webviewHeight,
+		})
+		if err != nil {
+			return err
+		}
+		argv = built
 	}
-	if *sessionToken == "" {
+	if len(argv) == 0 {
+		return errors.New("launch requires at least one --arg or --url/--path")
+	}
+	if !webviewLaunch && *sessionToken == "" {
 		return errors.New("--session-token is required")
 	}
-	if *auditCorrelationID == "" {
+	if !webviewLaunch && *auditCorrelationID == "" {
 		return errors.New("--audit-correlation-id is required")
 	}
 
@@ -119,7 +175,12 @@ func runLaunch(args []string, stdout io.Writer) error {
 	}
 	if *waitSurface {
 		timeout := time.Duration(*waitTimeoutMs) * time.Millisecond
-		surface, ok, err := waitForSurface(cmd.Process.Pid, startedAt, timeout, done)
+		surface, ok, err := waitForSurface(launchSurfaceMatch{
+			RootPID:       cmd.Process.Pid,
+			StartedAt:     startedAt,
+			ExpectedAppID: *expectedAppID,
+			ExpectedTitle: *webviewTitle,
+		}, timeout, done)
 		if err != nil {
 			response.Status = "failed"
 			_ = json.NewEncoder(stdout).Encode(response)
@@ -138,6 +199,182 @@ func runLaunch(args []string, stdout io.Writer) error {
 		}
 	}
 	return json.NewEncoder(stdout).Encode(response)
+}
+
+type webviewLaunchRequest struct {
+	URL           string
+	Path          string
+	Title         string
+	AppID         string
+	ExpectedAppID string
+	Width         int
+	Height        int
+}
+
+func buildWebviewArgv(request webviewLaunchRequest) (repeatedFlag, error) {
+	if request.URL == "" && request.Path == "" {
+		return nil, errors.New("--url or --path is required")
+	}
+	if request.AppID == "" {
+		return nil, errors.New("--app-id is required for webview launches")
+	}
+	if request.Title == "" {
+		request.Title = request.AppID
+	}
+	if request.ExpectedAppID == "" {
+		request.ExpectedAppID = request.AppID
+	}
+	if request.Width <= 0 {
+		request.Width = 1280
+	}
+	if request.Height <= 0 {
+		request.Height = 800
+	}
+
+	argv := repeatedFlag{webviewPython(), "-c", webviewPythonProgram}
+	if request.URL != "" {
+		argv = append(argv, "--url", request.URL)
+	} else {
+		argv = append(argv, "--path", request.Path)
+	}
+	argv = append(argv,
+		"--title", request.Title,
+		"--app-id", request.AppID,
+		"--expected-app-id", request.ExpectedAppID,
+		"--width", strconv.Itoa(request.Width),
+		"--height", strconv.Itoa(request.Height),
+	)
+	return argv, nil
+}
+
+func webviewPython() string {
+	if configured := strings.TrimSpace(os.Getenv("AGORA_DE_WEBVIEW_PYTHON")); configured != "" {
+		return configured
+	}
+	return "/usr/bin/python3"
+}
+
+const webviewPythonProgram = `
+import argparse
+import json
+import pathlib
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--url", default="")
+parser.add_argument("--path", default="")
+parser.add_argument("--title", required=True)
+parser.add_argument("--app-id", required=True)
+parser.add_argument("--expected-app-id", required=True)
+parser.add_argument("--width", type=int, default=1280)
+parser.add_argument("--height", type=int, default=800)
+args = parser.parse_args()
+
+try:
+    import gi
+    gi.require_version("Gtk", "4.0")
+    gi.require_version("WebKit", "6.0")
+    from gi.repository import Gio, GLib, Gtk, WebKit
+except Exception as exc:
+    print(f"DEPENDENCY_MISSING GTK4/WebKit stack: {exc}", file=sys.stderr, flush=True)
+    raise SystemExit(2)
+
+class WebviewApp(Gtk.Application):
+    def __init__(self):
+        GLib.set_prgname(args.app_id)
+        GLib.set_application_name(args.title)
+        super().__init__(application_id=args.app_id, flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.window = None
+
+    def do_activate(self):
+        self.window = Gtk.ApplicationWindow(application=self)
+        self.window.set_title(args.title)
+        self.window.set_default_size(args.width, args.height)
+        webview = WebKit.WebView()
+        if args.url:
+            webview.load_uri(args.url)
+        else:
+            webview.load_uri(pathlib.Path(args.path).resolve().as_uri())
+        self.window.set_child(webview)
+        self.window.connect("destroy", lambda *_args: self.quit())
+        self.window.present()
+        print(json.dumps({"event": "shown", "appId": args.app_id, "expectedAppId": args.expected_app_id}), flush=True)
+
+raise SystemExit(WebviewApp().run([]))
+`
+
+func runOutput(args []string, stdout io.Writer, pretty bool) error {
+	if len(args) == 0 {
+		return errors.New("output subcommand is required: list or capture")
+	}
+	switch args[0] {
+	case "list":
+		return callAndPrint(methodListOutputs, map[string]string{}, stdout, pretty)
+	case "capture":
+		fs := flag.NewFlagSet("output capture", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		name := fs.String("name", "", "logical output name")
+		exportArtifact := fs.Bool("export", false, "write structured artifacts for captured surfaces")
+		sessionID := fs.String("session", "", "session id for artifact export")
+		sessionToken := fs.String("session-token", os.Getenv("AGORA_COMPOSITOR_SESSION_TOKEN"), "session token")
+		auditID := fs.String("audit-correlation-id", "", "audit correlation id")
+		evidenceClass := fs.String("evidence-class", "viewport_screenshot", "evidence class")
+		seqID := fs.String("asha-command-sequence-id", "", "ASHA command sequence id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *name == "" {
+			return errors.New("--name is required")
+		}
+		req := captureOutputRequest{
+			Name:                  *name,
+			Export:                *exportArtifact,
+			SessionID:             *sessionID,
+			SessionToken:          *sessionToken,
+			AuditCorrelationID:    *auditID,
+			EvidenceClass:         *evidenceClass,
+			ASHACommandSequenceID: *seqID,
+		}
+		return callAndPrint(methodCaptureOutput, req, stdout, pretty)
+	default:
+		return fmt.Errorf("unknown output subcommand %q", args[0])
+	}
+}
+
+func runSurface(args []string, stdout io.Writer, pretty bool) error {
+	if len(args) == 0 {
+		return errors.New("surface subcommand is required: focus or close")
+	}
+	switch args[0] {
+	case "focus":
+		req, err := buildSurfaceRequest("surface focus", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodFocusSurface, req, stdout, pretty)
+	case "close":
+		req, err := buildSurfaceRequest("surface close", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodCloseSurface, req, stdout, pretty)
+	default:
+		return fmt.Errorf("unknown surface subcommand %q", args[0])
+	}
+}
+
+func buildSurfaceRequest(name string, args []string) (surfaceRequest, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	surfaceID := fs.String("surface", "", "surface id")
+	timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
+	if err := fs.Parse(args); err != nil {
+		return surfaceRequest{}, err
+	}
+	if *surfaceID == "" {
+		return surfaceRequest{}, errors.New("--surface is required")
+	}
+	return surfaceRequest{SurfaceID: *surfaceID, WaitTimeoutMs: *timeoutMs}, nil
 }
 
 func applyCredential(cmd *exec.Cmd, uid uint32, gid uint32) error {
@@ -202,7 +439,14 @@ type trackedSurface struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func waitForSurface(rootPID int, startedAt time.Time, timeout time.Duration, done <-chan error) (trackedSurface, bool, error) {
+type launchSurfaceMatch struct {
+	RootPID       int
+	StartedAt     time.Time
+	ExpectedAppID string
+	ExpectedTitle string
+}
+
+func waitForSurface(match launchSurfaceMatch, timeout time.Duration, done <-chan error) (trackedSurface, bool, error) {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -212,7 +456,7 @@ func waitForSurface(rootPID int, startedAt time.Time, timeout time.Duration, don
 	defer ticker.Stop()
 
 	for {
-		surface, ok := findSurfaceForPID(rootPID, startedAt)
+		surface, ok := findSurfaceForLaunch(match)
 		if ok {
 			return surface, true, nil
 		}
@@ -229,7 +473,7 @@ func waitForSurface(rootPID int, startedAt time.Time, timeout time.Duration, don
 	}
 }
 
-func findSurfaceForPID(rootPID int, startedAt time.Time) (trackedSurface, bool) {
+func findSurfaceForLaunch(match launchSurfaceMatch) (trackedSurface, bool) {
 	surfaces, err := listSurfacesFunc()
 	if err != nil {
 		return trackedSurface{}, false
@@ -241,10 +485,16 @@ func findSurfaceForPID(rootPID int, startedAt time.Time) (trackedSurface, bool) 
 		if !surface.Mapped && !surface.Visible && !surface.Surface.Visible {
 			continue
 		}
-		if !surface.UpdatedAt.IsZero() && surface.UpdatedAt.Before(startedAt.Add(-500*time.Millisecond)) {
+		if !surface.UpdatedAt.IsZero() && surface.UpdatedAt.Before(match.StartedAt.Add(-500*time.Millisecond)) {
 			continue
 		}
-		if surface.Client.PID == rootPID || processDescendsFrom(surface.Client.PID, rootPID) {
+		if surface.Client.PID == match.RootPID || processDescendsFrom(surface.Client.PID, match.RootPID) {
+			return surface, true
+		}
+		if match.ExpectedAppID != "" && surface.Surface.AppID == match.ExpectedAppID {
+			return surface, true
+		}
+		if match.ExpectedTitle != "" && surface.Surface.Title == match.ExpectedTitle {
 			return surface, true
 		}
 	}
@@ -252,14 +502,7 @@ func findSurfaceForPID(rootPID int, startedAt time.Time) (trackedSurface, bool) 
 }
 
 func listSurfaces() ([]trackedSurface, error) {
-	path := strings.TrimSpace(os.Getenv("AGORA_DE_READBACK_COMPOSITORCTL"))
-	if path == "" {
-		path = defaultReadbackCompositorctl
-	}
-	if path == "" {
-		return nil, errors.New("readback compositorctl is required")
-	}
-	output, err := exec.Command(path, "list-surfaces").Output()
+	output, err := callCompositorControl(methodListSurfaces, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -268,6 +511,97 @@ func listSurfaces() ([]trackedSurface, error) {
 		return nil, err
 	}
 	return response.Surfaces, nil
+}
+
+type controlRequest struct {
+	Method string          `json:"method"`
+	Body   json.RawMessage `json:"body"`
+}
+
+type controlResponse struct {
+	OK           bool            `json:"ok"`
+	Body         json.RawMessage `json:"body,omitempty"`
+	ErrorClass   string          `json:"error_class,omitempty"`
+	ErrorMessage string          `json:"error_message,omitempty"`
+}
+
+type captureOutputRequest struct {
+	Name                  string `json:"name"`
+	Export                bool   `json:"export,omitempty"`
+	SessionID             string `json:"session_id,omitempty"`
+	SessionToken          string `json:"session_token,omitempty"`
+	AuditCorrelationID    string `json:"audit_correlation_id,omitempty"`
+	EvidenceClass         string `json:"evidence_class,omitempty"`
+	ASHACommandSequenceID string `json:"asha_command_sequence_id,omitempty"`
+}
+
+type surfaceRequest struct {
+	SurfaceID     string `json:"surface_id"`
+	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
+}
+
+func callAndPrint(method string, body any, stdout io.Writer, pretty bool) error {
+	response, err := callCompositorControl(method, body)
+	if err != nil {
+		return err
+	}
+	return printJSON(response, stdout, pretty)
+}
+
+func callCompositorControl(method string, body any) (json.RawMessage, error) {
+	socketPath := compositorControlSocket()
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("connect %s: %w", socketPath, err)
+	}
+	defer conn.Close()
+
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	request := controlRequest{Method: method, Body: bodyJSON}
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
+		return nil, fmt.Errorf("send: %w", err)
+	}
+
+	var response controlResponse
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		return nil, fmt.Errorf("recv: %w", err)
+	}
+	if !response.OK {
+		if response.ErrorClass != "" {
+			return nil, fmt.Errorf("server[%s]: %s", response.ErrorClass, response.ErrorMessage)
+		}
+		return nil, fmt.Errorf("server: %s", string(response.Body))
+	}
+	if len(response.Body) == 0 {
+		return json.RawMessage(`{}`), nil
+	}
+	return response.Body, nil
+}
+
+func compositorControlSocket() string {
+	for _, key := range []string{"AGORA_DE_COMPOSITOR_CONTROL_SOCKET", "AGORA_DE_COMPOSITORCTL_SOCKET"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return defaultCompositorControlSocket
+}
+
+func printJSON(data json.RawMessage, stdout io.Writer, pretty bool) error {
+	if pretty {
+		var decoded any
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(decoded)
+	}
+	_, err := stdout.Write(append(data, '\n'))
+	return err
 }
 
 func processDescendsFrom(pid int, ancestor int) bool {

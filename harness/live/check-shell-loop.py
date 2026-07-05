@@ -14,7 +14,7 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:17780")
     parser.add_argument("--app-id", default="shell-status")
     parser.add_argument("--expected-app-id", default="io.agorade.ShellStatus")
-    parser.add_argument("--compositorctl", default="compositorctl")
+    parser.add_argument("--compositorctl", default="/home/agent/.local/bin/agora-de-compositorctl")
     parser.add_argument("--output-name", default="")
     parser.add_argument("--output-capture-session", default="den-k8-shell-loop")
     parser.add_argument(

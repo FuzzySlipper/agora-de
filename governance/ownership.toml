@@ -17,6 +17,10 @@ may_import = []
 lane = "go-compositor"
 may_import = ["go/internal/wayfireproto"]
 
+[go_package."go/internal/compositorbridge"]
+lane = "go-compositor"
+may_import = []
+
 [go_package."go/internal/launchlife"]
 lane = "go-compositor"
 may_import = ["go/internal/session"]

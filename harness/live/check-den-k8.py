@@ -68,7 +68,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--compositorctl",
-        default=os.environ.get("AGORA_DE_LIVE_COMPOSITORCTL", "compositorctl"),
+        default=os.environ.get("AGORA_DE_LIVE_COMPOSITORCTL", "/home/agent/.local/bin/agora-de-compositorctl"),
         help="compositorctl binary used for optional surface readback checks.",
     )
     parser.add_argument(

@@ -274,7 +274,6 @@ Structured native launch evidence for task 4176 used the agora-de
 The direct launch command:
 
 ```bash
-AGORA_DE_READBACK_COMPOSITORCTL=/usr/local/bin/compositorctl \
 /home/agent/.local/bin/agora-de-compositorctl launch \
   --arg /usr/bin/alacritty \
   --arg --title \
@@ -303,7 +302,6 @@ title `AgoraNativeSmoke`.
 The shellui sidecar launch command:
 
 ```bash
-AGORA_DE_READBACK_COMPOSITORCTL=/usr/local/bin/compositorctl \
 go run ./cmd/shellui \
   --listen 127.0.0.1:17783 \
   --catalog-provider desktop_entries \
@@ -338,6 +336,18 @@ AGORA_DE_LIVE_CAPTURE_JSON=/path/to/capture.json \
 Useful overrides:
 
 - `AGORA_DE_LIVE_SHELL_URL`
+- `AGORA_DE_LIVE_COMPOSITORCTL`
+
+The live compositor bridge daemon is installed from agora-de with:
+
+```bash
+sudo /home/dev/agora-de/deploy/compositor/install-compositor-bridge-service.sh
+```
+
+After installation, `systemctl cat compositor-bridge.service` should show
+`ExecStart=/usr/local/bin/agora-de-compositor-bridge`. The Wayfire plugin is
+still provided by the current Wayfire session and remains the active backend
+runtime dependency.
 - `AGORA_DE_LIVE_SYSTEMD_UNITS`
 - `AGORA_DE_LIVE_SOCKETS`
 - `AGORA_DE_LIVE_CAPTURE_JSON`

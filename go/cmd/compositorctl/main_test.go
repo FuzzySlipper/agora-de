@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -69,6 +70,47 @@ func TestRunLaunchRejectsCommandStringFlag(t *testing.T) {
 	}
 }
 
+func TestRunLaunchWebviewURLStartsWithoutNativeSessionFlags(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args")
+	launcher := filepath.Join(dir, "python-fixture")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" > " + shellQuote(argsPath) + "\n"
+	if err := os.WriteFile(launcher, []byte(script), 0o700); err != nil {
+		t.Fatalf("write launcher: %v", err)
+	}
+	t.Setenv("AGORA_DE_WEBVIEW_PYTHON", launcher)
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"launch",
+		"--url", "http://127.0.0.1:17780/shell/dist/desktop/?surface=operator",
+		"--webview-title", "Agora Status",
+		"--app-id", "io.agorade.ShellStatus",
+		"--expected-app-id", "io.agorade.ShellStatus",
+	}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run launch webview error = %v", err)
+	}
+	var response launchResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Status != "launched_without_surface" || response.SessionTokenPresent {
+		t.Fatalf("response = %+v", response)
+	}
+	waitForFile(t, argsPath)
+	args := string(mustReadFile(t, argsPath))
+	for _, want := range []string{"--url", "surface=operator", "--title", "Agora Status", "--app-id", "io.agorade.ShellStatus"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("webview argv missing %q: %s", want, args)
+		}
+	}
+}
+
 func TestRunLaunchWaitsForPIDMatchedSurface(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture is Unix-specific")
@@ -127,15 +169,139 @@ func TestRunLaunchWaitsForPIDMatchedSurface(t *testing.T) {
 	}
 }
 
+func TestRunLaunchWaitsForExpectedAppIDWhenWebKitPIDDiffers(t *testing.T) {
+	oldListSurfaces := listSurfacesFunc
+	t.Cleanup(func() { listSurfacesFunc = oldListSurfaces })
+	listSurfacesFunc = func() ([]trackedSurface, error) {
+		var surface trackedSurface
+		surface.Surface.ID = "view-webkit"
+		surface.Surface.AppID = "io.agorade.ShellStatus"
+		surface.Surface.Title = "Agora DE Shell Status"
+		surface.Surface.Visible = true
+		surface.Client.PID = 999999
+		surface.Mapped = true
+		surface.Visible = true
+		surface.UpdatedAt = time.Now()
+		return []trackedSurface{surface}, nil
+	}
+
+	surface, ok, err := waitForSurface(launchSurfaceMatch{
+		RootPID:       123456,
+		StartedAt:     time.Now().Add(-time.Second),
+		ExpectedAppID: "io.agorade.ShellStatus",
+		ExpectedTitle: "Agora DE Shell Status",
+	}, 100*time.Millisecond, make(chan error))
+	if err != nil {
+		t.Fatalf("waitForSurface error = %v", err)
+	}
+	if !ok || surface.Surface.ID != "view-webkit" {
+		t.Fatalf("surface = %+v ok=%v, want view-webkit", surface, ok)
+	}
+}
+
+func TestRunListSurfacesCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		if request.Method != methodListSurfaces {
+			t.Fatalf("method = %q, want %q", request.Method, methodListSurfaces)
+		}
+		if string(request.Body) != "null" {
+			t.Fatalf("body = %s, want null", request.Body)
+		}
+		return controlResponse{
+			OK:   true,
+			Body: json.RawMessage(`{"surfaces":[{"surface":{"id":"view-1","app_id":"app","title":"App","visible":true},"client":{"pid":123},"mapped":true,"visible":true}]}`),
+		}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{"list-surfaces"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run list-surfaces error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"view-1"`) {
+		t.Fatalf("stdout = %s", stdout.String())
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*requests))
+	}
+}
+
+func TestRunSurfaceFocusCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"ok":true}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{"surface", "focus", "--surface", "view-focus", "--timeout-ms", "1234"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run surface focus error = %v", err)
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*requests))
+	}
+	request := (*requests)[0]
+	if request.Method != methodFocusSurface {
+		t.Fatalf("method = %q, want %q", request.Method, methodFocusSurface)
+	}
+	var body surfaceRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.SurfaceID != "view-focus" || body.WaitTimeoutMs != 1234 {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestRunOutputCaptureCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"output":"HDMI-A-1","captures":[]}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"output", "capture",
+		"--name", "HDMI-A-1",
+		"--export",
+		"--session", "session-1",
+		"--session-token", "token-1",
+		"--audit-correlation-id", "audit-1",
+		"--evidence-class", "viewport_screenshot",
+		"--asha-command-sequence-id", "seq-1",
+	}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run output capture error = %v", err)
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*requests))
+	}
+	request := (*requests)[0]
+	if request.Method != methodCaptureOutput {
+		t.Fatalf("method = %q, want %q", request.Method, methodCaptureOutput)
+	}
+	var body captureOutputRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Name != "HDMI-A-1" || !body.Export || body.SessionID != "session-1" || body.SessionToken != "token-1" || body.AuditCorrelationID != "audit-1" || body.EvidenceClass != "viewport_screenshot" || body.ASHACommandSequenceID != "seq-1" {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
 func assertFile(t *testing.T, path string, want string) {
+	t.Helper()
+	got := mustReadFile(t, path)
+	if string(got) != want {
+		t.Fatalf("%s = %q, want %q", path, got, want)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	if string(got) != want {
-		t.Fatalf("%s = %q, want %q", path, got, want)
-	}
+	return got
 }
 
 func waitForFile(t *testing.T, path string) {
@@ -163,4 +329,40 @@ func atoi(value string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+func serveControlSocket(t *testing.T, handle func(controlRequest) controlResponse) *[]controlRequest {
+	t.Helper()
+	socketPath := filepath.Join(t.TempDir(), "compositor-control.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen unix socket: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	t.Setenv("AGORA_DE_COMPOSITOR_CONTROL_SOCKET", socketPath)
+
+	requests := []controlRequest{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var request controlRequest
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		requests = append(requests, request)
+		if err := json.NewEncoder(conn).Encode(handle(request)); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-done
+	})
+	return &requests
 }

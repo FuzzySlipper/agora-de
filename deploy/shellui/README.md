@@ -140,12 +140,12 @@ The current service intentionally uses fixture providers by default for
 deployment testing. Disable `AGORA_DE_SHELLUI_FIXTURE_PROVIDERS` only after a
 live compositor/provider path is wired.
 
-To use the installed compositor bridge through `compositorctl list-surfaces`,
+To use the installed compositor control path through agora-de `compositorctl list-surfaces`,
 set:
 
 ```text
 AGORA_DE_SHELLUI_SURFACE_PROVIDER=compositorctl
-AGORA_DE_SHELLUI_COMPOSITORCTL=/usr/local/bin/compositorctl
+AGORA_DE_SHELLUI_COMPOSITORCTL=/home/agent/.local/bin/agora-de-compositorctl
 ```
 
 If that command fails, `/api/surfaces` and `/api/work-surface-controls` fail
@@ -228,16 +228,18 @@ allowlist of desktop-entry ids. That mode expects compositorctl to support the
 structured `--arg` launch contract from `docs/native-launch-boundary-design.md`;
 do not enable it against a bridge that only supports `-cmd` strings.
 
-For den-k8 native-launch sidecar testing, build the agora-de structured
-launcher separately and point only that sidecar at it:
+For den-k8 native-launch and live readback testing, build the agora-de
+compositor control launcher and point shellui at it:
 
 ```bash
 cd /home/dev/agora-de/go
 go build -trimpath -o /home/agent/.local/bin/agora-de-compositorctl ./cmd/compositorctl
 ```
 
-Keep the default installed shell service on `/usr/local/bin/compositorctl` until
-the remaining surface readback, close, and capture operations are lifted.
+This repo-owned command now covers the installed shellui readback, focus/close,
+physical output capture, and structured native-launch command surface. It still
+speaks to the currently installed Wayfire bridge service socket until the bridge
+daemon itself is lifted out of the predecessor deployment.
 
 For the den-k8 user-service restart and visibility playbook, see
 `docs/den-k8-visible-shell-runbook.md`.

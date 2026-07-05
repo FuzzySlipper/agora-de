@@ -30,7 +30,7 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=2560)
     parser.add_argument("--height", type=int, default=1440)
     parser.add_argument("--python", default="/usr/bin/python3")
-    parser.add_argument("--compositorctl", default="/usr/local/bin/compositorctl")
+    parser.add_argument("--compositorctl", default="/home/agent/.local/bin/agora-de-compositorctl")
     parser.add_argument("--cases", default=",".join(DEFAULT_CASES))
     parser.add_argument("--hold-seconds", type=float, default=4)
     parser.add_argument("--output", default="/tmp/agora-de-gtk-layer-shell-bakeoff.json")
