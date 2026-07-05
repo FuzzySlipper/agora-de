@@ -108,6 +108,7 @@ Current visible-shell scenario packets:
 | `den-k8-installed-service-capture` | General installed shell output capture, used for dock/panel visibility. |
 | `den-k8-shell-launch-visible` | Launch-loop capture taken after an app surface is running and focused. |
 | `den-k8-native-launch-visible` | Governed native app launch capture taken after an allowlisted installed app is running and focused. |
+| `den-k8-structured-layout-visible` | Structured layout capture taken after two or more native apps are running and focusable. |
 
 ## Failure Taxonomy
 
@@ -272,6 +273,29 @@ if `/usr/local/bin/compositorctl` is selected, requires the target app to be
 launchable in `/api/catalog/apps`, launches through `/api/catalog/launch`,
 verifies compositor-backed surface readback and focus, captures the physical
 output, closes the surface, and verifies stale cleanup.
+
+Run the structured layout evidence loop with capture evidence:
+
+```bash
+./harness/live/check-structured-layout.py \
+  --base-url http://127.0.0.1:17780 \
+  --app-id Alacritty.desktop \
+  --app-id foot.desktop \
+  --expected-app-id Alacritty \
+  --expected-app-id foot \
+  --expected-zone primary \
+  --expected-zone secondary \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-structured-layout \
+  --require-capture
+```
+
+The structured-layout runner emits `agora-de.structured-layout-live.v1`. It
+uses the installed shell/compositor path only: app catalog launch, surface
+focus/close actions, `/api/layout`, and `/api/layout/action`. It distinguishes
+`visibility`, `focus`, `occlusion-overlap`, `capture`, and `cleanup` failures.
+Zone assignment may pass as backend-unsupported only when the final layout still
+proves either distinct expected zones or non-overlapping geometry.
 
 Validate desktop-entry catalog import separately from the visible fixture launch
 service by running a temporary shellui with `--catalog-provider desktop_entries`

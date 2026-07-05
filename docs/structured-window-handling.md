@@ -1,6 +1,7 @@
 # Structured Window Handling
 
-Status: design record for Den task 4237.
+Status: design record for Den task 4237, with live harness follow-through for
+Den task 4249.
 
 ## Recommendation
 
@@ -120,8 +121,8 @@ native geometry authority.
 
 ## Evidence Harness Requirements
 
-The live harness should run against the installed den-k8 service, not VMs.
-It must:
+The live harness lives at `./harness/live/check-structured-layout.py` and runs
+against the installed den-k8 service, not VMs. It must:
 
 - launch at least two native apps through the shell/catalog path;
 - wait for mapped, visible, capturable toplevel surfaces;
