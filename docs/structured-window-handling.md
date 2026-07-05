@@ -79,18 +79,18 @@ shell routes. Initial state should include:
 
 Initial actions:
 
-- `layout.get`
-- `layout.set_mode`
-- `surface.focus`
-- `surface.close`
-- `surface.move_resize`
-- `surface.tile`
-- `surface.set_floating`
-- `surface.assign_zone`
-- `surface.maximize`
-- `surface.minimize`
-- `surface.fullscreen`
-- `workspace.activate`
+- `layout.get` over bridge method `get_layout`
+- `layout.set_mode` over bridge method `set_layout_mode`
+- `surface.focus` over bridge method `focus_surface`
+- `surface.close` over bridge method `close_surface`
+- `surface.move_resize` over bridge method `move_resize_surface`
+- `surface.tile` over bridge method `tile_surface`
+- `surface.set_floating` over bridge method `set_surface_floating`
+- `surface.assign_zone` over bridge method `assign_surface_zone`
+- `surface.maximize` over bridge method `maximize_surface`
+- `surface.minimize` over bridge method `minimize_surface`
+- `surface.fullscreen` over bridge method `fullscreen_surface`
+- `workspace.activate` over bridge method `activate_workspace`
 
 Shellui should expose layout state and actions as a projection of this bridge
 contract. TypeScript may render the controls and badges, but it should not own

@@ -252,6 +252,118 @@ func TestRunSurfaceFocusCallsCompositorControlSocket(t *testing.T) {
 	}
 }
 
+func TestRunLayoutGetCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"layout":{"mode":"freeform","revision":1}}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{"layout", "get"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run layout get error = %v", err)
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*requests))
+	}
+	if (*requests)[0].Method != methodGetLayout {
+		t.Fatalf("method = %q, want %q", (*requests)[0].Method, methodGetLayout)
+	}
+	if !strings.Contains(stdout.String(), `"freeform"`) {
+		t.Fatalf("stdout = %s", stdout.String())
+	}
+}
+
+func TestRunLayoutSetModeCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{"layout", "set-mode", "--mode", "zones"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run layout set-mode error = %v", err)
+	}
+	request := (*requests)[0]
+	if request.Method != methodSetLayoutMode {
+		t.Fatalf("method = %q, want %q", request.Method, methodSetLayoutMode)
+	}
+	var body setLayoutModeRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Mode != "zones" {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestRunSurfaceMoveResizeCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"surface", "move-resize",
+		"--surface", "view-1",
+		"--x", "10",
+		"--y", "20",
+		"--width", "800",
+		"--height", "600",
+		"--timeout-ms", "1234",
+	}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run surface move-resize error = %v", err)
+	}
+	request := (*requests)[0]
+	if request.Method != methodMoveResizeSurface {
+		t.Fatalf("method = %q, want %q", request.Method, methodMoveResizeSurface)
+	}
+	var body surfaceLayoutRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.SurfaceID != "view-1" || body.Geometry == nil || body.Geometry.X != 10 || body.Geometry.Y != 20 || body.Geometry.Width != 800 || body.Geometry.Height != 600 || body.WaitTimeoutMs != 1234 {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestRunSurfaceTileReportsBackendUnsupported(t *testing.T) {
+	_ = serveControlSocket(t, func(request controlRequest) controlResponse {
+		if request.Method != methodTileSurface {
+			t.Fatalf("method = %q, want %q", request.Method, methodTileSurface)
+		}
+		return controlResponse{OK: false, ErrorClass: "backend_unsupported", ErrorMessage: "surface.tile requires compositor backend geometry authority"}
+	})
+
+	err := run([]string{"surface", "tile", "--surface", "view-1", "--zone", "primary"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "server[backend_unsupported]") {
+		t.Fatalf("err = %v, want backend_unsupported", err)
+	}
+}
+
+func TestRunWorkspaceActivateCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{"workspace", "activate", "--workspace", "workspace-1", "--timeout-ms", "99"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run workspace activate error = %v", err)
+	}
+	request := (*requests)[0]
+	if request.Method != methodActivateWorkspace {
+		t.Fatalf("method = %q, want %q", request.Method, methodActivateWorkspace)
+	}
+	var body workspaceRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.WorkspaceID != "workspace-1" || body.WaitTimeoutMs != 99 {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
 func TestRunOutputCaptureCallsCompositorControlSocket(t *testing.T) {
 	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
 		return controlResponse{OK: true, Body: json.RawMessage(`{"output":"HDMI-A-1","captures":[]}`)}

@@ -19,11 +19,21 @@ import (
 )
 
 const (
-	MethodListSurfaces  = "list_surfaces"
-	MethodListOutputs   = "list_outputs"
-	MethodCaptureOutput = "capture_output"
-	MethodFocusSurface  = "focus_surface"
-	MethodCloseSurface  = "close_surface"
+	MethodListSurfaces       = "list_surfaces"
+	MethodListOutputs        = "list_outputs"
+	MethodCaptureOutput      = "capture_output"
+	MethodGetLayout          = "get_layout"
+	MethodSetLayoutMode      = "set_layout_mode"
+	MethodFocusSurface       = "focus_surface"
+	MethodCloseSurface       = "close_surface"
+	MethodMoveResizeSurface  = "move_resize_surface"
+	MethodTileSurface        = "tile_surface"
+	MethodSetSurfaceFloating = "set_surface_floating"
+	MethodAssignSurfaceZone  = "assign_surface_zone"
+	MethodMaximizeSurface    = "maximize_surface"
+	MethodMinimizeSurface    = "minimize_surface"
+	MethodFullscreenSurface  = "fullscreen_surface"
+	MethodActivateWorkspace  = "activate_workspace"
 )
 
 const (
@@ -64,6 +74,7 @@ type Bridge struct {
 	focusSeq     uint64
 	focusWaiters map[string]chan pluginResponse
 	captureSeq   uint64
+	layoutSeq    uint64
 }
 
 func New(config Config) *Bridge {
@@ -143,6 +154,18 @@ func (bridge *Bridge) Dispatch(request Request) (json.RawMessage, error) {
 			return nil, err
 		}
 		return marshalBody(response)
+	case MethodGetLayout:
+		return marshalBody(bridge.GetLayout())
+	case MethodSetLayoutMode:
+		var body SetLayoutModeRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.SetLayoutMode(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
 	case MethodFocusSurface:
 		var body FocusSurfaceRequest
 		if err := decodeBody(request.Body, &body); err != nil {
@@ -159,6 +182,86 @@ func (bridge *Bridge) Dispatch(request Request) (json.RawMessage, error) {
 			return nil, err
 		}
 		response, err := bridge.CloseSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodMoveResizeSurface:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.MoveResizeSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodTileSurface:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.TileSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodSetSurfaceFloating:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.SetSurfaceFloating(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodAssignSurfaceZone:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.AssignSurfaceZone(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodMaximizeSurface:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.MaximizeSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodMinimizeSurface:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.MinimizeSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodFullscreenSurface:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.FullscreenSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodActivateWorkspace:
+		var body WorkspaceActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.ActivateWorkspace(body)
 		if err != nil {
 			return nil, err
 		}
@@ -195,6 +298,77 @@ func (bridge *Bridge) ListOutputs() []LogicalOutput {
 	return list
 }
 
+func (bridge *Bridge) GetLayout() GetLayoutResponse {
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+	return GetLayoutResponse{Layout: bridge.layoutLocked()}
+}
+
+func (bridge *Bridge) SetLayoutMode(request SetLayoutModeRequest) (LayoutActionResponse, error) {
+	if !validLayoutMode(request.Mode) {
+		return LayoutActionResponse{}, fmt.Errorf("unsupported layout mode %q", request.Mode)
+	}
+	return LayoutActionResponse{}, classifiedError{class: ErrorBackendUnsupported, message: "layout mode changes require compositor backend geometry authority"}
+}
+
+func (bridge *Bridge) MoveResizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	if request.Geometry == nil {
+		return LayoutActionResponse{}, fmt.Errorf("geometry is required")
+	}
+	if request.Geometry.Width <= 0 || request.Geometry.Height <= 0 {
+		return LayoutActionResponse{}, fmt.Errorf("geometry width and height must be positive")
+	}
+	return bridge.unsupportedSurfaceLayoutAction("surface.move_resize", request.SurfaceID)
+}
+
+func (bridge *Bridge) TileSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	if strings.TrimSpace(request.ZoneID) == "" {
+		return LayoutActionResponse{}, fmt.Errorf("zone_id is required")
+	}
+	return bridge.unsupportedSurfaceLayoutAction("surface.tile", request.SurfaceID)
+}
+
+func (bridge *Bridge) SetSurfaceFloating(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	if request.Floating == nil {
+		return LayoutActionResponse{}, fmt.Errorf("floating is required")
+	}
+	return bridge.unsupportedSurfaceLayoutAction("surface.set_floating", request.SurfaceID)
+}
+
+func (bridge *Bridge) AssignSurfaceZone(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	if strings.TrimSpace(request.ZoneID) == "" {
+		return LayoutActionResponse{}, fmt.Errorf("zone_id is required")
+	}
+	return bridge.unsupportedSurfaceLayoutAction("surface.assign_zone", request.SurfaceID)
+}
+
+func (bridge *Bridge) MaximizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	return bridge.unsupportedSurfaceLayoutAction("surface.maximize", request.SurfaceID)
+}
+
+func (bridge *Bridge) MinimizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	return bridge.unsupportedSurfaceLayoutAction("surface.minimize", request.SurfaceID)
+}
+
+func (bridge *Bridge) FullscreenSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	return bridge.unsupportedSurfaceLayoutAction("surface.fullscreen", request.SurfaceID)
+}
+
+func (bridge *Bridge) ActivateWorkspace(request WorkspaceActionRequest) (LayoutActionResponse, error) {
+	if strings.TrimSpace(request.WorkspaceID) == "" {
+		return LayoutActionResponse{}, fmt.Errorf("workspace_id is required")
+	}
+	bridge.mu.RLock()
+	layout := bridge.layoutLocked()
+	bridge.mu.RUnlock()
+	for _, workspace := range layout.Workspaces {
+		if workspace.ID == request.WorkspaceID {
+			return LayoutActionResponse{}, classifiedError{class: ErrorBackendUnsupported, message: "workspace activation requires compositor backend workspace authority"}
+		}
+	}
+	return LayoutActionResponse{}, classifiedError{class: ErrorSurfaceNotFound, message: fmt.Sprintf("workspace %s not found", request.WorkspaceID)}
+}
+
 func (bridge *Bridge) CaptureOutput(request CaptureOutputRequest) (CaptureOutputResponse, error) {
 	if request.Name == "" {
 		return CaptureOutputResponse{}, fmt.Errorf("output name is required")
@@ -215,6 +389,42 @@ func (bridge *Bridge) CaptureOutput(request CaptureOutputRequest) (CaptureOutput
 		return CaptureOutputResponse{Output: request.Name, Warnings: []string{err.Error()}}, err
 	}
 	return CaptureOutputResponse{Output: request.Name, Captures: []CaptureSurfaceResponse{capture}}, nil
+}
+
+func (bridge *Bridge) unsupportedSurfaceLayoutAction(action string, surfaceID string) (LayoutActionResponse, error) {
+	surface, err := bridge.requireWorkSurface(surfaceID, action)
+	if err != nil {
+		return LayoutActionResponse{}, err
+	}
+	return LayoutActionResponse{
+		Action:    action,
+		SurfaceID: surface.Surface.ID,
+		Decision:  "unsupported",
+		Surface:   &surface,
+	}, classifiedError{class: ErrorBackendUnsupported, message: fmt.Sprintf("%s requires compositor backend geometry authority", action)}
+}
+
+func (bridge *Bridge) requireWorkSurface(surfaceID string, action string) (TrackedSurface, error) {
+	if surfaceID == "" {
+		return TrackedSurface{}, fmt.Errorf("surface_id is required")
+	}
+	bridge.mu.RLock()
+	surface, ok := bridge.surfaces[surfaceID]
+	_, stale := bridge.stale[surfaceID]
+	bridge.mu.RUnlock()
+	if !ok {
+		if stale {
+			return TrackedSurface{}, classifiedError{class: ErrorSurfaceStale, message: fmt.Sprintf("surface %s is unmapped/stale", surfaceID)}
+		}
+		return TrackedSurface{}, classifiedError{class: ErrorSurfaceNotFound, message: fmt.Sprintf("surface %s not found", surfaceID)}
+	}
+	if surface.Surface.SurfaceKind == SurfaceKindLayer {
+		return TrackedSurface{}, classifiedError{class: ErrorBackendUnsupported, message: fmt.Sprintf("surface %s is a layer-shell surface and cannot run %s as a work surface", surfaceID, action)}
+	}
+	if !surface.Visible {
+		return TrackedSurface{}, classifiedError{class: ErrorSurfaceStale, message: fmt.Sprintf("surface %s is not visible", surfaceID)}
+	}
+	return surface, nil
 }
 
 func (bridge *Bridge) FocusSurface(request FocusSurfaceRequest) (SurfaceActionResponse, error) {
@@ -350,6 +560,14 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	if tracked.ScaleFactor == 0 {
 		tracked.ScaleFactor = 1
 	}
+	tracked.WorkspaceID = event.Surface.WorkspaceID
+	tracked.ZoneID = event.Surface.ZoneID
+	tracked.LayoutMode = event.Surface.LayoutMode
+	tracked.LayoutRole = event.Surface.LayoutRole
+	tracked.Surface.WorkspaceID = tracked.WorkspaceID
+	tracked.Surface.ZoneID = tracked.ZoneID
+	tracked.Surface.LayoutMode = tracked.LayoutMode
+	tracked.Surface.LayoutRole = tracked.LayoutRole
 	if event.Event == EventFocused {
 		tracked.Focused = true
 	}
@@ -372,6 +590,7 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	if previous, ok := bridge.surfaces[event.Surface.ID]; ok {
 		mergeSurfaceReadback(&tracked, previous, event.Event, now)
 	}
+	applyLayoutDefaults(&tracked)
 	if event.Event == EventFrameDone {
 		tracked.FrameCount++
 		tracked.LastPresentTimestamp = &now
@@ -380,20 +599,52 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 		tracked.ContentCommitCount++
 		tracked.LastContentCommitTimestamp = &now
 	}
+	bridge.layoutSeq++
+	tracked.LayoutRevision = bridge.layoutSeq
 	delete(bridge.stale, event.Surface.ID)
 	bridge.surfaces[event.Surface.ID] = tracked
 }
 
 func mergeSurfaceReadback(next *TrackedSurface, previous TrackedSurface, event string, now time.Time) {
+	if next.Surface.AppID == "" {
+		next.Surface.AppID = previous.Surface.AppID
+	}
+	if next.Surface.Title == "" {
+		next.Surface.Title = previous.Surface.Title
+	}
+	if next.Surface.Role == "" {
+		next.Surface.Role = previous.Surface.Role
+	}
+	if next.Surface.Label == "" {
+		next.Surface.Label = previous.Surface.Label
+	}
 	if next.Geometry == nil {
 		next.Geometry = previous.Geometry
+		next.Surface.Geometry = previous.Surface.Geometry
 	}
 	if next.PixelSize == nil {
 		next.PixelSize = previous.PixelSize
+		next.Surface.PixelSize = previous.Surface.PixelSize
 	}
 	if next.OutputID == "" {
 		next.OutputID = previous.OutputID
 		next.Surface.OutputID = previous.OutputID
+	}
+	if next.WorkspaceID == "" {
+		next.WorkspaceID = previous.WorkspaceID
+		next.Surface.WorkspaceID = previous.WorkspaceID
+	}
+	if next.ZoneID == "" {
+		next.ZoneID = previous.ZoneID
+		next.Surface.ZoneID = previous.ZoneID
+	}
+	if next.LayoutMode == "" {
+		next.LayoutMode = previous.LayoutMode
+		next.Surface.LayoutMode = previous.LayoutMode
+	}
+	if next.LayoutRole == "" {
+		next.LayoutRole = previous.LayoutRole
+		next.Surface.LayoutRole = previous.LayoutRole
 	}
 	next.FrameCount = previous.FrameCount
 	next.LastPresentTimestamp = previous.LastPresentTimestamp
@@ -404,6 +655,31 @@ func mergeSurfaceReadback(next *TrackedSurface, previous TrackedSurface, event s
 	if event != EventFocused {
 		next.Focused = previous.Focused
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func applyLayoutDefaults(surface *TrackedSurface) {
+	surface.WorkspaceID = firstNonEmpty(surface.WorkspaceID, "workspace-1")
+	surface.LayoutMode = firstNonEmpty(surface.LayoutMode, string(LayoutModeFreeform))
+	if surface.Surface.SurfaceKind == SurfaceKindLayer {
+		surface.ZoneID = firstNonEmpty(surface.ZoneID, "chrome")
+		surface.LayoutRole = firstNonEmpty(surface.LayoutRole, string(SurfaceLayoutRoleTransient))
+	} else {
+		surface.ZoneID = firstNonEmpty(surface.ZoneID, "primary")
+		surface.LayoutRole = firstNonEmpty(surface.LayoutRole, string(SurfaceLayoutRoleFloating))
+	}
+	surface.Surface.WorkspaceID = surface.WorkspaceID
+	surface.Surface.ZoneID = surface.ZoneID
+	surface.Surface.LayoutMode = surface.LayoutMode
+	surface.Surface.LayoutRole = surface.LayoutRole
 }
 
 func (bridge *Bridge) handleFocusResponse(event pluginEvent) {
@@ -474,6 +750,105 @@ func (bridge *Bridge) outputsLocked() map[string]LogicalOutput {
 		outputs[name] = output
 	}
 	return outputs
+}
+
+func (bridge *Bridge) layoutLocked() LayoutState {
+	surfaces := make([]TrackedSurface, 0, len(bridge.surfaces))
+	for _, surface := range bridge.surfaces {
+		if surface.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		surfaces = append(surfaces, surface)
+	}
+	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i].Surface.ID < surfaces[j].Surface.ID })
+
+	zones := map[string]*LayoutZone{
+		"primary":   {ID: "primary", Name: "Primary", Kind: "work"},
+		"secondary": {ID: "secondary", Name: "Secondary", Kind: "work"},
+		"transient": {ID: "transient", Name: "Transient", Kind: "floating"},
+	}
+	zoneOrder := []string{"primary", "secondary", "transient"}
+	layoutSurfaces := make([]LayoutSurface, 0, len(surfaces))
+	surfaceOrder := make([]string, 0, len(surfaces))
+	outputID := ""
+	mode := LayoutModeFreeform
+	for index, surface := range surfaces {
+		workspaceID := firstNonEmpty(surface.WorkspaceID, "workspace-1")
+		zoneID := firstNonEmpty(surface.ZoneID, "primary")
+		if _, ok := zones[zoneID]; !ok {
+			zones[zoneID] = &LayoutZone{ID: zoneID, Name: zoneID, Kind: "work"}
+			zoneOrder = append(zoneOrder, zoneID)
+		}
+		zones[zoneID].SurfaceIDs = append(zones[zoneID].SurfaceIDs, surface.Surface.ID)
+		surfaceOrder = append(surfaceOrder, surface.Surface.ID)
+		if outputID == "" {
+			outputID = firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+		}
+		if surface.LayoutMode != "" && validLayoutMode(LayoutMode(surface.LayoutMode)) {
+			mode = LayoutMode(surface.LayoutMode)
+		}
+		role := SurfaceLayoutRole(surface.LayoutRole)
+		if role == "" {
+			role = SurfaceLayoutRoleFloating
+		}
+		label := surface.Surface.Label
+		if label == "" {
+			label = fmt.Sprintf("%d", index+1)
+		}
+		layoutSurfaces = append(layoutSurfaces, LayoutSurface{
+			SurfaceID:     surface.Surface.ID,
+			Label:         label,
+			AppID:         surface.Surface.AppID,
+			Title:         surface.Surface.Title,
+			Role:          surface.Surface.Role,
+			OutputID:      firstNonEmpty(surface.OutputID, surface.Surface.OutputID),
+			WorkspaceID:   workspaceID,
+			ZoneID:        zoneID,
+			Mode:          mode,
+			Participation: role,
+			Floating:      role == SurfaceLayoutRoleFloating,
+			Focused:       surface.Focused,
+			Visible:       surface.Visible,
+			Geometry:      firstGeometry(surface),
+			Order:         index,
+		})
+	}
+
+	layoutZones := make([]LayoutZone, 0, len(zoneOrder))
+	for _, zoneID := range zoneOrder {
+		zone := zones[zoneID]
+		layoutZones = append(layoutZones, *zone)
+	}
+	workspace := LayoutWorkspace{
+		ID:           "workspace-1",
+		Name:         "workspace 1",
+		OutputID:     outputID,
+		Active:       true,
+		Zones:        layoutZones,
+		SurfaceOrder: surfaceOrder,
+	}
+	return LayoutState{
+		Mode:       mode,
+		Revision:   bridge.layoutSeq,
+		Surfaces:   layoutSurfaces,
+		Workspaces: []LayoutWorkspace{workspace},
+	}
+}
+
+func firstGeometry(surface TrackedSurface) *SurfaceGeometry {
+	if surface.Geometry != nil {
+		return surface.Geometry
+	}
+	return surface.Surface.Geometry
+}
+
+func validLayoutMode(mode LayoutMode) bool {
+	switch mode {
+	case LayoutModeFreeform, LayoutModeZones, LayoutModeColumns:
+		return true
+	default:
+		return false
+	}
 }
 
 func (bridge *Bridge) startFocusWaiter(surfaceID string) (*pluginSession, string, chan pluginResponse, error) {

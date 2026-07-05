@@ -40,12 +40,17 @@ type CompositorSurface struct {
 	AppID         string                     `json:"app_id,omitempty"`
 	Title         string                     `json:"title,omitempty"`
 	Role          string                     `json:"role,omitempty"`
+	Label         string                     `json:"label,omitempty"`
 	LayerShell    *LayerShellSurfaceMetadata `json:"layer_shell,omitempty"`
 	Geometry      *SurfaceGeometry           `json:"geometry,omitempty"`
 	PixelSize     *SurfaceGeometry           `json:"pixel_size,omitempty"`
 	ScaleFactor   float64                    `json:"scale_factor,omitempty"`
 	Visible       *bool                      `json:"visible,omitempty"`
 	OutputID      string                     `json:"output_id,omitempty"`
+	WorkspaceID   string                     `json:"workspace_id,omitempty"`
+	ZoneID        string                     `json:"zone_id,omitempty"`
+	LayoutMode    string                     `json:"layout_mode,omitempty"`
+	LayoutRole    string                     `json:"layout_role,omitempty"`
 }
 
 type ClientIdentity struct {
@@ -74,10 +79,76 @@ type TrackedSurface struct {
 	LastCaptureTimestamp       *time.Time        `json:"last_capture_timestamp,omitempty"`
 	Visible                    bool              `json:"visible"`
 	OutputID                   string            `json:"output_id,omitempty"`
+	WorkspaceID                string            `json:"workspace_id,omitempty"`
+	ZoneID                     string            `json:"zone_id,omitempty"`
+	LayoutMode                 string            `json:"layout_mode,omitempty"`
+	LayoutRole                 string            `json:"layout_role,omitempty"`
+	LayoutRevision             uint64            `json:"layout_revision,omitempty"`
 }
 
 type ListSurfacesResponse struct {
 	Surfaces []TrackedSurface `json:"surfaces,omitempty"`
+}
+
+type LayoutMode string
+
+const (
+	LayoutModeFreeform LayoutMode = "freeform"
+	LayoutModeZones    LayoutMode = "zones"
+	LayoutModeColumns  LayoutMode = "columns"
+)
+
+type SurfaceLayoutRole string
+
+const (
+	SurfaceLayoutRoleTiled     SurfaceLayoutRole = "tiled"
+	SurfaceLayoutRoleFloating  SurfaceLayoutRole = "floating"
+	SurfaceLayoutRoleTransient SurfaceLayoutRole = "transient"
+)
+
+type LayoutSurface struct {
+	SurfaceID     string            `json:"surface_id"`
+	Label         string            `json:"label"`
+	AppID         string            `json:"app_id,omitempty"`
+	Title         string            `json:"title,omitempty"`
+	Role          string            `json:"role,omitempty"`
+	OutputID      string            `json:"output_id,omitempty"`
+	WorkspaceID   string            `json:"workspace_id"`
+	ZoneID        string            `json:"zone_id"`
+	Mode          LayoutMode        `json:"mode"`
+	Participation SurfaceLayoutRole `json:"participation"`
+	Floating      bool              `json:"floating"`
+	Focused       bool              `json:"focused"`
+	Visible       bool              `json:"visible"`
+	Geometry      *SurfaceGeometry  `json:"geometry,omitempty"`
+	Order         int               `json:"order"`
+}
+
+type LayoutZone struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Kind       string   `json:"kind"`
+	SurfaceIDs []string `json:"surface_ids"`
+}
+
+type LayoutWorkspace struct {
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	OutputID     string       `json:"output_id,omitempty"`
+	Active       bool         `json:"active"`
+	Zones        []LayoutZone `json:"zones"`
+	SurfaceOrder []string     `json:"surface_order"`
+}
+
+type LayoutState struct {
+	Mode       LayoutMode        `json:"mode"`
+	Revision   uint64            `json:"revision"`
+	Surfaces   []LayoutSurface   `json:"surfaces,omitempty"`
+	Workspaces []LayoutWorkspace `json:"workspaces,omitempty"`
+}
+
+type GetLayoutResponse struct {
+	Layout LayoutState `json:"layout"`
 }
 
 type FocusSurfaceRequest struct {
@@ -90,6 +161,25 @@ type CloseSurfaceRequest struct {
 	WaitTimeoutMs int    `json:"timeout_ms,omitempty"`
 }
 
+type SetLayoutModeRequest struct {
+	Mode LayoutMode `json:"mode"`
+}
+
+type SurfaceLayoutActionRequest struct {
+	SurfaceID     string           `json:"surface_id"`
+	Geometry      *SurfaceGeometry `json:"geometry,omitempty"`
+	WorkspaceID   string           `json:"workspace_id,omitempty"`
+	ZoneID        string           `json:"zone_id,omitempty"`
+	Floating      *bool            `json:"floating,omitempty"`
+	Enabled       *bool            `json:"enabled,omitempty"`
+	WaitTimeoutMs int              `json:"wait_timeout_ms,omitempty"`
+}
+
+type WorkspaceActionRequest struct {
+	WorkspaceID   string `json:"workspace_id"`
+	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
+}
+
 type SurfaceActionResponse struct {
 	Action           string          `json:"action"`
 	SurfaceID        string          `json:"surface_id"`
@@ -100,6 +190,16 @@ type SurfaceActionResponse struct {
 	ClosedSurfaceID  string          `json:"closed_surface_id,omitempty"`
 	Queued           bool            `json:"queued,omitempty"`
 	Surface          *TrackedSurface `json:"surface,omitempty"`
+}
+
+type LayoutActionResponse struct {
+	Action      string          `json:"action"`
+	Decision    string          `json:"decision"`
+	Reason      string          `json:"reason,omitempty"`
+	SurfaceID   string          `json:"surface_id,omitempty"`
+	WorkspaceID string          `json:"workspace_id,omitempty"`
+	Layout      *LayoutState    `json:"layout,omitempty"`
+	Surface     *TrackedSurface `json:"surface,omitempty"`
 }
 
 type LogicalOutput struct {

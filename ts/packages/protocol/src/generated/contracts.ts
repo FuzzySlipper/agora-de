@@ -13,6 +13,76 @@ export interface SurfaceEvent {
   readonly ownerUid: number;
 }
 
+export type LayoutMode =
+  | 'freeform'
+  | 'zones'
+  | 'columns';
+
+export type SurfaceLayoutParticipation =
+  | 'tiled'
+  | 'floating'
+  | 'transient';
+
+export type LayoutActionKind =
+  | 'layout.get'
+  | 'layout.set_mode'
+  | 'surface.move_resize'
+  | 'surface.tile'
+  | 'surface.set_floating'
+  | 'surface.assign_zone'
+  | 'surface.maximize'
+  | 'surface.minimize'
+  | 'surface.fullscreen'
+  | 'workspace.activate';
+
+export interface SurfaceGeometry {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface LayoutSurface {
+  readonly surfaceId: string;
+  readonly label: string;
+  readonly appId: string;
+  readonly title: string;
+  readonly role: string;
+  readonly outputId: string;
+  readonly workspaceId: string;
+  readonly zoneId: string;
+  readonly mode: LayoutMode;
+  readonly participation: SurfaceLayoutParticipation;
+  readonly floating: boolean;
+  readonly focused: boolean;
+  readonly visible: boolean;
+  readonly geometry?: SurfaceGeometry;
+  readonly order: number;
+}
+
+export interface LayoutZone {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly surfaceIds: readonly string[];
+}
+
+export interface LayoutWorkspace {
+  readonly id: string;
+  readonly name: string;
+  readonly outputId: string;
+  readonly active: boolean;
+  readonly zones: readonly LayoutZone[];
+  readonly surfaceOrder: readonly string[];
+}
+
+export interface LayoutState {
+  readonly mode: LayoutMode;
+  readonly revision: number;
+  readonly surfaces: readonly LayoutSurface[];
+  readonly workspaces: readonly LayoutWorkspace[];
+}
+
 export interface ThemeToken {
   readonly name: string;
   readonly value: string;

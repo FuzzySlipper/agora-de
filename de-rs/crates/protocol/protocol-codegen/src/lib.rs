@@ -1,4 +1,6 @@
-use protocol_compositor::SurfaceEventKind;
+use protocol_compositor::{
+    LayoutActionKind, LayoutMode, SurfaceEventKind, SurfaceLayoutParticipation,
+};
 use protocol_evidence::{CaptureClassification, VisualStatus};
 use protocol_os_boundary::AgentState;
 
@@ -18,6 +20,30 @@ pub fn generate_typescript_contracts() -> String {
         SurfaceEventKind::ALL
             .iter()
             .map(SurfaceEventKind::wire_name)
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+    let layout_mode_union = typescript_string_union(
+        "LayoutMode",
+        LayoutMode::ALL
+            .iter()
+            .map(LayoutMode::wire_name)
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+    let surface_layout_participation_union = typescript_string_union(
+        "SurfaceLayoutParticipation",
+        SurfaceLayoutParticipation::ALL
+            .iter()
+            .map(SurfaceLayoutParticipation::wire_name)
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+    let layout_action_kind_union = typescript_string_union(
+        "LayoutActionKind",
+        LayoutActionKind::ALL
+            .iter()
+            .map(LayoutActionKind::wire_name)
             .collect::<Vec<_>>()
             .as_slice(),
     );
@@ -53,6 +79,60 @@ pub fn generate_typescript_contracts() -> String {
         "  readonly surfaceId: string;",
         "  readonly kind: SurfaceEventKind;",
         "  readonly ownerUid: number;",
+        "}",
+        "",
+        layout_mode_union.as_str(),
+        "",
+        surface_layout_participation_union.as_str(),
+        "",
+        layout_action_kind_union.as_str(),
+        "",
+        "export interface SurfaceGeometry {",
+        "  readonly x: number;",
+        "  readonly y: number;",
+        "  readonly width: number;",
+        "  readonly height: number;",
+        "}",
+        "",
+        "export interface LayoutSurface {",
+        "  readonly surfaceId: string;",
+        "  readonly label: string;",
+        "  readonly appId: string;",
+        "  readonly title: string;",
+        "  readonly role: string;",
+        "  readonly outputId: string;",
+        "  readonly workspaceId: string;",
+        "  readonly zoneId: string;",
+        "  readonly mode: LayoutMode;",
+        "  readonly participation: SurfaceLayoutParticipation;",
+        "  readonly floating: boolean;",
+        "  readonly focused: boolean;",
+        "  readonly visible: boolean;",
+        "  readonly geometry?: SurfaceGeometry;",
+        "  readonly order: number;",
+        "}",
+        "",
+        "export interface LayoutZone {",
+        "  readonly id: string;",
+        "  readonly name: string;",
+        "  readonly kind: string;",
+        "  readonly surfaceIds: readonly string[];",
+        "}",
+        "",
+        "export interface LayoutWorkspace {",
+        "  readonly id: string;",
+        "  readonly name: string;",
+        "  readonly outputId: string;",
+        "  readonly active: boolean;",
+        "  readonly zones: readonly LayoutZone[];",
+        "  readonly surfaceOrder: readonly string[];",
+        "}",
+        "",
+        "export interface LayoutState {",
+        "  readonly mode: LayoutMode;",
+        "  readonly revision: number;",
+        "  readonly surfaces: readonly LayoutSurface[];",
+        "  readonly workspaces: readonly LayoutWorkspace[];",
         "}",
         "",
         "export interface ThemeToken {",
@@ -128,6 +208,8 @@ mod tests {
     fn generated_contracts_are_stable() {
         let generated = generate_typescript_contracts();
         assert!(generated.contains("export interface SurfaceEvent"));
+        assert!(generated.contains("export type LayoutActionKind"));
+        assert!(generated.contains("export interface LayoutState"));
         assert!(generated.contains("export interface CatalogAppsResponse"));
         assert!(generated.contains("export type AgentState"));
         assert!(generated.contains("| 'capture_visible'"));

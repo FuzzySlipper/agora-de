@@ -119,6 +119,101 @@ func TestListOutputsIncludesPhysicalSurfaceReadback(t *testing.T) {
 	}
 }
 
+func TestGetLayoutDerivesStableWorkspaceState(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-b",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Foot",
+			Title:       "foot",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{X: 900, Y: 0, Width: 800, Height: 600},
+			OutputID:    "HDMI-A-1",
+			ZoneID:      "secondary",
+			LayoutRole:  string(SurfaceLayoutRoleTiled),
+		},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Title:       "Alacritty",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 800, Height: 600},
+			OutputID:    "HDMI-A-1",
+			ZoneID:      "primary",
+			LayoutRole:  string(SurfaceLayoutRoleTiled),
+		},
+	})
+
+	layout := bridge.GetLayout().Layout
+	if layout.Mode != LayoutModeFreeform || layout.Revision == 0 {
+		t.Fatalf("layout header = %+v", layout)
+	}
+	if len(layout.Surfaces) != 2 {
+		t.Fatalf("surfaces = %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[0].Label != "1" || layout.Surfaces[0].ZoneID != "primary" || layout.Surfaces[0].Participation != SurfaceLayoutRoleTiled {
+		t.Fatalf("first surface = %+v", layout.Surfaces[0])
+	}
+	if len(layout.Workspaces) != 1 || layout.Workspaces[0].ID != "workspace-1" || !layout.Workspaces[0].Active {
+		t.Fatalf("workspaces = %+v", layout.Workspaces)
+	}
+	if got := layout.Workspaces[0].SurfaceOrder; len(got) != 2 || got[0] != "view-a" || got[1] != "view-b" {
+		t.Fatalf("surface order = %+v", got)
+	}
+}
+
+func TestLayoutSurfaceActionsValidateStaleBeforeUnsupportedBackend(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventMapped,
+		Surface: CompositorSurface{ID: "view-stale", SurfaceKind: SurfaceKindXDG, Visible: &visible},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventUnmapped,
+		Surface: CompositorSurface{ID: "view-stale"},
+	})
+
+	_, err := bridge.MoveResizeSurface(SurfaceLayoutActionRequest{
+		SurfaceID: "view-stale",
+		Geometry:  &SurfaceGeometry{Width: 800, Height: 600},
+	})
+	class, _ := classifyError(err)
+	if class != ErrorSurfaceStale {
+		t.Fatalf("class = %q, want %q; err=%v", class, ErrorSurfaceStale, err)
+	}
+}
+
+func TestLayoutSurfaceActionsReturnUnsupportedForValidSurface(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventMapped,
+		Surface: CompositorSurface{ID: "view-live", SurfaceKind: SurfaceKindXDG, Visible: &visible},
+	})
+
+	response, err := bridge.TileSurface(SurfaceLayoutActionRequest{SurfaceID: "view-live", ZoneID: "primary"})
+	class, _ := classifyError(err)
+	if class != ErrorBackendUnsupported {
+		t.Fatalf("class = %q, want %q; err=%v", class, ErrorBackendUnsupported, err)
+	}
+	if response.Action != "surface.tile" || response.SurfaceID != "view-live" || response.Decision != "unsupported" || response.Surface == nil {
+		t.Fatalf("response = %+v", response)
+	}
+}
+
 func TestCaptureOutputUsesPhysicalGrimBackend(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source.png")

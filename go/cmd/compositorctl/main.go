@@ -19,11 +19,21 @@ import (
 const defaultCompositorControlSocket = "/run/agent-os/compositor-control.sock"
 
 const (
-	methodListSurfaces  = "list_surfaces"
-	methodListOutputs   = "list_outputs"
-	methodCaptureOutput = "capture_output"
-	methodFocusSurface  = "focus_surface"
-	methodCloseSurface  = "close_surface"
+	methodListSurfaces       = "list_surfaces"
+	methodListOutputs        = "list_outputs"
+	methodCaptureOutput      = "capture_output"
+	methodGetLayout          = "get_layout"
+	methodSetLayoutMode      = "set_layout_mode"
+	methodFocusSurface       = "focus_surface"
+	methodCloseSurface       = "close_surface"
+	methodMoveResizeSurface  = "move_resize_surface"
+	methodTileSurface        = "tile_surface"
+	methodSetSurfaceFloating = "set_surface_floating"
+	methodAssignSurfaceZone  = "assign_surface_zone"
+	methodMaximizeSurface    = "maximize_surface"
+	methodMinimizeSurface    = "minimize_surface"
+	methodFullscreenSurface  = "fullscreen_surface"
+	methodActivateWorkspace  = "activate_workspace"
 )
 
 var listSurfacesFunc = listSurfaces
@@ -54,10 +64,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		return runLaunch(args[1:], stdout)
 	case "list-surfaces":
 		return callAndPrint(methodListSurfaces, nil, stdout, pretty)
+	case "layout":
+		return runLayout(args[1:], stdout, pretty)
 	case "output":
 		return runOutput(args[1:], stdout, pretty)
 	case "surface":
 		return runSurface(args[1:], stdout, pretty)
+	case "workspace":
+		return runWorkspace(args[1:], stdout, pretty)
 	default:
 		usage(stderr)
 		return fmt.Errorf("unsupported command %q", args[0])
@@ -69,9 +83,11 @@ func usage(output io.Writer) {
 
 Commands:
   launch         Launch a native process from a structured argv vector
+  layout         Read or change structured layout state
   list-surfaces  List tracked compositor surfaces
   output         List outputs or capture a physical output
-  surface        Focus or close a tracked surface`)
+  surface        Focus, close, or request layout actions for a tracked surface
+  workspace      Request workspace actions`)
 }
 
 type repeatedFlag []string
@@ -341,9 +357,32 @@ func runOutput(args []string, stdout io.Writer, pretty bool) error {
 	}
 }
 
+func runLayout(args []string, stdout io.Writer, pretty bool) error {
+	if len(args) == 0 {
+		return errors.New("layout subcommand is required: get or set-mode")
+	}
+	switch args[0] {
+	case "get":
+		return callAndPrint(methodGetLayout, nil, stdout, pretty)
+	case "set-mode":
+		fs := flag.NewFlagSet("layout set-mode", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		mode := fs.String("mode", "", "layout mode: freeform, zones, or columns")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *mode == "" {
+			return errors.New("--mode is required")
+		}
+		return callAndPrint(methodSetLayoutMode, setLayoutModeRequest{Mode: *mode}, stdout, pretty)
+	default:
+		return fmt.Errorf("unknown layout subcommand %q", args[0])
+	}
+}
+
 func runSurface(args []string, stdout io.Writer, pretty bool) error {
 	if len(args) == 0 {
-		return errors.New("surface subcommand is required: focus or close")
+		return errors.New("surface subcommand is required")
 	}
 	switch args[0] {
 	case "focus":
@@ -358,8 +397,72 @@ func runSurface(args []string, stdout io.Writer, pretty bool) error {
 			return err
 		}
 		return callAndPrint(methodCloseSurface, req, stdout, pretty)
+	case "move-resize":
+		req, err := buildMoveResizeSurfaceRequest(args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodMoveResizeSurface, req, stdout, pretty)
+	case "tile":
+		req, err := buildZoneSurfaceRequest("surface tile", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodTileSurface, req, stdout, pretty)
+	case "set-floating":
+		req, err := buildFloatingSurfaceRequest(args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodSetSurfaceFloating, req, stdout, pretty)
+	case "assign-zone":
+		req, err := buildZoneSurfaceRequest("surface assign-zone", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodAssignSurfaceZone, req, stdout, pretty)
+	case "maximize":
+		req, err := buildEnabledSurfaceRequest("surface maximize", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodMaximizeSurface, req, stdout, pretty)
+	case "minimize":
+		req, err := buildEnabledSurfaceRequest("surface minimize", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodMinimizeSurface, req, stdout, pretty)
+	case "fullscreen":
+		req, err := buildEnabledSurfaceRequest("surface fullscreen", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodFullscreenSurface, req, stdout, pretty)
 	default:
 		return fmt.Errorf("unknown surface subcommand %q", args[0])
+	}
+}
+
+func runWorkspace(args []string, stdout io.Writer, pretty bool) error {
+	if len(args) == 0 {
+		return errors.New("workspace subcommand is required: activate")
+	}
+	switch args[0] {
+	case "activate":
+		fs := flag.NewFlagSet("workspace activate", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		workspaceID := fs.String("workspace", "", "workspace id")
+		timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *workspaceID == "" {
+			return errors.New("--workspace is required")
+		}
+		return callAndPrint(methodActivateWorkspace, workspaceRequest{WorkspaceID: *workspaceID, WaitTimeoutMs: *timeoutMs}, stdout, pretty)
+	default:
+		return fmt.Errorf("unknown workspace subcommand %q", args[0])
 	}
 }
 
@@ -375,6 +478,75 @@ func buildSurfaceRequest(name string, args []string) (surfaceRequest, error) {
 		return surfaceRequest{}, errors.New("--surface is required")
 	}
 	return surfaceRequest{SurfaceID: *surfaceID, WaitTimeoutMs: *timeoutMs}, nil
+}
+
+func buildMoveResizeSurfaceRequest(args []string) (surfaceLayoutRequest, error) {
+	fs := flag.NewFlagSet("surface move-resize", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	surfaceID := fs.String("surface", "", "surface id")
+	x := fs.Int("x", 0, "surface x coordinate")
+	y := fs.Int("y", 0, "surface y coordinate")
+	width := fs.Int("width", 0, "surface width")
+	height := fs.Int("height", 0, "surface height")
+	timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
+	if err := fs.Parse(args); err != nil {
+		return surfaceLayoutRequest{}, err
+	}
+	if *surfaceID == "" {
+		return surfaceLayoutRequest{}, errors.New("--surface is required")
+	}
+	if *width <= 0 || *height <= 0 {
+		return surfaceLayoutRequest{}, errors.New("--width and --height must be positive")
+	}
+	return surfaceLayoutRequest{
+		SurfaceID:     *surfaceID,
+		Geometry:      &surfaceGeometry{X: *x, Y: *y, Width: *width, Height: *height},
+		WaitTimeoutMs: *timeoutMs,
+	}, nil
+}
+
+func buildZoneSurfaceRequest(name string, args []string) (surfaceLayoutRequest, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	surfaceID := fs.String("surface", "", "surface id")
+	workspaceID := fs.String("workspace", "", "workspace id")
+	zoneID := fs.String("zone", "", "zone id")
+	timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
+	if err := fs.Parse(args); err != nil {
+		return surfaceLayoutRequest{}, err
+	}
+	if *surfaceID == "" {
+		return surfaceLayoutRequest{}, errors.New("--surface is required")
+	}
+	if *zoneID == "" {
+		return surfaceLayoutRequest{}, errors.New("--zone is required")
+	}
+	return surfaceLayoutRequest{SurfaceID: *surfaceID, WorkspaceID: *workspaceID, ZoneID: *zoneID, WaitTimeoutMs: *timeoutMs}, nil
+}
+
+func buildFloatingSurfaceRequest(args []string) (surfaceLayoutRequest, error) {
+	req, err := buildEnabledSurfaceRequest("surface set-floating", args)
+	if err != nil {
+		return surfaceLayoutRequest{}, err
+	}
+	req.Floating = req.Enabled
+	req.Enabled = nil
+	return req, nil
+}
+
+func buildEnabledSurfaceRequest(name string, args []string) (surfaceLayoutRequest, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	surfaceID := fs.String("surface", "", "surface id")
+	enabled := fs.Bool("enabled", true, "whether the state should be enabled")
+	timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
+	if err := fs.Parse(args); err != nil {
+		return surfaceLayoutRequest{}, err
+	}
+	if *surfaceID == "" {
+		return surfaceLayoutRequest{}, errors.New("--surface is required")
+	}
+	return surfaceLayoutRequest{SurfaceID: *surfaceID, Enabled: enabled, WaitTimeoutMs: *timeoutMs}, nil
 }
 
 func applyCredential(cmd *exec.Cmd, uid uint32, gid uint32) error {
@@ -535,8 +707,34 @@ type captureOutputRequest struct {
 	ASHACommandSequenceID string `json:"asha_command_sequence_id,omitempty"`
 }
 
+type setLayoutModeRequest struct {
+	Mode string `json:"mode"`
+}
+
 type surfaceRequest struct {
 	SurfaceID     string `json:"surface_id"`
+	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
+}
+
+type surfaceGeometry struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type surfaceLayoutRequest struct {
+	SurfaceID     string           `json:"surface_id"`
+	Geometry      *surfaceGeometry `json:"geometry,omitempty"`
+	WorkspaceID   string           `json:"workspace_id,omitempty"`
+	ZoneID        string           `json:"zone_id,omitempty"`
+	Floating      *bool            `json:"floating,omitempty"`
+	Enabled       *bool            `json:"enabled,omitempty"`
+	WaitTimeoutMs int              `json:"wait_timeout_ms,omitempty"`
+}
+
+type workspaceRequest struct {
+	WorkspaceID   string `json:"workspace_id"`
 	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
 }
 
