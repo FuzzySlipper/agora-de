@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  agora-de-wayfire-structured-layout-config enable-simple-tile
+  agora-de-wayfire-structured-layout-config disable-simple-tile
+
+Environment:
+  AGORA_DE_WAYFIRE_CONFIG overrides the Wayfire config path.
+USAGE
+}
+
+command="${1:-}"
+if [[ -z "${command}" || "${command}" == "-h" || "${command}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+shift || true
+
+if [[ $# -ne 0 ]]; then
+  usage >&2
+  exit 2
+fi
+
+case "${command}" in
+  enable-simple-tile | disable-simple-tile)
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+config_path="${AGORA_DE_WAYFIRE_CONFIG:-/home/agent/.config/wayfire.ini}"
+if [[ ! -f "${config_path}" ]]; then
+  echo "missing Wayfire config: ${config_path}" >&2
+  exit 1
+fi
+
+python3 - "${config_path}" "${command}" <<'PY'
+import pathlib
+import re
+import sys
+
+config_path = pathlib.Path(sys.argv[1])
+command = sys.argv[2]
+text = config_path.read_text(encoding="utf-8")
+
+
+def ensure_plugin(source: str, plugin: str) -> str:
+    plugins_match = re.search(r"(?ms)^plugins\s*=\s*\\\n(?P<body>.*?)(?=^\S|\Z)", source)
+    if not plugins_match:
+        raise SystemExit("could not locate [core] plugins list")
+    body = plugins_match.group("body")
+    if re.search(rf"(?m)^\s*{re.escape(plugin)}\s*\\?\s*$", body):
+        return source
+    lines = body.splitlines()
+    insert_at = len(lines)
+    for index, line in enumerate(lines):
+        if line.strip().rstrip("\\").strip() in {"decoration", "agora-bridge"}:
+            insert_at = index
+            break
+    lines.insert(insert_at, f"  {plugin} \\")
+    replacement = "plugins = \\\n" + "\n".join(lines) + "\n"
+    return source[: plugins_match.start()] + replacement + source[plugins_match.end() :]
+
+
+def remove_plugin(source: str, plugin: str) -> str:
+    return re.sub(rf"(?m)^\s*{re.escape(plugin)}\s*\\?\s*\n", "", source)
+
+
+def set_section(source: str, section: str, values: dict[str, str]) -> str:
+    header = f"[{section}]"
+    block_lines = [header, *(f"{key} = {value}" for key, value in values.items())]
+    block = "\n".join(block_lines) + "\n"
+    pattern = re.compile(rf"(?ms)^\[{re.escape(section)}\]\n.*?(?=^\[|\Z)")
+    if pattern.search(source):
+        return pattern.sub(block + "\n", source, count=1)
+    return source.rstrip() + "\n\n" + block
+
+
+def remove_section(source: str, section: str) -> str:
+    return re.sub(rf"(?ms)^\[{re.escape(section)}\]\n.*?(?=^\[|\Z)", "", source)
+
+
+if command == "enable-simple-tile":
+    text = ensure_plugin(text, "simple-tile")
+    text = set_section(
+        text,
+        "simple-tile",
+        {
+            "tile_by_default": "all",
+            "inner_gap_size": "10",
+            "outer_horiz_gap_size": "12",
+            "outer_vert_gap_size": "12",
+            "animation_duration": "0",
+        },
+    )
+else:
+    text = remove_plugin(text, "simple-tile")
+    text = remove_section(text, "simple-tile")
+
+config_path.write_text(text.rstrip() + "\n", encoding="utf-8")
+PY
+
+echo "updated ${config_path} (${command})"
