@@ -160,6 +160,24 @@ default and must be paired with an explicit desktop-entry id allowlist. The
 provider sends repeated `--arg` values to compositorctl and must not use
 `--cmd`.
 
+The agora-de `go/cmd/compositorctl` implementation now supports that narrow
+structured launch contract directly:
+
+```bash
+agora-de-compositorctl launch \
+  --arg /usr/bin/alacritty \
+  --env WAYLAND_DISPLAY=wayland-1 \
+  --env XDG_RUNTIME_DIR=/run/user/1001 \
+  --session-token session-native \
+  --audit-correlation-id native-smoke \
+  --wait-surface
+```
+
+This command starts the argv vector without shell evaluation. For the current
+den-k8 transition it still uses `AGORA_DE_READBACK_COMPOSITORCTL` or
+`/usr/local/bin/compositorctl` for surface readback while the compositor backend
+is being lifted.
+
 ## Required Tests
 
 Unit tests:

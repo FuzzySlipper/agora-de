@@ -269,6 +269,64 @@ The runner emits `agora-de.installed-catalog-live.v1`. Under the current native
 launch policy, the imported installed entries must be visible in the catalog and
 non-launchable in shellui.
 
+Structured native launch evidence for task 4176 used the agora-de
+`go/cmd/compositorctl` binary built to `/home/agent/.local/bin/agora-de-compositorctl`.
+The direct launch command:
+
+```bash
+AGORA_DE_READBACK_COMPOSITORCTL=/usr/local/bin/compositorctl \
+/home/agent/.local/bin/agora-de-compositorctl launch \
+  --arg /usr/bin/alacritty \
+  --arg --title \
+  --arg AgoraNativeSmoke \
+  --env HOME=/home/agent \
+  --env USER=agent \
+  --env LOGNAME=agent \
+  --env PATH=/usr/local/bin:/usr/bin:/bin \
+  --env XDG_RUNTIME_DIR=/run/user/1001 \
+  --env WAYLAND_DISPLAY=wayland-1 \
+  --env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
+  --env LANG=en_US.UTF-8 \
+  --cwd /home/agent \
+  --uid 1001 \
+  --gid 1002 \
+  --session-token session-native-smoke \
+  --audit-correlation-id native-smoke \
+  --output HDMI-A-1 \
+  --wait-surface \
+  --wait-timeout-ms 7000
+```
+
+returned `status: launched`, `surface_id: view-49`, app id `Alacritty`, and
+title `AgoraNativeSmoke`.
+
+The shellui sidecar launch command:
+
+```bash
+AGORA_DE_READBACK_COMPOSITORCTL=/usr/local/bin/compositorctl \
+go run ./cmd/shellui \
+  --listen 127.0.0.1:17783 \
+  --catalog-provider desktop_entries \
+  --desktop-entry-roots /usr/share/applications:/home/agent/.local/share/applications \
+  --surface-provider fixture \
+  --compositorctl /home/agent/.local/bin/agora-de-compositorctl \
+  --native-launch-provider structured_compositorctl \
+  --native-launch-allowlist Alacritty.desktop \
+  --native-launch-uid 1001 \
+  --native-launch-gid 1002 \
+  --native-launch-session-token session-native-shell \
+  --native-launch-output HDMI-A-1 \
+  --native-launch-home /home/agent
+```
+
+exposed 59 installed apps with only `Alacritty.desktop` launchable.
+`POST /api/catalog/launch {"appId":"Alacritty.desktop"}` returned
+`launchId: launch-1783217014714420479`, `surfaceId: view-51`, and
+`status: launched`. Surface readback saw `view-51` as app id `Alacritty`,
+visible on `HDMI-A-1`. Physical output capture produced
+`/run/agent-os/artifacts/unscoped/output-capture-1783217024425646244-14/output-capture-1783217024425646244-14.png`
+with `visual_inspection.status: visible`.
+
 Imported capture JSON remains supported:
 
 ```bash

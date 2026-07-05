@@ -228,6 +228,17 @@ allowlist of desktop-entry ids. That mode expects compositorctl to support the
 structured `--arg` launch contract from `docs/native-launch-boundary-design.md`;
 do not enable it against a bridge that only supports `-cmd` strings.
 
+For den-k8 native-launch sidecar testing, build the agora-de structured
+launcher separately and point only that sidecar at it:
+
+```bash
+cd /home/dev/agora-de/go
+go build -trimpath -o /home/agent/.local/bin/agora-de-compositorctl ./cmd/compositorctl
+```
+
+Keep the default installed shell service on `/usr/local/bin/compositorctl` until
+the remaining surface readback, close, and capture operations are lifted.
+
 For the den-k8 user-service restart and visibility playbook, see
 `docs/den-k8-visible-shell-runbook.md`.
 
