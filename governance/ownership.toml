@@ -89,6 +89,10 @@ may_import = ["go/internal/appcatalog"]
 lane = "go-shellui"
 may_import = ["go/internal/shellui/catalog"]
 
+[go_package."go/internal/shellui/layoutroute"]
+lane = "go-shellui"
+may_import = ["go/internal/shellui/surfaceroute", "go/internal/shellui/surfaces"]
+
 [go_package."go/internal/shellui/surfaces"]
 lane = "go-shellui"
 may_import = ["go/internal/surfacetrack"]
@@ -105,6 +109,7 @@ may_import = [
   "go/internal/session",
   "go/internal/shellui/catalog",
   "go/internal/shellui/catalogroute",
+  "go/internal/shellui/layoutroute",
   "go/internal/shellui/staticserve",
   "go/internal/shellui/surfaceroute",
   "go/internal/shellui/surfaces",

@@ -46,8 +46,12 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`/api/catalog/launch`,
 		`/api/surfaces`,
 		`/api/surfaces/action`,
+		`/api/layout`,
+		`/api/layout/action`,
 		`/api/workspaces`,
 		`/api/workspaces/action`,
+		`Zone`,
+		`setMode`,
 		`shell-status`,
 		`workspace 1`,
 	} {
@@ -169,6 +173,33 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		t.Fatalf("unexpected work controls response: %+v", workControlsResponse)
 	}
 
+	var layoutResponse struct {
+		Layout struct {
+			Mode     string `json:"mode"`
+			Surfaces []struct {
+				SurfaceID   string `json:"surfaceId"`
+				Label       string `json:"label"`
+				WorkspaceID string `json:"workspaceId"`
+				ZoneID      string `json:"zoneId"`
+				Focused     bool   `json:"focused"`
+			} `json:"surfaces"`
+			Workspaces []struct {
+				ID           string   `json:"id"`
+				SurfaceOrder []string `json:"surfaceOrder"`
+			} `json:"workspaces"`
+		} `json:"layout"`
+	}
+	decodeRoute(t, handler, LayoutPath, &layoutResponse)
+	if layoutResponse.Layout.Mode != "freeform" || len(layoutResponse.Layout.Surfaces) != 1 {
+		t.Fatalf("unexpected layout response: %+v", layoutResponse)
+	}
+	if layoutResponse.Layout.Surfaces[0].SurfaceID != "view-42" || layoutResponse.Layout.Surfaces[0].Label != "1" || layoutResponse.Layout.Surfaces[0].WorkspaceID != "workspace-1" || layoutResponse.Layout.Surfaces[0].ZoneID != "primary" || !layoutResponse.Layout.Surfaces[0].Focused {
+		t.Fatalf("unexpected layout surface: %+v", layoutResponse.Layout.Surfaces[0])
+	}
+	if len(layoutResponse.Layout.Workspaces) != 1 || layoutResponse.Layout.Workspaces[0].ID != "workspace-1" || len(layoutResponse.Layout.Workspaces[0].SurfaceOrder) != 1 {
+		t.Fatalf("unexpected layout workspace: %+v", layoutResponse.Layout.Workspaces)
+	}
+
 	var workspacesResponse struct {
 		CurrentWorkspaceID string `json:"currentWorkspaceId"`
 		Workspaces         []struct {
@@ -281,6 +312,137 @@ printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client
 	surface := response.Surfaces[0]
 	if surface.ID != "view-live" || surface.OwnerUID != 60010 || !surface.Mapped || !surface.Focused || surface.ContentCommitCount != 3 {
 		t.Fatalf("unexpected live surface response: %+v", surface)
+	}
+}
+
+func TestHandlerExposesLayoutViaCompositorctl(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	command := filepath.Join(dir, "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' "$*" >> "$CALL_LOG"
+case "$1 $2" in
+  "layout get")
+    printf '%s\n' '{"layout":{"mode":"zones","revision":7,"surfaces":[{"surface_id":"view-live","label":"1","app_id":"foot","title":"foot","output_id":"HDMI-A-1","workspace_id":"workspace-1","zone_id":"primary","mode":"zones","participation":"tiled","focused":true,"visible":true,"geometry":{"x":1,"y":2,"width":300,"height":200},"order":0}],"workspaces":[{"id":"workspace-1","name":"workspace 1","output_id":"HDMI-A-1","active":true,"zones":[{"id":"primary","name":"Primary","kind":"work","surface_ids":["view-live"]}],"surface_order":["view-live"]}]}}'
+    ;;
+  "layout set-mode")
+    printf '%s\n' '{"decision":"accepted"}'
+    ;;
+  "surface assign-zone")
+    printf '%s\n' '{"decision":"accepted"}'
+    ;;
+  *)
+    printf 'unexpected command %s %s\n' "$1" "$2" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CALL_LOG", logPath)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		SurfaceProvider:   SurfaceProviderCompositorctl,
+		CompositorctlPath: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var layoutResponse struct {
+		Layout struct {
+			Mode     string `json:"mode"`
+			Revision uint64 `json:"revision"`
+			Surfaces []struct {
+				SurfaceID string `json:"surfaceId"`
+				AppID     string `json:"appId"`
+				ZoneID    string `json:"zoneId"`
+				Geometry  struct {
+					Width int `json:"width"`
+				} `json:"geometry"`
+			} `json:"surfaces"`
+			Workspaces []struct {
+				ID           string   `json:"id"`
+				SurfaceOrder []string `json:"surfaceOrder"`
+			} `json:"workspaces"`
+		} `json:"layout"`
+	}
+	decodeRoute(t, handler, LayoutPath, &layoutResponse)
+	if layoutResponse.Layout.Mode != "zones" || layoutResponse.Layout.Revision != 7 || len(layoutResponse.Layout.Surfaces) != 1 {
+		t.Fatalf("unexpected layout response: %+v", layoutResponse)
+	}
+	if layoutResponse.Layout.Surfaces[0].SurfaceID != "view-live" || layoutResponse.Layout.Surfaces[0].AppID != "foot" || layoutResponse.Layout.Surfaces[0].ZoneID != "primary" || layoutResponse.Layout.Surfaces[0].Geometry.Width != 300 {
+		t.Fatalf("unexpected layout surface projection: %+v", layoutResponse.Layout.Surfaces[0])
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LayoutActionPath, strings.NewReader(`{"action":"setMode","mode":"zones"}`)))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("layout setMode status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LayoutActionPath, strings.NewReader(`{"action":"assignZone","surfaceId":"view-live","workspaceId":"workspace-1","zoneId":"secondary"}`)))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("layout assignZone status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"layout get",
+		"layout set-mode --mode zones",
+		"surface assign-zone --surface view-live --zone secondary",
+		"--workspace workspace-1",
+	} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("compositorctl calls missing %q: %s", want, calls)
+		}
+	}
+}
+
+func TestHandlerReturnsClassifiedLayoutActionErrors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	command := filepath.Join(t.TempDir(), "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' 'server[backend_unsupported]: surface.tile requires compositor backend geometry authority' >&2
+exit 1
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		SurfaceProvider:   SurfaceProviderCompositorctl,
+		CompositorctlPath: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LayoutActionPath, strings.NewReader(`{"action":"tile","surfaceId":"view-live","zoneId":"primary"}`)))
+	if recorder.Code != http.StatusNotImplemented {
+		t.Fatalf("layout tile status = %d, want %d; body=%s", recorder.Code, http.StatusNotImplemented, recorder.Body.String())
+	}
+	var body struct {
+		Error      string `json:"error"`
+		ErrorClass string `json:"errorClass"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ErrorClass != "backend_unsupported" || !strings.Contains(body.Error, "surface.tile") {
+		t.Fatalf("unexpected classified error: %+v", body)
 	}
 }
 

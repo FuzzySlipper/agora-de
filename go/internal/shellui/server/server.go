@@ -18,6 +18,7 @@ import (
 	"agora-de.local/go/internal/session"
 	"agora-de.local/go/internal/shellui/catalog"
 	"agora-de.local/go/internal/shellui/catalogroute"
+	"agora-de.local/go/internal/shellui/layoutroute"
 	"agora-de.local/go/internal/shellui/staticserve"
 	"agora-de.local/go/internal/shellui/surfaceroute"
 	"agora-de.local/go/internal/shellui/surfaces"
@@ -26,6 +27,8 @@ import (
 
 const (
 	DefaultListenAddress = "127.0.0.1:7780"
+	LayoutPath           = layoutroute.LayoutPath
+	LayoutActionPath     = layoutroute.ActionPath
 	WorkControlsPath     = "/api/work-surface-controls"
 	SurfaceActionPath    = "/api/surfaces/action"
 	OperatorStatusPath   = "/api/operator/status"
@@ -72,6 +75,12 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux.Handle(catalogroute.AppsPath, catalogroute.New(catalogProvider, launchProvider))
 	mux.Handle(catalogroute.LaunchPath, catalogroute.New(catalogProvider, launchProvider))
 	mux.Handle(surfaceroute.SurfacesPath, surfaceroute.New(surfaceProvider))
+	mux.Handle(LayoutPath, layoutroute.New(layoutroute.Config{
+		CompositorctlPath: config.CompositorctlPath,
+		UseCompositorctl:  strings.TrimSpace(config.SurfaceProvider) == SurfaceProviderCompositorctl,
+		SurfaceProvider:   surfaceProvider,
+	}))
+	mux.Handle(LayoutActionPath, layoutroute.NewAction(layoutroute.Config{CompositorctlPath: config.CompositorctlPath}))
 	mux.Handle(WorkControlsPath, surfaceroute.Handler{
 		Path:     WorkControlsPath,
 		Provider: surfaceProvider,
@@ -377,23 +386,36 @@ type compositorctlListSurfacesResponse struct {
 
 type compositorctlTrackedSurface struct {
 	Surface struct {
-		ID          string `json:"id"`
-		AppID       string `json:"app_id"`
-		Title       string `json:"title"`
-		Role        string `json:"role"`
-		SurfaceKind string `json:"surface_kind"`
-		Visible     bool   `json:"visible"`
+		ID          string                 `json:"id"`
+		Label       string                 `json:"label"`
+		AppID       string                 `json:"app_id"`
+		Title       string                 `json:"title"`
+		Role        string                 `json:"role"`
+		SurfaceKind string                 `json:"surface_kind"`
+		Visible     bool                   `json:"visible"`
+		OutputID    string                 `json:"output_id"`
+		WorkspaceID string                 `json:"workspace_id"`
+		ZoneID      string                 `json:"zone_id"`
+		LayoutMode  string                 `json:"layout_mode"`
+		LayoutRole  string                 `json:"layout_role"`
+		Geometry    *surfaces.GeometryView `json:"geometry"`
 	} `json:"surface"`
 	Client struct {
 		PID int `json:"pid"`
 		UID int `json:"uid"`
 	} `json:"client"`
-	LaunchID           string `json:"launch_id"`
-	LastEvent          string `json:"last_event"`
-	Focused            bool   `json:"focused"`
-	Visible            bool   `json:"visible"`
-	FrameCount         int    `json:"frame_count"`
-	ContentCommitCount int    `json:"content_commit_count"`
+	LaunchID           string                 `json:"launch_id"`
+	LastEvent          string                 `json:"last_event"`
+	Focused            bool                   `json:"focused"`
+	Visible            bool                   `json:"visible"`
+	OutputID           string                 `json:"output_id"`
+	WorkspaceID        string                 `json:"workspace_id"`
+	ZoneID             string                 `json:"zone_id"`
+	LayoutMode         string                 `json:"layout_mode"`
+	LayoutRole         string                 `json:"layout_role"`
+	Geometry           *surfaces.GeometryView `json:"geometry"`
+	FrameCount         int                    `json:"frame_count"`
+	ContentCommitCount int                    `json:"content_commit_count"`
 }
 
 func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error) {
@@ -412,6 +434,7 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 		}
 		views = append(views, surfaces.SurfaceView{
 			ID:                 tracked.Surface.ID,
+			Label:              tracked.Surface.Label,
 			AppID:              tracked.Surface.AppID,
 			Title:              tracked.Surface.Title,
 			Role:               tracked.Surface.Role,
@@ -420,12 +443,67 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 			OwnerUID:           tracked.Client.UID,
 			Mapped:             mapped,
 			Focused:            tracked.Focused,
+			Visible:            tracked.Visible || tracked.Surface.Visible,
+			OutputID:           firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID),
+			WorkspaceID:        firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID),
+			ZoneID:             firstNonEmpty(tracked.ZoneID, tracked.Surface.ZoneID),
+			LayoutMode:         firstNonEmpty(tracked.LayoutMode, tracked.Surface.LayoutMode),
+			LayoutRole:         firstNonEmpty(tracked.LayoutRole, tracked.Surface.LayoutRole),
+			Geometry:           firstGeometryView(tracked.Geometry, tracked.Surface.Geometry),
 			InputDeniedCount:   0,
 			FrameCount:         tracked.FrameCount,
 			ContentCommitCount: tracked.ContentCommitCount,
 		})
 	}
 	return views, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstGeometryView(values ...*surfaces.GeometryView) *surfaces.GeometryView {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func writeCompositorctlError(response http.ResponseWriter, output []byte, err error) {
+	message := strings.TrimSpace(string(output))
+	if message == "" && err != nil {
+		message = err.Error()
+	}
+	errorClass, cleanMessage := parseCompositorctlError(message)
+	status := http.StatusServiceUnavailable
+	if errorClass == "backend_unsupported" {
+		status = http.StatusNotImplemented
+	}
+	writeJSON(response, status, classifiedAPIError{Error: cleanMessage, ErrorClass: errorClass})
+}
+
+func parseCompositorctlError(message string) (string, string) {
+	message = strings.TrimSpace(message)
+	const prefix = "server["
+	if strings.HasPrefix(message, prefix) {
+		rest := strings.TrimPrefix(message, prefix)
+		if end := strings.Index(rest, "]"); end > 0 {
+			errorClass := rest[:end]
+			clean := strings.TrimSpace(strings.TrimPrefix(rest[end+1:], ":"))
+			if clean == "" {
+				clean = message
+			}
+			return errorClass, clean
+		}
+	}
+	return "", message
 }
 
 func processExists(pid int) bool {
@@ -471,6 +549,11 @@ type surfaceActionResponse struct {
 	Status    string `json:"status"`
 }
 
+type classifiedAPIError struct {
+	Error      string `json:"error"`
+	ErrorClass string `json:"errorClass,omitempty"`
+}
+
 func surfaceActionHandler(config Config) http.Handler {
 	path := strings.TrimSpace(config.CompositorctlPath)
 	if path == "" {
@@ -504,11 +587,7 @@ func surfaceActionHandler(config Config) http.Handler {
 		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 		defer cancel()
 		if output, err := exec.CommandContext(ctx, path, args...).CombinedOutput(); err != nil {
-			message := strings.TrimSpace(string(output))
-			if message == "" {
-				message = err.Error()
-			}
-			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": message})
+			writeCompositorctlError(response, output, err)
 			return
 		}
 		writeJSON(response, http.StatusAccepted, surfaceActionResponse{
@@ -525,6 +604,14 @@ func surfaceActionArgs(action surfaceActionRequest) ([]string, bool) {
 		return []string{"surface", "focus", "--surface", action.SurfaceID, "--timeout-ms", "2000"}, true
 	case "close":
 		return []string{"surface", "close", "--surface", action.SurfaceID, "--timeout-ms", "2000"}, true
+	case "maximize":
+		return []string{"surface", "maximize", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
+	case "minimize":
+		return []string{"surface", "minimize", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
+	case "fullscreen":
+		return []string{"surface", "fullscreen", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
+	case "setFloating":
+		return []string{"surface", "set-floating", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
 	default:
 		return nil, false
 	}
@@ -1878,6 +1965,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     const state = {
       apps: [],
       surfaces: [],
+      layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
       surface: %q
     };
@@ -1921,6 +2009,15 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       );
     }
 
+    function layoutSurface(surfaceId) {
+      const surfaces = Array.isArray(state.layout.surfaces) ? state.layout.surfaces : [];
+      return surfaces.find((surface) => surface.surfaceId === surfaceId);
+    }
+
+    function nextZone(zoneId) {
+      return zoneId === "primary" ? "secondary" : "primary";
+    }
+
     function render() {
       const launcher = launcherSurface();
       const appsButton = document.getElementById("apps-button");
@@ -1935,8 +2032,13 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       renderList("running-list", "no running apps", workSurfaces, (surface) => {
         const group = document.createElement("span");
         group.className = "surface-actions";
-        const label = text(surface.title, text(surface.appId, surface.id));
-        group.appendChild(button(label, "dock-item" + (surface.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus")));
+        const layout = layoutSurface(surface.id) || {};
+        const label = text(layout.label, text(surface.title, text(surface.appId, surface.id)));
+        const zone = text(layout.zoneId, text(surface.zoneId, "primary"));
+        const focusButton = button(label, "dock-item" + (surface.focused || layout.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus"));
+        focusButton.title = text(surface.title, text(surface.appId, surface.id)) + " / " + zone;
+        group.appendChild(focusButton);
+        group.appendChild(button("Zone", "surface-action", () => assignZone(surface.id, nextZone(zone))));
         group.appendChild(button("Close", "surface-action", () => actOnSurface(surface.id, "close")));
         return group;
       });
@@ -1950,7 +2052,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
       const workspace = document.getElementById("workspace-label");
       workspace.textContent = text(state.workspace.name, "workspace 1");
-      workspace.title = state.workspace.surfaceCount ? state.workspace.surfaceCount + " work surfaces" : "workspace 1";
+      workspace.title = text(state.layout.mode, "freeform") + (state.workspace.surfaceCount ? " / " + state.workspace.surfaceCount + " work surfaces" : "");
     }
 
     async function loadJSON(path) {
@@ -1963,13 +2065,15 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
 
     async function refresh() {
       try {
-        const [catalog, surfaces, workspaces] = await Promise.all([
+        const [catalog, surfaces, workspaces, layout] = await Promise.all([
           loadJSON("/api/catalog/apps"),
           loadJSON("/api/surfaces"),
-          loadJSON("/api/workspaces")
+          loadJSON("/api/workspaces"),
+          loadJSON("/api/layout")
         ]);
         state.apps = Array.isArray(catalog.apps) ? catalog.apps : [];
         state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
+        state.layout = layout.layout || state.layout;
         if (Array.isArray(workspaces.workspaces) && workspaces.workspaces.length) {
           state.workspace = workspaces.workspaces.find((workspace) => workspace.active) || workspaces.workspaces[0];
         }
@@ -2019,12 +2123,42 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
     }
 
+    async function assignZone(surfaceId, zoneId) {
+      const status = document.getElementById("status-label");
+      status.textContent = "zone";
+      status.className = "status ready";
+      try {
+        await postJSON("/api/layout/action", {surfaceId, zoneId, action: "assignZone"});
+        await refresh();
+      } catch (error) {
+        status.textContent = "zone unsupported";
+        status.className = "status warn";
+      }
+    }
+
+    async function setLayoutMode(mode) {
+      const status = document.getElementById("status-label");
+      status.textContent = mode;
+      status.className = "status ready";
+      try {
+        await postJSON("/api/layout/action", {mode, action: "setMode"});
+        await refresh();
+      } catch (error) {
+        status.textContent = "layout unsupported";
+        status.className = "status warn";
+      }
+    }
+
     async function activateWorkspace() {
       const status = document.getElementById("status-label");
       status.textContent = "workspace";
       status.className = "status ready";
       try {
-        await postJSON("/api/workspaces/action", {workspaceId: "workspace-1", action: "activate"});
+        if (state.layout.mode !== "zones") {
+          await setLayoutMode("zones");
+        } else {
+          await postJSON("/api/workspaces/action", {workspaceId: "workspace-1", action: "activate"});
+        }
         await refresh();
       } catch (error) {
         status.textContent = "workspace failed";

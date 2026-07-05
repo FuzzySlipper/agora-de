@@ -96,6 +96,11 @@ Shellui should expose layout state and actions as a projection of this bridge
 contract. TypeScript may render the controls and badges, but it should not own
 placement policy.
 
+The shellui projection uses `/api/layout` for camelCase layout state and
+`/api/layout/action` for layout-mode and zone actions. Surface-only controls
+such as focus and close stay on `/api/surfaces/action`; workspace activation
+stays on `/api/workspaces/action`.
+
 ## Agent-Visible Overlays
 
 Structured layout should include optional overlays that are visible in capture

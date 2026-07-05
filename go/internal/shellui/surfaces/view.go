@@ -7,18 +7,33 @@ import (
 )
 
 type SurfaceView struct {
-	ID                 string `json:"id"`
-	AppID              string `json:"appId,omitempty"`
-	Title              string `json:"title,omitempty"`
-	Role               string `json:"role,omitempty"`
-	SurfaceKind        string `json:"surfaceKind,omitempty"`
-	LaunchID           string `json:"launchId,omitempty"`
-	OwnerUID           int    `json:"ownerUid"`
-	Mapped             bool   `json:"mapped"`
-	Focused            bool   `json:"focused"`
-	InputDeniedCount   int    `json:"inputDeniedCount"`
-	FrameCount         int    `json:"frameCount,omitempty"`
-	ContentCommitCount int    `json:"contentCommitCount,omitempty"`
+	ID                 string        `json:"id"`
+	Label              string        `json:"label,omitempty"`
+	AppID              string        `json:"appId,omitempty"`
+	Title              string        `json:"title,omitempty"`
+	Role               string        `json:"role,omitempty"`
+	SurfaceKind        string        `json:"surfaceKind,omitempty"`
+	LaunchID           string        `json:"launchId,omitempty"`
+	OwnerUID           int           `json:"ownerUid"`
+	Mapped             bool          `json:"mapped"`
+	Focused            bool          `json:"focused"`
+	Visible            bool          `json:"visible"`
+	OutputID           string        `json:"outputId,omitempty"`
+	WorkspaceID        string        `json:"workspaceId,omitempty"`
+	ZoneID             string        `json:"zoneId,omitempty"`
+	LayoutMode         string        `json:"layoutMode,omitempty"`
+	LayoutRole         string        `json:"layoutRole,omitempty"`
+	Geometry           *GeometryView `json:"geometry,omitempty"`
+	InputDeniedCount   int           `json:"inputDeniedCount"`
+	FrameCount         int           `json:"frameCount,omitempty"`
+	ContentCommitCount int           `json:"contentCommitCount,omitempty"`
+}
+
+type GeometryView struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 func LifecycleViews(source *surfacetrack.Projection) []SurfaceView {
