@@ -13,6 +13,8 @@ contract.
   `compositor/protocol-fixtures/capabilities/backend-capability-matrix.json`
 - Standard protocol probe:
   `compositor/standard-protocol-probe/probe-observations.json`
+- Wayfire layout-authority probe:
+  `compositor/protocol-fixtures/wayfire/layout-authority-probe-4267.json`
 - Fixture gate:
 
 ```bash
@@ -74,6 +76,13 @@ The Wayfire proof must provide:
 - cleanup and stale-surface classification after close/unmap;
 - optional overlay or annotation support only if it is visible in capture
   without stealing pointer focus or depending on WebKit transparency behavior.
+
+Den task 4267 checked Wayfire 0.10.1 headers and simple-tile metadata. The
+probe found direct Wayfire APIs for lifecycle, post-commit geometry, focus,
+workspace state, stacking order, and primitive move/resize/tile/fullscreen
+commands. It did not find a public simple-tile state or command API suitable
+for agora-de zones. The Wayfire proof may proceed only as an agora-de custom
+plugin using direct Wayfire APIs and small backend-owned zone/revision state.
 
 The proof fails, and the Rust/Smithay path becomes primary, if any required
 layout action depends on synthetic keyboard shortcuts, if the bridge must infer

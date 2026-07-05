@@ -1,0 +1,115 @@
+{
+  "schema": "agora-de.wayfire-layout-authority-probe.v1",
+  "taskId": 4267,
+  "checkedAt": "2026-07-05",
+  "wayfire": {
+    "pkgConfigVersion": "0.10.1",
+    "runtimeVersion": "0.10.1-746bc7e9 (Apr 6 2026) branch makepkg wlroots-0.19.3",
+    "package": "wayfire 0.10.1-4",
+    "headerRoot": "/usr/include/wayfire",
+    "simpleTileMetadata": "/usr/share/wayfire/metadata/simple-tile.xml"
+  },
+  "liveEvidence": {
+    "simpleTileCapture": "/run/agent-os/artifacts/den-k8-structured-layout-4237/output-capture-1783242506875502771-16/output-capture-1783242506875502771-16.png",
+    "finding": "Wayfire simple-tile visibly placed two real native terminal surfaces side by side, but the existing bridge geometry still reported both near the same origin."
+  },
+  "requirements": [
+    {
+      "name": "surface_lifecycle",
+      "classification": "direct",
+      "evidence": [
+        "view_mapped_signal",
+        "view_pre_unmap_signal",
+        "view_unmapped_signal",
+        "view_set_output_signal",
+        "view_interface_t::is_mapped",
+        "view_interface_t::close"
+      ]
+    },
+    {
+      "name": "post_layout_geometry",
+      "classification": "direct_after_commit",
+      "evidence": [
+        "toplevel_view_interface_t::get_geometry",
+        "toplevel_view_interface_t::set_geometry",
+        "toplevel_view_interface_t::move",
+        "toplevel_view_interface_t::resize",
+        "view_geometry_changed_signal",
+        "toplevel_t::current().geometry"
+      ]
+    },
+    {
+      "name": "workspace_state",
+      "classification": "direct",
+      "evidence": [
+        "output_t::wset",
+        "workspace_set_t::get_current_workspace",
+        "workspace_set_t::get_views",
+        "workspace_set_t::get_view_main_workspace",
+        "workspace_set_t::move_to_workspace",
+        "workspace_changed_signal",
+        "view_change_workspace_signal"
+      ]
+    },
+    {
+      "name": "focus_state",
+      "classification": "direct",
+      "evidence": [
+        "seat_t::get_active_view",
+        "seat_t::focus_view",
+        "keyboard_focus_changed_signal",
+        "window_manager_t::focus_request",
+        "window_manager_t::focus_raise_view"
+      ]
+    },
+    {
+      "name": "view_order",
+      "classification": "direct_for_stacking_requires_plugin_state_for_layout_order",
+      "evidence": [
+        "workspace_set_t::get_views(WSET_SORT_STACKING)",
+        "collect_views_from_scenegraph",
+        "collect_views_from_output"
+      ]
+    },
+    {
+      "name": "layout_commands",
+      "classification": "direct_for_wayfire_primitives_requires_plugin_state_for_zones",
+      "evidence": [
+        "window_manager_t::tile_request",
+        "window_manager_t::fullscreen_request",
+        "window_manager_t::minimize_request",
+        "toplevel_view_interface_t::set_geometry",
+        "workspace_set_t::request_workspace"
+      ]
+    },
+    {
+      "name": "zone_assignment",
+      "classification": "requires_agora_de_plugin_state",
+      "evidence": [
+        "No public Wayfire zone concept found in installed headers",
+        "grid.hpp slot helpers are fixed geometry helpers, not an agora-de zone model",
+        "simple-tile metadata exposes bindings and config but no stable state or IPC API"
+      ]
+    },
+    {
+      "name": "simple_tile_authority",
+      "classification": "not_sufficient",
+      "evidence": [
+        "simple-tile.xml exposes tile_by_default, move/resize buttons, focus keys, gaps, animation, and preview colors",
+        "No public simple-tile tile tree, ordered surface list, command result, or zone assignment API found"
+      ]
+    }
+  ],
+  "decision": {
+    "wayfireProofViable": true,
+    "nextTask": 4268,
+    "summary": "Continue with a minimal Wayfire layout state bridge proof using direct Wayfire view/workspace/window-manager APIs. Do not depend on simple-tile as authoritative layout state.",
+    "stopConditions": [
+      "synthetic keyboard shortcut required for layout command",
+      "geometry inferred from shell state or screenshots",
+      "dependency on unexported simple-tile internals",
+      "plugin grows into shell policy",
+      "Den 4251 churn budget exceeded"
+    ]
+  }
+}

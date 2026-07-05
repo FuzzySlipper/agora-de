@@ -203,6 +203,12 @@ the criteria above within the documented churn budget; otherwise layout
 ownership moves to a Rust compositor or Smithay spike scoped to layout
 authority.
 
+Den task 4267 adds `docs/wayfire-layout-authority-probe.md` and
+`compositor/protocol-fixtures/wayfire/layout-authority-probe-4267.json`. The
+probe concludes that direct Wayfire APIs are sufficient to attempt the next
+state bridge proof, while simple-tile remains evidence only and not the
+authority API.
+
 ## Follow-Up Tasks
 
 - Den 4247: bridge structured layout action contract.
@@ -211,3 +217,5 @@ authority.
 - Den 4250: agent-visible window labels and bounds overlay.
 - Den 4251: Wayfire layout plugin path versus Rust compositor ownership
   decision recorded in `docs/compositor-backend-decision.md`.
+- Den 4267: Wayfire layout-authority API probe recorded in
+  `docs/wayfire-layout-authority-probe.md`.

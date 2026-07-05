@@ -9,6 +9,7 @@ plugin and bridge implementation.
 ```text
 compositor/protocol-fixtures/wayfire/plugin-events.jsonl
 compositor/protocol-fixtures/wayfire/bridge-commands.jsonl
+compositor/protocol-fixtures/wayfire/layout-authority-probe-4267.json
 ```
 
 `plugin-events.jsonl` covers messages emitted by the compositor plugin:
@@ -25,6 +26,11 @@ compositor/protocol-fixtures/wayfire/bridge-commands.jsonl
 - input context set/clear;
 - close surface;
 - close surfaces by owner uid.
+
+`layout-authority-probe-4267.json` records the Wayfire 0.10.1 API surface used
+to decide whether the next layout-authority proof can proceed through direct
+Wayfire plugin APIs. It is not socket protocol. It is a checked evidence packet
+for the backend decision series.
 
 ## Consumers
 
@@ -44,6 +50,9 @@ that every fixture line is valid JSON and uses a known message type:
 The Go surface event kind strings are checked against the generated TypeScript
 contract so `wayfireproto` does not drift from the Rust-owned protocol
 vocabulary.
+
+The layout-authority probe fixture is checked by the compositor harness for
+schema, task id, required capability entries, and the next proof task id.
 
 When the C++ plugin lands, its protocol smoke tests should use these same
 fixture shapes or a generated equivalent.
