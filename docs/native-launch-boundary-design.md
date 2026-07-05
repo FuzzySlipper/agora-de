@@ -160,6 +160,39 @@ default and must be paired with an explicit desktop-entry id allowlist. The
 provider sends repeated `--arg` values to compositorctl and must not use
 `--cmd`.
 
+Installed configuration is environment-driven so native launch can be enabled
+or rolled back without code edits:
+
+```text
+AGORA_DE_SHELLUI_CATALOG_PROVIDER=desktop_entries
+AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS=/usr/share/applications:/home/agent/.local/share/applications
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=structured_compositorctl
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=Alacritty.desktop
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID=1001
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID=1002
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN=session-native-shell
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT=HDMI-A-1
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME=/home/agent
+AGORA_DE_SHELLUI_COMPOSITORCTL=/home/agent/.local/bin/agora-de-compositorctl
+```
+
+The allowlist matches the desktop-entry id exactly, for example
+`Alacritty.desktop`. It does not match executable paths, display labels, icon
+names, or category names. Unknown native launch provider values are rejected at
+shellui startup. Rollback is setting
+`AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled` and clearing
+`AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST`.
+
+Catalog disabled state is a contract, not only display copy. Non-launchable
+installed entries carry `disabledCode` and `disabledReason`; current stable
+codes are:
+
+- `native_launch_disabled`: native launch is globally disabled;
+- `native_launch_not_allowlisted`: the entry is preparable but not allowlisted;
+- `unsupported_desktop_entry`: the desktop entry cannot be safely prepared;
+- `native_launch_unavailable`: reserved for provider/config states that still
+  cannot launch the entry.
+
 The agora-de `go/cmd/compositorctl` implementation now supports that narrow
 structured launch contract directly:
 

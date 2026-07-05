@@ -28,6 +28,11 @@ def main() -> int:
         action="store_true",
         help="Require non-launchable entries to carry disabledReason text.",
     )
+    parser.add_argument(
+        "--require-disabled-codes",
+        action="store_true",
+        help="Require non-launchable entries to carry stable disabledCode values.",
+    )
     parser.add_argument("--timeout-seconds", type=float, default=5)
     args = parser.parse_args()
 
@@ -89,6 +94,13 @@ def main() -> int:
             checks.append(failed("disabled-reasons", f"non-launchable entries missing disabledReason: {sample}"))
         else:
             checks.append(passed("disabled-reasons", "non-launchable entries include disabled reasons"))
+    if args.require_disabled_codes:
+        missing_code = [app for app in nonlaunchable if not app.get("disabledCode")]
+        if missing_code:
+            sample = ", ".join(app["id"] for app in missing_code[:5])
+            checks.append(failed("disabled-codes", f"non-launchable entries missing disabledCode: {sample}"))
+        else:
+            checks.append(passed("disabled-codes", "non-launchable entries include disabled codes"))
 
     return finish(checks, checked_at, len(apps), apps)
 
@@ -112,6 +124,8 @@ def first_malformed_app(apps: list[object]) -> str | None:
                 return f"catalog entry {index} missing string {field}"
         if "launchable" in app and not isinstance(app["launchable"], bool):
             return f"catalog entry {index} launchable must be boolean when present"
+        if "disabledCode" in app and not isinstance(app["disabledCode"], str):
+            return f"catalog entry {index} disabledCode must be string when present"
     return None
 
 
@@ -137,6 +151,7 @@ def finish(checks: list[dict], checked_at: int, app_count: int, apps: list[objec
                     "id": app.get("id"),
                     "name": app.get("name"),
                     "launchable": app.get("launchable") is True,
+                    "disabledCode": app.get("disabledCode") or "",
                     "disabledReason": app.get("disabledReason") or "",
                     "category": app.get("category") or "",
                     "iconKind": app.get("iconKind") or "",

@@ -107,6 +107,7 @@ Current visible-shell scenario packets:
 | --- | --- |
 | `den-k8-installed-service-capture` | General installed shell output capture, used for dock/panel visibility. |
 | `den-k8-shell-launch-visible` | Launch-loop capture taken after an app surface is running and focused. |
+| `den-k8-native-launch-visible` | Governed native app launch capture taken after an allowlisted installed app is running and focused. |
 
 ## Failure Taxonomy
 
@@ -254,6 +255,24 @@ capture is visible and the expected shell pixels are present while the launched
 app is mapped. The runner waits briefly before capture so the dock's polling
 loop can reflect the running-app entry in the visible panel.
 
+Run the governed native app launch loop with capture evidence:
+
+```bash
+./harness/live/check-native-launch.py \
+  --base-url http://127.0.0.1:17780 \
+  --app-id Alacritty.desktop \
+  --expected-app-id Alacritty \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-native-launch \
+  --require-capture
+```
+
+The native-launch runner emits `agora-de.native-launch-live.v1`. It fails closed
+if `/usr/local/bin/compositorctl` is selected, requires the target app to be
+launchable in `/api/catalog/apps`, launches through `/api/catalog/launch`,
+verifies compositor-backed surface readback and focus, captures the physical
+output, closes the surface, and verifies stale cleanup.
+
 Validate desktop-entry catalog import separately from the visible fixture launch
 service by running a temporary shellui with `--catalog-provider desktop_entries`
 and checking it with:
@@ -262,12 +281,16 @@ and checking it with:
 ./harness/live/check-installed-catalog.py \
   --catalog-url http://127.0.0.1:17782/api/catalog/apps \
   --min-apps 1 \
-  --require-all-nonlaunchable
+  --require-all-nonlaunchable \
+  --require-disabled-codes \
+  --require-disabled-reasons
 ```
 
-The runner emits `agora-de.installed-catalog-live.v1`. Under the current native
-launch policy, the imported installed entries must be visible in the catalog and
-non-launchable in shellui.
+The runner emits `agora-de.installed-catalog-live.v1`. With native launch
+disabled or no allowlist, imported installed entries must be visible in the
+catalog and non-launchable in shellui with stable `disabledCode` values. With
+`structured_compositorctl` enabled, only explicitly allowlisted desktop-entry
+ids such as `Alacritty.desktop` should become launchable.
 
 Structured native launch evidence for task 4176 used the agora-de
 `go/cmd/compositorctl` binary built to `/home/agent/.local/bin/agora-de-compositorctl`.

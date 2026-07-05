@@ -92,15 +92,48 @@ AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=
 `example-browser` and `shell-status` launch targets used by the installed
 evidence loops. `desktop_entries` imports installed `.desktop` entries from the
 configured roots and exposes them through `/api/catalog/apps`, but entries
-without an explicit shellui launch target render as non-launchable until the
-native launch boundary exists. See `docs/native-launch-policy.md` for the
-current launchability contract.
+without an explicit shellui launch target render as non-launchable unless
+`structured_compositorctl` is enabled and the desktop-entry id is allowlisted.
+Allowlist matching is by id such as `Alacritty.desktop`, not executable path or
+display label. See `docs/native-launch-boundary-design.md` for the current
+launchability contract and disabled-code vocabulary.
+
+Minimal den-k8 governed native launch settings:
+
+```text
+AGORA_DE_SHELLUI_CATALOG_PROVIDER=desktop_entries
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=structured_compositorctl
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=Alacritty.desktop
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID=1001
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID=1002
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN=session-native-shell
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT=HDMI-A-1
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME=/home/agent
+AGORA_DE_SHELLUI_COMPOSITORCTL=/home/agent/.local/bin/agora-de-compositorctl
+```
+
+Rollback is setting `AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled`,
+clearing `AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST`, and restarting
+`agora-de-shellui.service`.
+
+The helper script keeps that edit copy/paste-safe:
+
+```bash
+install -D -m 0755 deploy/shellui/agora-de-native-launch-config ~/.local/bin/agora-de-native-launch-config
+~/.local/bin/agora-de-native-launch-config enable-alacritty --restart
+~/.local/bin/agora-de-native-launch-config disable --restart
+```
 
 The first launch loop is also shellui-backed: `POST /api/catalog/launch` maps a
 known catalog app to a compositor launch target, and `POST /api/surfaces/action`
 accepts `focus` and `close` for running work surfaces. Use
 `harness/live/check-shell-loop.py` to verify launch, running-state readback,
 focus, close, and stale-entry cleanup against the installed service.
+
+Use `harness/live/check-native-launch.py` for the governed installed-app path.
+It requires the agora-de compositorctl path, verifies an allowlisted catalog app
+such as `Alacritty.desktop`, launches it through shellui, captures `HDMI-A-1`,
+and closes the native surface.
 
 The `Status` control launches `?surface=operator`, a read-only shell status
 utility backed by `/api/operator/status`. It exposes service/socket/output and
@@ -208,12 +241,14 @@ Then check the imported catalog route from another shell:
 ./harness/live/check-installed-catalog.py \
   --catalog-url http://127.0.0.1:17782/api/catalog/apps \
   --min-apps 1 \
-  --require-all-nonlaunchable
+  --require-all-nonlaunchable \
+  --require-disabled-codes \
+  --require-disabled-reasons
 ```
 
-The `--require-all-nonlaunchable` assertion matches
-`docs/native-launch-policy.md`: installed entries are discoverable, but native
-launch remains deferred until a governed launcher boundary exists.
+The `--require-all-nonlaunchable` assertion is for disabled or non-allowlisted
+sidecar checks. When `structured_compositorctl` is enabled, the installed
+catalog should report only allowlisted desktop-entry ids as launchable.
 
 Native desktop-entry launch has an explicit off switch and remains disabled in
 the installed examples:

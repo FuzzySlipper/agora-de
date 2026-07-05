@@ -17,8 +17,11 @@ type AppView struct {
 	Category       string   `json:"category"`
 	Categories     []string `json:"categories,omitempty"`
 	Launchable     bool     `json:"launchable,omitempty"`
+	DisabledCode   string   `json:"disabledCode,omitempty"`
 	DisabledReason string   `json:"disabledReason,omitempty"`
 }
+
+const DisabledCodeUnsupportedDesktopEntry = "unsupported_desktop_entry"
 
 func VisibleAppViews(source *appcatalog.Catalog) []AppView {
 	entries := source.VisibleEntries()
@@ -36,6 +39,7 @@ func VisibleAppViews(source *appcatalog.Catalog) []AppView {
 			Launchable: entry.Launchable(),
 		}
 		if !view.Launchable {
+			view.DisabledCode = DisabledCodeUnsupportedDesktopEntry
 			view.DisabledReason = "unsupported desktop entry"
 		}
 		views = append(views, view)

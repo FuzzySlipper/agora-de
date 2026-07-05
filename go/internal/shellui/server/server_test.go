@@ -69,7 +69,10 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`id="close-button"`,
 		`className = "app-icon"`,
 		`className = "app-detail"`,
-		`native launch disabled`,
+		`id="policy-status"`,
+		`dataset.disabledCode`,
+		`launchable / " + disabled + " disabled`,
+		`/api/catalog/launch`,
 		`io.agorade.ShellLauncher`,
 		`/api/catalog/apps`,
 		`/api/surfaces/action`,
@@ -117,6 +120,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 			IconLabel  string `json:"iconLabel"`
 			Category   string `json:"category"`
 			Launchable bool   `json:"launchable"`
+			Code       string `json:"disabledCode"`
 			Reason     string `json:"disabledReason"`
 		} `json:"apps"`
 	}
@@ -306,6 +310,7 @@ NoDisplay=true
 			Name       string `json:"name"`
 			Icon       string `json:"icon"`
 			Launchable bool   `json:"launchable"`
+			Code       string `json:"disabledCode"`
 			Reason     string `json:"disabledReason"`
 		} `json:"apps"`
 	}
@@ -322,6 +327,63 @@ NoDisplay=true
 	}
 	if app.Reason != "native launch disabled" {
 		t.Fatalf("disabled reason = %q, want native launch disabled", app.Reason)
+	}
+	if app.Code != NativeDisabledCodeProviderDisabled {
+		t.Fatalf("disabled code = %q, want %s", app.Code, NativeDisabledCodeProviderDisabled)
+	}
+}
+
+func TestHandlerRejectsUnknownNativeLaunchProvider(t *testing.T) {
+	_, err := NewHandler(Config{
+		FixtureProviders:     true,
+		NativeLaunchProvider: "shell",
+	})
+	if err == nil {
+		t.Fatal("NewHandler accepted unknown native launch provider")
+	}
+	if !strings.Contains(err.Error(), `unknown native launch provider "shell"`) {
+		t.Fatalf("error = %v, want unknown native launch provider", err)
+	}
+}
+
+func TestHandlerMarksNativeAppDisabledWhenNotAllowlisted(t *testing.T) {
+	root := t.TempDir()
+	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
+Type=Application
+Name=Terminal
+Exec=terminal --title %c
+Icon=terminal
+`)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:      true,
+		CatalogProvider:       CatalogProviderDesktopEntries,
+		DesktopEntryRoots:     []string{root},
+		NativeLaunchProvider:  NativeLaunchProviderStructuredCompositorctl,
+		NativeLaunchAllowlist: []string{"editor.desktop"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var response struct {
+		Apps []struct {
+			ID         string `json:"id"`
+			Launchable bool   `json:"launchable"`
+			Code       string `json:"disabledCode"`
+			Reason     string `json:"disabledReason"`
+		} `json:"apps"`
+	}
+	decodeRoute(t, handler, "/api/catalog/apps", &response)
+	if len(response.Apps) != 1 {
+		t.Fatalf("apps = %d, want 1: %+v", len(response.Apps), response.Apps)
+	}
+	app := response.Apps[0]
+	if app.ID != "terminal.desktop" || app.Launchable {
+		t.Fatalf("native catalog app should be visible but disabled: %+v", app)
+	}
+	if app.Code != NativeDisabledCodeNotAllowlisted || app.Reason != "not enabled for native launch" {
+		t.Fatalf("disabled state = (%q, %q), want not allowlisted", app.Code, app.Reason)
 	}
 }
 
@@ -437,6 +499,7 @@ printf '%s\n' '{"launch_id":"native-launch","surface":{"surface":{"id":"native-v
 		Apps []struct {
 			ID         string `json:"id"`
 			Launchable bool   `json:"launchable"`
+			Code       string `json:"disabledCode"`
 			Reason     string `json:"disabledReason"`
 		} `json:"apps"`
 	}
@@ -444,8 +507,8 @@ printf '%s\n' '{"launch_id":"native-launch","surface":{"surface":{"id":"native-v
 	if len(catalogResponse.Apps) != 1 || catalogResponse.Apps[0].ID != "terminal.desktop" || !catalogResponse.Apps[0].Launchable {
 		t.Fatalf("native catalog app not launchable through structured provider: %+v", catalogResponse.Apps)
 	}
-	if catalogResponse.Apps[0].Reason != "" {
-		t.Fatalf("allowlisted native app disabled reason = %q, want empty", catalogResponse.Apps[0].Reason)
+	if catalogResponse.Apps[0].Code != "" || catalogResponse.Apps[0].Reason != "" {
+		t.Fatalf("allowlisted native app disabled state = (%q, %q), want empty", catalogResponse.Apps[0].Code, catalogResponse.Apps[0].Reason)
 	}
 
 	recorder := httptest.NewRecorder()

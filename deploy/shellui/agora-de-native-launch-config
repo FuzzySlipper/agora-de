@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  agora-de-native-launch-config enable-alacritty [--restart]
+  agora-de-native-launch-config disable [--restart]
+
+Environment:
+  AGORA_DE_SHELLUI_ENV overrides the env file path.
+USAGE
+}
+
+command="${1:-}"
+if [[ -z "${command}" || "${command}" == "-h" || "${command}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+shift || true
+
+restart=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --restart)
+      restart=1
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+case "${command}" in
+  enable-alacritty | disable)
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+env_file="${AGORA_DE_SHELLUI_ENV:-${HOME}/.config/agora-de/shellui.env}"
+mkdir -p "$(dirname "${env_file}")"
+touch "${env_file}"
+
+python3 - "${env_file}" "${command}" <<'PY'
+import pathlib
+import sys
+
+env_path = pathlib.Path(sys.argv[1])
+command = sys.argv[2]
+
+common = {
+    "AGORA_DE_SHELLUI_CATALOG_PROVIDER": "desktop_entries",
+    "AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS": "/usr/share/applications:/home/agent/.local/share/applications",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID": "1001",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID": "1002",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN": "session-native-shell",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT": "HDMI-A-1",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME": "/home/agent",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR": "",
+    "AGORA_DE_SHELLUI_COMPOSITORCTL": "/home/agent/.local/bin/agora-de-compositorctl",
+}
+if command == "enable-alacritty":
+    updates = {
+        **common,
+        "AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER": "structured_compositorctl",
+        "AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST": "Alacritty.desktop",
+    }
+else:
+    updates = {
+        "AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER": "disabled",
+        "AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST": "",
+    }
+
+order = [
+    "AGORA_DE_SHELLUI_CATALOG_PROVIDER",
+    "AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME",
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR",
+    "AGORA_DE_SHELLUI_COMPOSITORCTL",
+]
+
+lines = env_path.read_text(encoding="utf-8").splitlines()
+seen = set()
+out = []
+for line in lines:
+    if "=" not in line or line.lstrip().startswith("#"):
+        out.append(line)
+        continue
+    key, _, _ = line.partition("=")
+    if key in updates:
+        out.append(f"{key}={updates[key]}")
+        seen.add(key)
+    else:
+        out.append(line)
+
+for key in order:
+    if key in updates and key not in seen:
+        out.append(f"{key}={updates[key]}")
+
+env_path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+PY
+
+if [[ "${restart}" -eq 1 ]]; then
+  systemctl --user restart agora-de-shellui.service
+fi
+
+echo "updated ${env_file} (${command})"

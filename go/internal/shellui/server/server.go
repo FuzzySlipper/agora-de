@@ -38,6 +38,10 @@ const (
 	CatalogProviderDesktopEntries               = "desktop_entries"
 	NativeLaunchProviderDisabled                = "disabled"
 	NativeLaunchProviderStructuredCompositorctl = "structured_compositorctl"
+
+	NativeDisabledCodeProviderDisabled = "native_launch_disabled"
+	NativeDisabledCodeNotAllowlisted   = "native_launch_not_allowlisted"
+	NativeDisabledCodeUnavailable      = "native_launch_unavailable"
 )
 
 type Config struct {
@@ -172,22 +176,29 @@ func launchAwareAppViews(config Config, source *appcatalog.Catalog) ([]catalog.A
 			nativelaunch.CanPrepare(entry)
 		views[index].Launchable = launchable
 		if !launchable {
-			views[index].DisabledReason = nativeDisabledReason(nativeMode, nativeAllowlist[views[index].ID], entry)
+			disabled := nativeDisabledState(nativeMode, nativeAllowlist[views[index].ID], entry)
+			views[index].DisabledCode = disabled.Code
+			views[index].DisabledReason = disabled.Reason
 		}
 	}
 	return views, nil
 }
 
-func nativeDisabledReason(mode string, allowlisted bool, entry appcatalog.Entry) string {
+type nativeDisabled struct {
+	Code   string
+	Reason string
+}
+
+func nativeDisabledState(mode string, allowlisted bool, entry appcatalog.Entry) nativeDisabled {
 	switch {
 	case !nativelaunch.CanPrepare(entry):
-		return "unsupported desktop entry"
+		return nativeDisabled{Code: catalog.DisabledCodeUnsupportedDesktopEntry, Reason: "unsupported desktop entry"}
 	case mode == NativeLaunchProviderDisabled:
-		return "native launch disabled"
+		return nativeDisabled{Code: NativeDisabledCodeProviderDisabled, Reason: "native launch disabled"}
 	case !allowlisted:
-		return "not enabled for native launch"
+		return nativeDisabled{Code: NativeDisabledCodeNotAllowlisted, Reason: "not enabled for native launch"}
 	default:
-		return "not launchable"
+		return nativeDisabled{Code: NativeDisabledCodeUnavailable, Reason: "not launchable"}
 	}
 }
 
@@ -728,6 +739,7 @@ func collectOperatorStatus(ctx context.Context, compositorctl string, surfacePro
 			LiveCheckCommands: []string{
 				"./harness/live/check-den-k8.py --systemd-units 'agora-wayfire.service,compositor-bridge.service' --sockets '/run/agent-os/compositor-control.sock,/run/agent-os/compositor-bridge.sock' --shell-url 'http://127.0.0.1:17780/shell/dist/desktop/?surface=dock' --catalog-url 'http://127.0.0.1:17780/api/catalog/apps' --surfaces-url 'http://127.0.0.1:17780/api/surfaces' --work-controls-url 'http://127.0.0.1:17780/api/work-surface-controls' --workspaces-url 'http://127.0.0.1:17780/api/workspaces' --operator-status-url 'http://127.0.0.1:17780/api/operator/status' --surface-app-id io.agorade.ShellPanel --surface-role panel --output-name HDMI-A-1 --output-capture-session den-k8-live --require-capture",
 				"./harness/live/check-shell-loop.py --base-url http://127.0.0.1:17780 --output-name HDMI-A-1 --output-capture-session den-k8-shell-loop --require-capture",
+				"./harness/live/check-native-launch.py --base-url http://127.0.0.1:17780 --output-name HDMI-A-1 --output-capture-session den-k8-native-launch --require-capture",
 			},
 			Runbook: "docs/den-k8-visible-shell-runbook.md",
 			Note:    "Recovery commands are shown for operator use; the shell does not run privileged recovery actions.",
@@ -1373,6 +1385,13 @@ func writeLauncherHTML(response http.ResponseWriter) {
     .app:disabled {
       opacity: 0.72;
     }
+    .app:not(:disabled) {
+      cursor: pointer;
+    }
+    .app:not(:disabled):hover,
+    .app:not(:disabled):focus-visible {
+      border-color: var(--agora-accent);
+    }
     .app-icon {
       align-items: center;
       background: var(--agora-evidence-strong);
@@ -1425,7 +1444,7 @@ func writeLauncherHTML(response http.ResponseWriter) {
     </section>
     <footer class="footer">
       <span id="status">loading</span>
-      <span>native launch disabled</span>
+      <span id="policy-status">checking apps</span>
     </footer>
   </main>
   <script>
@@ -1489,6 +1508,9 @@ func writeLauncherHTML(response http.ResponseWriter) {
       button.type = "button";
       button.className = "app";
       button.disabled = !app.launchable;
+      button.dataset.appId = app.id;
+      button.dataset.disabledCode = text(app.disabledCode, "");
+      button.setAttribute("aria-disabled", String(!app.launchable));
       button.title = reason ? label + " - " + reason : label;
       button.addEventListener("click", () => launchApp(app.id));
 
@@ -1525,6 +1547,9 @@ func writeLauncherHTML(response http.ResponseWriter) {
       }
       document.getElementById("summary").textContent = apps.length + " of " + state.apps.length + " apps";
       document.getElementById("status").textContent = state.category + (state.query ? " search" : "");
+      const launchable = state.apps.filter((app) => app.launchable === true).length;
+      const disabled = state.apps.length - launchable;
+      document.getElementById("policy-status").textContent = launchable + " launchable / " + disabled + " disabled";
     }
 
     async function loadJSON(path) {
@@ -1582,6 +1607,7 @@ func writeLauncherHTML(response http.ResponseWriter) {
       document.getElementById("status").textContent = "launching";
       try {
         await postJSON("/api/catalog/launch", {appId});
+        document.getElementById("status").textContent = "launch accepted";
       } catch (error) {
         document.getElementById("status").textContent = "launch failed";
       }
