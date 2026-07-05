@@ -22,10 +22,14 @@ func CollectViews(ctx context.Context, client osboundary.AuditClient, limit int)
 	events, errs := client.StreamAuditEvents(ctx)
 	views := make([]EventView, 0, limit)
 	for len(views) < limit {
+		if events == nil && errs == nil {
+			return views, nil
+		}
 		select {
 		case event, ok := <-events:
 			if !ok {
-				return views, nil
+				events = nil
+				continue
 			}
 			views = append(views, EventView{
 				ID:        event.ID,
@@ -48,4 +52,3 @@ func CollectViews(ctx context.Context, client osboundary.AuditClient, limit int)
 	}
 	return views, nil
 }
-
