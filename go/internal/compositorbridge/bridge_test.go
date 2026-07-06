@@ -154,7 +154,7 @@ func TestGetLayoutDerivesStableWorkspaceState(t *testing.T) {
 	})
 
 	layout := bridge.GetLayout().Layout
-	if layout.Mode != LayoutModeFreeform || layout.Revision == 0 {
+	if layout.Mode != LayoutModeZones || layout.Revision == 0 {
 		t.Fatalf("layout header = %+v", layout)
 	}
 	if len(layout.Surfaces) != 2 {
@@ -505,6 +505,283 @@ func TestAssignSurfaceZoneUsesPlannerGeometryAndBackendAck(t *testing.T) {
 	}
 	if placed.ZoneID != "stack" || placed.Geometry == nil || placed.Geometry.X != 610 || placed.Geometry.Width != 380 || placed.Participation != SurfaceLayoutRoleTiled {
 		t.Fatalf("placed layout surface = %+v", placed)
+	}
+}
+
+func TestAutoLayoutPlacesMappedSurfacesAndRelayoutsAfterUnmap(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+	decoder := json.NewDecoder(pluginClient)
+	encoder := json.NewEncoder(pluginClient)
+	readInitialPluginMessages(t, decoder)
+
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "layer-background",
+			SurfaceKind: SurfaceKindLayer,
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 1200, Height: 800},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "layer-panel",
+			SurfaceKind: SurfaceKindLayer,
+			Role:        "panel",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 1200, Height: 40},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 800, Height: 600},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760})
+
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-b",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "foot",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 800, Height: 600},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 600, Y: 0, Width: 600, Height: 760}, SurfaceGeometry{X: 610, Y: 10, Width: 580, Height: 740})
+
+	layout := bridge.GetLayout().Layout
+	if layout.Mode != LayoutModeZones || len(layout.Surfaces) != 2 {
+		t.Fatalf("layout after auto map = %+v", layout)
+	}
+	if layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[0].ZoneID != "master" || layout.Surfaces[0].Geometry.Width != 600 {
+		t.Fatalf("master surface = %+v", layout.Surfaces[0])
+	}
+	if layout.Surfaces[1].SurfaceID != "view-b" || layout.Surfaces[1].ZoneID != "stack" || layout.Surfaces[1].Geometry.X != 610 {
+		t.Fatalf("stack surface should use backend ack geometry: %+v", layout.Surfaces[1])
+	}
+
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventUnmapped,
+		Surface: CompositorSurface{ID: "view-b"},
+	})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760})
+
+	layout = bridge.GetLayout().Layout
+	if len(layout.Surfaces) != 1 || layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[0].Geometry.Width != 1200 {
+		t.Fatalf("layout after auto unmap = %+v", layout)
+	}
+}
+
+func TestAutoLayoutPromotesFocusedSurfaceToMaster(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+	decoder := json.NewDecoder(pluginClient)
+	encoder := json.NewEncoder(pluginClient)
+	readInitialPluginMessages(t, decoder)
+
+	visible := true
+	for _, event := range []pluginEvent{
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "layer-background",
+				SurfaceKind: SurfaceKindLayer,
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 1000, Height: 700},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-a",
+				SurfaceKind: SurfaceKindXDG,
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+	} {
+		bridge.handleSurfaceEvent(event)
+	}
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 700})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-b",
+			SurfaceKind: SurfaceKindXDG,
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700})
+
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventFocused,
+		Surface: CompositorSurface{ID: "view-b", Visible: &visible},
+	})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700})
+
+	layout := bridge.GetLayout().Layout
+	if layout.Surfaces[0].SurfaceID != "view-b" || !layout.Surfaces[0].Focused || layout.Surfaces[0].ZoneID != "master" {
+		t.Fatalf("focused surface was not promoted to master: %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[1].SurfaceID != "view-a" || layout.Surfaces[1].ZoneID != "stack" {
+		t.Fatalf("previous master was not moved to stack: %+v", layout.Surfaces)
+	}
+}
+
+func TestSetLayoutModeUpdatesStateAndFreeformDisablesAutoLayout(t *testing.T) {
+	bridge := New(Config{})
+	response, err := bridge.SetLayoutMode(SetLayoutModeRequest{Mode: LayoutModeFreeform})
+	if err != nil {
+		t.Fatalf("SetLayoutMode: %v", err)
+	}
+	if response.Decision != DecisionAccepted || response.Layout == nil || response.Layout.Mode != LayoutModeFreeform {
+		t.Fatalf("response = %+v", response)
+	}
+
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+	decoder := json.NewDecoder(pluginClient)
+	readInitialPluginMessages(t, decoder)
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-freeform",
+			SurfaceKind: SurfaceKindXDG,
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	assertNoPluginCommand(t, decoder)
+}
+
+func readInitialPluginMessages(t *testing.T, decoder *json.Decoder) {
+	t.Helper()
+	for range 2 {
+		var initial map[string]any
+		if err := decoder.Decode(&initial); err != nil {
+			t.Fatalf("decode initial plugin message: %v", err)
+		}
+	}
+}
+
+func readPlaceAndAck(t *testing.T, bridge *Bridge, decoder *json.Decoder, encoder *json.Encoder, surfaceID string, want SurfaceGeometry, ack SurfaceGeometry) {
+	t.Helper()
+	commandCh := make(chan map[string]any, 1)
+	go func() {
+		var command map[string]any
+		if err := decoder.Decode(&command); err == nil {
+			commandCh <- command
+		}
+	}()
+	var command map[string]any
+	select {
+	case command = <-commandCh:
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for place command for %s", surfaceID)
+	}
+	if command["type"] != PluginPlaceSurface || command["surface_id"] != surfaceID {
+		t.Fatalf("place command = %+v, want surface %s", command, surfaceID)
+	}
+	geometry, ok := command["geometry"].(map[string]any)
+	if !ok {
+		t.Fatalf("place geometry = %+v", command["geometry"])
+	}
+	got := SurfaceGeometry{
+		X:      int(geometry["x"].(float64)),
+		Y:      int(geometry["y"].(float64)),
+		Width:  int(geometry["width"].(float64)),
+		Height: int(geometry["height"].(float64)),
+	}
+	if got != want {
+		t.Fatalf("place geometry = %+v, want %+v", got, want)
+	}
+	if err := encoder.Encode(map[string]any{
+		"type":       PluginPlaceResponse,
+		"request_id": command["request_id"],
+		"surface_id": command["surface_id"],
+		"ok":         true,
+		"geometry": map[string]any{
+			"x":      ack.X,
+			"y":      ack.Y,
+			"width":  ack.Width,
+			"height": ack.Height,
+		},
+	}); err != nil {
+		t.Fatalf("send place response: %v", err)
+	}
+	waitForLayoutGeometry(t, bridge, surfaceID, ack)
+}
+
+func waitForLayoutGeometry(t *testing.T, bridge *Bridge, surfaceID string, want SurfaceGeometry) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		layout := bridge.GetLayout().Layout
+		for _, surface := range layout.Surfaces {
+			if surface.SurfaceID != surfaceID || surface.Geometry == nil {
+				continue
+			}
+			got := *surface.Geometry
+			if got == want {
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for layout geometry %s = %+v", surfaceID, want)
+}
+
+func assertNoPluginCommand(t *testing.T, decoder *json.Decoder) {
+	t.Helper()
+	commandCh := make(chan map[string]any, 1)
+	go func() {
+		var command map[string]any
+		if err := decoder.Decode(&command); err == nil {
+			commandCh <- command
+		}
+	}()
+	select {
+	case command := <-commandCh:
+		t.Fatalf("unexpected plugin command: %+v", command)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

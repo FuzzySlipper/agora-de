@@ -1,0 +1,284 @@
+package compositorbridge
+
+import (
+	"fmt"
+	"log"
+	"sort"
+)
+
+type autoLayoutPlacement struct {
+	SurfaceID   string
+	WorkspaceID string
+	ZoneID      string
+	Geometry    SurfaceGeometry
+}
+
+func (bridge *Bridge) requestAutoLayout(reason string) {
+	bridge.mu.Lock()
+	if bridge.plugin == nil || bridge.layoutMode == LayoutModeFreeform {
+		bridge.mu.Unlock()
+		return
+	}
+	bridge.autoLayoutSeq++
+	if bridge.autoLayoutRunning {
+		bridge.mu.Unlock()
+		return
+	}
+	bridge.autoLayoutRunning = true
+	bridge.mu.Unlock()
+	go bridge.autoLayoutWorker(reason)
+}
+
+func (bridge *Bridge) autoLayoutWorker(reason string) {
+	for {
+		bridge.mu.RLock()
+		targetSeq := bridge.autoLayoutSeq
+		bridge.mu.RUnlock()
+		if err := bridge.applyAutoLayoutOnce(reason); err != nil {
+			log.Printf("auto layout: %v", err)
+		}
+		bridge.mu.Lock()
+		if bridge.autoLayoutSeq == targetSeq {
+			bridge.autoLayoutRunning = false
+			bridge.mu.Unlock()
+			return
+		}
+		bridge.mu.Unlock()
+	}
+}
+
+func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
+	placements := bridge.autoLayoutPlan()
+	for _, placement := range placements {
+		request := SurfaceLayoutActionRequest{
+			SurfaceID:     placement.SurfaceID,
+			WorkspaceID:   placement.WorkspaceID,
+			ZoneID:        placement.ZoneID,
+			Geometry:      cloneGeometry(&placement.Geometry),
+			WaitTimeoutMs: 1000,
+		}
+		if _, err := bridge.placeSurface(request, "layout.auto_tile", placement.Geometry, placement.ZoneID, SurfaceLayoutRoleTiled); err != nil {
+			class, _ := classifyError(err)
+			switch class {
+			case ErrorSurfaceNotFound, ErrorSurfaceStale, ErrorCompositorUnavailable:
+				continue
+			default:
+				return err
+			}
+		}
+	}
+	bridge.applyAutoLayoutOrder(placements)
+	return nil
+}
+
+func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
+	if len(placements) == 0 {
+		return
+	}
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	layout := LayoutState{
+		Mode:       bridge.tiledLayoutModeLocked(),
+		Surfaces:   make([]LayoutSurface, 0, len(placements)),
+		Workspaces: []LayoutWorkspace{{ID: "workspace-1", Name: "workspace 1", Active: true}},
+	}
+	workspace := &layout.Workspaces[0]
+	zonesByID := map[string]*LayoutZone{}
+	zoneOrder := make([]string, 0, len(placements))
+	for index, placement := range placements {
+		tracked, ok := bridge.surfaces[placement.SurfaceID]
+		if !ok {
+			continue
+		}
+		workspaceID := firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, placement.WorkspaceID, "workspace-1")
+		if workspace.ID == "workspace-1" && workspaceID != "workspace-1" {
+			workspace.ID = workspaceID
+			workspace.Name = workspaceID
+		}
+		outputID := firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID)
+		if workspace.OutputID == "" {
+			workspace.OutputID = outputID
+		}
+		zoneID := firstNonEmpty(tracked.ZoneID, tracked.Surface.ZoneID, placement.ZoneID, "master")
+		if _, ok := zonesByID[zoneID]; !ok {
+			zonesByID[zoneID] = &LayoutZone{ID: zoneID, Name: zoneID, Kind: "work"}
+			zoneOrder = append(zoneOrder, zoneID)
+		}
+		zonesByID[zoneID].SurfaceIDs = append(zonesByID[zoneID].SurfaceIDs, tracked.Surface.ID)
+		workspace.SurfaceOrder = append(workspace.SurfaceOrder, tracked.Surface.ID)
+		label := tracked.Surface.Label
+		if label == "" {
+			label = fmt.Sprintf("%d", index+1)
+		}
+		layoutMode := bridge.tiledLayoutModeLocked()
+		layout.Surfaces = append(layout.Surfaces, LayoutSurface{
+			SurfaceID:     tracked.Surface.ID,
+			Label:         label,
+			AppID:         tracked.Surface.AppID,
+			Title:         tracked.Surface.Title,
+			Role:          tracked.Surface.Role,
+			OutputID:      outputID,
+			WorkspaceID:   workspaceID,
+			ZoneID:        zoneID,
+			Mode:          layoutMode,
+			Participation: SurfaceLayoutRoleTiled,
+			Floating:      false,
+			Focused:       tracked.Focused,
+			Visible:       tracked.Visible,
+			Geometry:      firstGeometry(tracked),
+			Order:         index,
+		})
+		tracked.LayoutMode = string(layoutMode)
+		tracked.LayoutRole = string(SurfaceLayoutRoleTiled)
+		tracked.Surface.LayoutMode = tracked.LayoutMode
+		tracked.Surface.LayoutRole = tracked.LayoutRole
+		bridge.surfaces[tracked.Surface.ID] = tracked
+	}
+	for _, zoneID := range zoneOrder {
+		workspace.Zones = append(workspace.Zones, *zonesByID[zoneID])
+	}
+	bridge.layoutSeq++
+	layout.Revision = bridge.layoutSeq
+	bridge.backendLayout = cloneLayoutStatePtr(layout)
+}
+
+func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+	if bridge.plugin == nil || bridge.layoutMode == LayoutModeFreeform {
+		return nil
+	}
+	surfaces := make([]TrackedSurface, 0, len(bridge.surfaces))
+	for _, surface := range bridge.surfaces {
+		if surface.Surface.SurfaceKind == SurfaceKindLayer || !surface.Visible {
+			continue
+		}
+		role := SurfaceLayoutRole(surface.LayoutRole)
+		if role == SurfaceLayoutRoleTransient || role == SurfaceLayoutRoleFloating {
+			if surface.LayoutRole != "" && surface.LayoutMode == string(LayoutModeFreeform) {
+				continue
+			}
+		}
+		surfaces = append(surfaces, surface)
+	}
+	if len(surfaces) == 0 {
+		return nil
+	}
+	sort.Slice(surfaces, func(i, j int) bool {
+		if surfaces[i].Focused != surfaces[j].Focused {
+			return surfaces[i].Focused
+		}
+		left := firstNonEmpty(surfaces[i].Surface.Label, surfaces[i].Surface.ID)
+		right := firstNonEmpty(surfaces[j].Surface.Label, surfaces[j].Surface.ID)
+		if left == right {
+			return surfaces[i].Surface.ID < surfaces[j].Surface.ID
+		}
+		return left < right
+	})
+
+	output := bridge.outputForAutoLayoutLocked(surfaces)
+	if output.Name == "" {
+		return nil
+	}
+	width := firstPositive(output.PhysicalWidth, output.Width)
+	height := firstPositive(output.PhysicalHeight, output.Height)
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	height -= bridge.reservedBottomHeightLocked(output.Name, width)
+	if height <= 0 {
+		return nil
+	}
+
+	placements := make([]autoLayoutPlacement, 0, len(surfaces))
+	area := SurfaceGeometry{X: output.PhysicalX, Y: output.PhysicalY, Width: width, Height: height}
+	if len(surfaces) == 1 {
+		surface := surfaces[0]
+		placements = append(placements, autoLayoutPlacement{
+			SurfaceID:   surface.Surface.ID,
+			WorkspaceID: firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, "workspace-1"),
+			ZoneID:      "master",
+			Geometry:    area,
+		})
+		return placements
+	}
+
+	masterWidth := area.Width / 2
+	if masterWidth <= 0 {
+		masterWidth = 1
+	}
+	stackWidth := area.Width - masterWidth
+	if stackWidth <= 0 {
+		stackWidth = 1
+	}
+	stackCount := len(surfaces) - 1
+	stackHeight := area.Height / stackCount
+	if stackHeight <= 0 {
+		stackHeight = 1
+	}
+	for index, surface := range surfaces {
+		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, "workspace-1")
+		if index == 0 {
+			placements = append(placements, autoLayoutPlacement{
+				SurfaceID:   surface.Surface.ID,
+				WorkspaceID: workspaceID,
+				ZoneID:      "master",
+				Geometry: SurfaceGeometry{
+					X:      area.X,
+					Y:      area.Y,
+					Width:  masterWidth,
+					Height: area.Height,
+				},
+			})
+			continue
+		}
+		stackIndex := index - 1
+		y := area.Y + stackIndex*stackHeight
+		height := stackHeight
+		if stackIndex == stackCount-1 {
+			height = area.Y + area.Height - y
+		}
+		if height <= 0 {
+			height = 1
+		}
+		placements = append(placements, autoLayoutPlacement{
+			SurfaceID:   surface.Surface.ID,
+			WorkspaceID: workspaceID,
+			ZoneID:      "stack",
+			Geometry: SurfaceGeometry{
+				X:      area.X + masterWidth,
+				Y:      y,
+				Width:  stackWidth,
+				Height: height,
+			},
+		})
+	}
+	return placements
+}
+
+func (bridge *Bridge) outputForAutoLayoutLocked(surfaces []TrackedSurface) LogicalOutput {
+	outputName := ""
+	for _, surface := range surfaces {
+		outputName = firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+		if outputName != "" {
+			break
+		}
+	}
+	outputs := bridge.outputsLocked()
+	if outputName != "" {
+		if output := outputs[outputName]; output.Name != "" {
+			return output
+		}
+	}
+	for _, output := range outputs {
+		return output
+	}
+	return LogicalOutput{}
+}
+
+func (bridge *Bridge) tiledLayoutModeLocked() LayoutMode {
+	if bridge.layoutMode == "" || bridge.layoutMode == LayoutModeFreeform || !validLayoutMode(bridge.layoutMode) {
+		return LayoutModeZones
+	}
+	return bridge.layoutMode
+}

@@ -80,7 +80,11 @@ type Bridge struct {
 	placeWaiters  map[string]chan pluginResponse
 	captureSeq    uint64
 	layoutSeq     uint64
+	layoutMode    LayoutMode
 	backendLayout *LayoutState
+
+	autoLayoutSeq     uint64
+	autoLayoutRunning bool
 }
 
 func New(config Config) *Bridge {
@@ -90,6 +94,7 @@ func New(config Config) *Bridge {
 		stale:            map[string]time.Time{},
 		focusWaiters:     map[string]chan pluginResponse{},
 		placeWaiters:     map[string]chan pluginResponse{},
+		layoutMode:       LayoutModeZones,
 	}
 }
 
@@ -315,7 +320,38 @@ func (bridge *Bridge) SetLayoutMode(request SetLayoutModeRequest) (LayoutActionR
 	if !validLayoutMode(request.Mode) {
 		return LayoutActionResponse{}, fmt.Errorf("unsupported layout mode %q", request.Mode)
 	}
-	return LayoutActionResponse{}, classifiedError{class: ErrorBackendUnsupported, message: "layout mode changes require compositor backend geometry authority"}
+	bridge.mu.Lock()
+	bridge.layoutMode = request.Mode
+	bridge.layoutSeq++
+	for id, tracked := range bridge.surfaces {
+		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		tracked.LayoutMode = string(request.Mode)
+		tracked.Surface.LayoutMode = string(request.Mode)
+		tracked.LayoutRevision = bridge.layoutSeq
+		bridge.surfaces[id] = tracked
+	}
+	if bridge.backendLayout != nil {
+		layout := cloneLayoutState(*bridge.backendLayout)
+		layout.Mode = request.Mode
+		layout.Revision = bridge.layoutSeq
+		for index := range layout.Surfaces {
+			layout.Surfaces[index].Mode = request.Mode
+		}
+		bridge.backendLayout = cloneLayoutStatePtr(layout)
+	}
+	layout := bridge.layoutLocked()
+	bridge.mu.Unlock()
+	if request.Mode != LayoutModeFreeform {
+		bridge.requestAutoLayout("set_layout_mode")
+	}
+	return LayoutActionResponse{
+		Action:   "layout.set_mode",
+		Decision: DecisionAccepted,
+		Reason:   "layout mode updated",
+		Layout:   &layout,
+	}, nil
 }
 
 func (bridge *Bridge) MoveResizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
@@ -477,8 +513,9 @@ func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action st
 	tracked.ZoneID = firstNonEmpty(zoneID, tracked.ZoneID, "primary")
 	tracked.Surface.ZoneID = tracked.ZoneID
 	if role == SurfaceLayoutRoleTiled {
-		tracked.LayoutMode = string(LayoutModeZones)
-		tracked.Surface.LayoutMode = string(LayoutModeZones)
+		layoutMode := bridge.tiledLayoutModeLocked()
+		tracked.LayoutMode = string(layoutMode)
+		tracked.Surface.LayoutMode = string(layoutMode)
 		tracked.LayoutRole = string(SurfaceLayoutRoleTiled)
 		tracked.Surface.LayoutRole = string(SurfaceLayoutRoleTiled)
 	} else {
@@ -785,6 +822,7 @@ func (bridge *Bridge) handleLayoutState(layout LayoutState) {
 
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
+	bridge.layoutMode = layout.Mode
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
 	for _, layoutSurface := range layout.Surfaces {
 		if layoutSurface.SurfaceID == "" {
@@ -870,12 +908,15 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 		tracked.Focused = true
 	}
 
+	shouldRelayout := false
 	bridge.mu.Lock()
-	defer bridge.mu.Unlock()
 	if event.Event == EventUnmapped {
 		bridge.stale[event.Surface.ID] = now
 		delete(bridge.surfaces, event.Surface.ID)
 		bridge.removeSurfaceFromBackendLayoutLocked(event.Surface.ID)
+		shouldRelayout = true
+		bridge.mu.Unlock()
+		bridge.requestAutoLayout("surface_unmapped")
 		return
 	}
 	if event.Event == EventFocused {
@@ -890,6 +931,10 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 		mergeSurfaceReadback(&tracked, previous, event.Event, now)
 	}
 	applyLayoutDefaults(&tracked)
+	if tracked.Surface.SurfaceKind != SurfaceKindLayer && tracked.LayoutMode == string(LayoutModeFreeform) && bridge.layoutMode != LayoutModeFreeform {
+		tracked.LayoutMode = string(bridge.layoutMode)
+		tracked.Surface.LayoutMode = string(bridge.layoutMode)
+	}
 	if event.Event == EventFrameDone {
 		tracked.FrameCount++
 		tracked.LastPresentTimestamp = &now
@@ -902,6 +947,14 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	tracked.LayoutRevision = bridge.layoutSeq
 	delete(bridge.stale, event.Surface.ID)
 	bridge.surfaces[event.Surface.ID] = tracked
+	switch event.Event {
+	case EventMapped, EventUnmapped, EventFocused:
+		shouldRelayout = true
+	}
+	bridge.mu.Unlock()
+	if shouldRelayout {
+		bridge.requestAutoLayout("surface_" + event.Event)
+	}
 }
 
 func mergeSurfaceReadback(next *TrackedSurface, previous TrackedSurface, event string, now time.Time) {
@@ -1086,7 +1139,10 @@ func (bridge *Bridge) layoutLocked() LayoutState {
 	layoutSurfaces := make([]LayoutSurface, 0, len(surfaces))
 	surfaceOrder := make([]string, 0, len(surfaces))
 	outputID := ""
-	mode := LayoutModeFreeform
+	mode := bridge.layoutMode
+	if mode == "" || !validLayoutMode(mode) {
+		mode = LayoutModeZones
+	}
 	for index, surface := range surfaces {
 		workspaceID := firstNonEmpty(surface.WorkspaceID, "workspace-1")
 		zoneID := firstNonEmpty(surface.ZoneID, "primary")
