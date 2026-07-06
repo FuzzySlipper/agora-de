@@ -187,6 +187,15 @@ type SetLayoutModeRequest struct {
 	Mode LayoutMode `json:"mode"`
 }
 
+type UpdateLayoutSettingsRequest struct {
+	Rule        *string     `json:"rule,omitempty"`
+	Mode        *LayoutMode `json:"mode,omitempty"`
+	Gaps        *LayoutGaps `json:"gaps,omitempty"`
+	MasterCount *int        `json:"master_count,omitempty"`
+	MasterRatio *float64    `json:"master_ratio,omitempty"`
+	SmartGaps   *bool       `json:"smart_gaps,omitempty"`
+}
+
 type SurfaceLayoutActionRequest struct {
 	SurfaceID     string           `json:"surface_id"`
 	Geometry      *SurfaceGeometry `json:"geometry,omitempty"`

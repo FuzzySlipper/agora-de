@@ -45,3 +45,44 @@ func TestLayoutModePersistsAndLoadsAfterRestart(t *testing.T) {
 		t.Fatalf("layout after restart = %+v", layout)
 	}
 }
+
+func TestLayoutSettingsUpdatePersistsAndLoadsAfterRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agora-de", "layout-settings.json")
+	bridge := New(Config{LayoutSettingsPath: path})
+	rule := LayoutRuleDwindle
+	mode := LayoutModeColumns
+	gaps := LayoutGaps{OuterHorizontal: 4, OuterVertical: 6, InnerHorizontal: 8, InnerVertical: 10}
+	masterCount := 2
+	masterRatio := 0.6
+	smartGaps := false
+
+	response, err := bridge.UpdateLayoutSettings(UpdateLayoutSettingsRequest{
+		Rule:        &rule,
+		Mode:        &mode,
+		Gaps:        &gaps,
+		MasterCount: &masterCount,
+		MasterRatio: &masterRatio,
+		SmartGaps:   &smartGaps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Decision != DecisionAccepted || response.Layout == nil || response.Layout.Settings.Rule != LayoutRuleDwindle {
+		t.Fatalf("response = %+v", response)
+	}
+
+	restarted := New(Config{LayoutSettingsPath: path})
+	layout := restarted.GetLayout().Layout
+	if layout.Mode != LayoutModeColumns || layout.Settings.Rule != LayoutRuleDwindle || layout.Settings.MasterCount != 2 || layout.Settings.MasterRatio != 0.6 || layout.Settings.Gaps.InnerHorizontal != 8 || layout.Settings.SmartGaps {
+		t.Fatalf("layout after restart = %+v", layout)
+	}
+}
+
+func TestLayoutSettingsUpdateRejectsInvalidValues(t *testing.T) {
+	bridge := New(Config{})
+	masterRatio := 1.2
+	_, err := bridge.UpdateLayoutSettings(UpdateLayoutSettingsRequest{MasterRatio: &masterRatio})
+	if err == nil || !strings.Contains(err.Error(), "master_ratio must be between") {
+		t.Fatalf("err = %v, want master_ratio validation", err)
+	}
+}

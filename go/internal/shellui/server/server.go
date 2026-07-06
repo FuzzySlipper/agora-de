@@ -2282,7 +2282,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
     .wm-controls {
       flex: 0 1 auto;
-      max-width: 520px;
+      max-width: 760px;
       overflow-x: auto;
       padding-bottom: 2px;
     }
@@ -2315,6 +2315,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 78px;
       padding: 0 8px;
     }
+    .target-meta {
+      border-color: var(--agora-accent);
+      max-width: 170px;
+      min-width: 104px;
+    }
     .spacer {
       flex: 1 1 auto;
       min-width: 24px;
@@ -2343,6 +2348,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       <span class="dock-item muted">loading surfaces</span>
     </section>
     <section class="dock-section wm-controls" id="wm-controls" aria-label="Window controls">
+      <span class="dock-item surface-meta target-meta" id="target-label">no target</span>
       <button class="wm-control" id="focus-prev-button" type="button">Prev</button>
       <button class="wm-control" id="focus-next-button" type="button">Next</button>
       <button class="wm-control primary" id="promote-button" type="button">Master</button>
@@ -2352,6 +2358,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       <button class="wm-control" id="maximize-button" type="button">Max</button>
       <button class="wm-control" id="close-focus-button" type="button">Close</button>
       <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
+      <button class="wm-control" id="rule-button" type="button">Rule</button>
+      <button class="wm-control" id="master-count-button" type="button">M1</button>
+      <button class="wm-control" id="master-ratio-button" type="button">50%%</button>
+      <button class="wm-control" id="gaps-button" type="button">Gap0</button>
+      <button class="wm-control" id="smart-gaps-button" type="button">Smart</button>
       <span class="dock-item surface-meta wm-rule" id="layout-rule-label">master_stack</span>
     </section>
     <button class="workspace" id="workspace-label" type="button">workspace 1</button>
@@ -2496,6 +2507,51 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return text(settings.rule, "master_stack") + master + ratio + gapLabel;
     }
 
+    function normalizedSettings() {
+      const settings = state.layout.settings || {};
+      const gaps = settings.gaps || {};
+      return {
+        rule: text(settings.rule, "master_stack"),
+        mode: text(settings.mode, text(state.layout.mode, "zones")),
+        gaps: {
+          outerHorizontal: Math.max(0, Number(gaps.outerHorizontal || 0)),
+          outerVertical: Math.max(0, Number(gaps.outerVertical || 0)),
+          innerHorizontal: Math.max(0, Number(gaps.innerHorizontal || 0)),
+          innerVertical: Math.max(0, Number(gaps.innerVertical || 0))
+        },
+        masterCount: Math.max(1, Number(settings.masterCount || 1)),
+        masterRatio: Math.min(0.9, Math.max(0.1, Number(settings.masterRatio || 0.5))),
+        smartGaps: settings.smartGaps !== false
+      };
+    }
+
+    function nextLayoutRule(rule) {
+      const rules = ["master_stack", "zones", "dwindle"];
+      const current = rules.indexOf(rule);
+      return rules[(current + 1) %% rules.length];
+    }
+
+    function nextMasterCount(count) {
+      return count >= 3 ? 1 : count + 1;
+    }
+
+    function nextMasterRatio(ratio) {
+      const rounded = Math.round(ratio * 10) / 10;
+      return rounded >= 0.8 ? 0.4 : Math.round((rounded + 0.1) * 10) / 10;
+    }
+
+    function nextGapSet(gaps) {
+      const values = [gaps.outerHorizontal, gaps.outerVertical, gaps.innerHorizontal, gaps.innerVertical];
+      const current = Math.max.apply(null, values.map((value) => Number(value || 0)));
+      const next = current >= 16 ? 0 : current + 4;
+      return {
+        outerHorizontal: next,
+        outerVertical: next,
+        innerHorizontal: next,
+        innerVertical: next
+      };
+    }
+
     function setFeedback(label, className) {
       state.feedback = {
         label,
@@ -2535,6 +2591,13 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         "maximize-button",
         "close-focus-button"
       ].forEach((id) => setControlDisabled(id, !hasTarget));
+      const targetLabel = document.getElementById("target-label");
+      if (targetLabel) {
+        const targetName = target ? text(target.title, text(target.appId, target.surfaceId)) : "no target";
+        const targetZone = target ? text(target.zoneId, "primary") : "";
+        targetLabel.textContent = target ? targetName : "no target";
+        targetLabel.title = target ? targetName + " / " + targetZone + " / " + geometryLabel(target.geometry) : "no target";
+      }
       const floatButton = document.getElementById("float-button");
       if (floatButton) {
         floatButton.textContent = target && target.floating ? "Tile" : "Float";
@@ -2550,6 +2613,23 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       ruleLabel.title = "rule " + text(settings.rule, "master_stack") +
         " / mode " + text(state.layout.mode, "freeform") +
         " / revision " + Number(state.layout.revision || 0);
+      const normalized = normalizedSettings();
+      const ruleButton = document.getElementById("rule-button");
+      ruleButton.textContent = text(normalized.rule, "master_stack").replace("_stack", "");
+      ruleButton.title = "rule " + normalized.rule;
+      const masterCountButton = document.getElementById("master-count-button");
+      masterCountButton.textContent = "M" + normalized.masterCount;
+      masterCountButton.title = "master count " + normalized.masterCount;
+      const masterRatioButton = document.getElementById("master-ratio-button");
+      masterRatioButton.textContent = Math.round(normalized.masterRatio * 100) + "%%";
+      masterRatioButton.title = "master ratio " + normalized.masterRatio.toFixed(2);
+      const gapsButton = document.getElementById("gaps-button");
+      const gapValue = Math.max(normalized.gaps.outerHorizontal, normalized.gaps.outerVertical, normalized.gaps.innerHorizontal, normalized.gaps.innerVertical);
+      gapsButton.textContent = "Gap" + gapValue;
+      gapsButton.title = "gaps " + normalized.gaps.outerHorizontal + "/" + normalized.gaps.outerVertical + "/" + normalized.gaps.innerHorizontal + "/" + normalized.gaps.innerVertical;
+      const smartGapsButton = document.getElementById("smart-gaps-button");
+      smartGapsButton.textContent = normalized.smartGaps ? "Smart" : "Gaps";
+      smartGapsButton.title = normalized.smartGaps ? "smart gaps on" : "smart gaps off";
     }
 
     function render() {
@@ -2708,6 +2788,49 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
     }
 
+    async function setLayoutSettings(patch) {
+      const status = document.getElementById("status-label");
+      const current = normalizedSettings();
+      const settings = Object.assign({}, current, patch || {});
+      settings.gaps = Object.assign({}, current.gaps, (patch && patch.gaps) || {});
+      status.textContent = "settings";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {action: "setSettings", settings});
+        await refresh();
+        setFeedback("settings " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "settings unsupported";
+        status.className = "status warn";
+      }
+    }
+
+    async function cycleLayoutRule() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({rule: nextLayoutRule(settings.rule)});
+    }
+
+    async function cycleMasterCount() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({masterCount: nextMasterCount(settings.masterCount)});
+    }
+
+    async function cycleMasterRatio() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({masterRatio: nextMasterRatio(settings.masterRatio)});
+    }
+
+    async function cycleGaps() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({gaps: nextGapSet(settings.gaps)});
+    }
+
+    async function toggleSmartGaps() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({smartGaps: !settings.smartGaps});
+    }
+
     async function activateWorkspace() {
       const status = document.getElementById("status-label");
       status.textContent = "workspace";
@@ -2841,6 +2964,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     document.getElementById("maximize-button").addEventListener("click", () => actOnTarget("maximize"));
     document.getElementById("close-focus-button").addEventListener("click", () => actOnTarget("close"));
     document.getElementById("reset-layout-button").addEventListener("click", resetLayout);
+    document.getElementById("rule-button").addEventListener("click", cycleLayoutRule);
+    document.getElementById("master-count-button").addEventListener("click", cycleMasterCount);
+    document.getElementById("master-ratio-button").addEventListener("click", cycleMasterRatio);
+    document.getElementById("gaps-button").addEventListener("click", cycleGaps);
+    document.getElementById("smart-gaps-button").addEventListener("click", toggleSmartGaps);
     updateClock();
     refresh();
     setInterval(updateClock, 30000);

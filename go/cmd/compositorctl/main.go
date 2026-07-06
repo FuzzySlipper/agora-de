@@ -19,22 +19,23 @@ import (
 const defaultCompositorControlSocket = "/run/agent-os/compositor-control.sock"
 
 const (
-	methodListSurfaces       = "list_surfaces"
-	methodListOutputs        = "list_outputs"
-	methodCaptureOutput      = "capture_output"
-	methodGetLayout          = "get_layout"
-	methodSetLayoutMode      = "set_layout_mode"
-	methodFocusSurface       = "focus_surface"
-	methodCloseSurface       = "close_surface"
-	methodMoveResizeSurface  = "move_resize_surface"
-	methodTileSurface        = "tile_surface"
-	methodSetSurfaceFloating = "set_surface_floating"
-	methodAssignSurfaceZone  = "assign_surface_zone"
-	methodPromoteSurface     = "promote_surface"
-	methodMaximizeSurface    = "maximize_surface"
-	methodMinimizeSurface    = "minimize_surface"
-	methodFullscreenSurface  = "fullscreen_surface"
-	methodActivateWorkspace  = "activate_workspace"
+	methodListSurfaces         = "list_surfaces"
+	methodListOutputs          = "list_outputs"
+	methodCaptureOutput        = "capture_output"
+	methodGetLayout            = "get_layout"
+	methodSetLayoutMode        = "set_layout_mode"
+	methodUpdateLayoutSettings = "update_layout_settings"
+	methodFocusSurface         = "focus_surface"
+	methodCloseSurface         = "close_surface"
+	methodMoveResizeSurface    = "move_resize_surface"
+	methodTileSurface          = "tile_surface"
+	methodSetSurfaceFloating   = "set_surface_floating"
+	methodAssignSurfaceZone    = "assign_surface_zone"
+	methodPromoteSurface       = "promote_surface"
+	methodMaximizeSurface      = "maximize_surface"
+	methodMinimizeSurface      = "minimize_surface"
+	methodFullscreenSurface    = "fullscreen_surface"
+	methodActivateWorkspace    = "activate_workspace"
 )
 
 var listSurfacesFunc = listSurfaces
@@ -360,7 +361,7 @@ func runOutput(args []string, stdout io.Writer, pretty bool) error {
 
 func runLayout(args []string, stdout io.Writer, pretty bool) error {
 	if len(args) == 0 {
-		return errors.New("layout subcommand is required: get or set-mode")
+		return errors.New("layout subcommand is required: get, set-mode, or set-settings")
 	}
 	switch args[0] {
 	case "get":
@@ -376,9 +377,72 @@ func runLayout(args []string, stdout io.Writer, pretty bool) error {
 			return errors.New("--mode is required")
 		}
 		return callAndPrint(methodSetLayoutMode, setLayoutModeRequest{Mode: *mode}, stdout, pretty)
+	case "set-settings":
+		request, err := buildUpdateLayoutSettingsRequest(args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodUpdateLayoutSettings, request, stdout, pretty)
 	default:
 		return fmt.Errorf("unknown layout subcommand %q", args[0])
 	}
+}
+
+func buildUpdateLayoutSettingsRequest(args []string) (updateLayoutSettingsRequest, error) {
+	fs := flag.NewFlagSet("layout set-settings", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	rule := fs.String("rule", "", "layout rule: master_stack, zones, or dwindle")
+	mode := fs.String("mode", "", "layout mode: freeform, zones, or columns")
+	outerHorizontal := fs.Int("outer-horizontal", 0, "outer horizontal gap")
+	outerVertical := fs.Int("outer-vertical", 0, "outer vertical gap")
+	innerHorizontal := fs.Int("inner-horizontal", 0, "inner horizontal gap")
+	innerVertical := fs.Int("inner-vertical", 0, "inner vertical gap")
+	masterCount := fs.Int("master-count", 0, "master area surface count")
+	masterRatio := fs.Float64("master-ratio", 0, "master area ratio")
+	smartGaps := fs.Bool("smart-gaps", false, "enable smart gaps")
+	if err := fs.Parse(args); err != nil {
+		return updateLayoutSettingsRequest{}, err
+	}
+	seen := map[string]bool{}
+	fs.Visit(func(flag *flag.Flag) {
+		seen[flag.Name] = true
+	})
+	if len(seen) == 0 {
+		return updateLayoutSettingsRequest{}, errors.New("at least one layout setting flag is required")
+	}
+	request := updateLayoutSettingsRequest{}
+	if seen["rule"] {
+		value := strings.TrimSpace(*rule)
+		if value == "" {
+			return updateLayoutSettingsRequest{}, errors.New("--rule cannot be empty")
+		}
+		request.Rule = &value
+	}
+	if seen["mode"] {
+		value := strings.TrimSpace(*mode)
+		if value == "" {
+			return updateLayoutSettingsRequest{}, errors.New("--mode cannot be empty")
+		}
+		request.Mode = &value
+	}
+	if seen["outer-horizontal"] || seen["outer-vertical"] || seen["inner-horizontal"] || seen["inner-vertical"] {
+		request.Gaps = &layoutGaps{
+			OuterHorizontal: *outerHorizontal,
+			OuterVertical:   *outerVertical,
+			InnerHorizontal: *innerHorizontal,
+			InnerVertical:   *innerVertical,
+		}
+	}
+	if seen["master-count"] {
+		request.MasterCount = masterCount
+	}
+	if seen["master-ratio"] {
+		request.MasterRatio = masterRatio
+	}
+	if seen["smart-gaps"] {
+		request.SmartGaps = smartGaps
+	}
+	return request, nil
 }
 
 func runSurface(args []string, stdout io.Writer, pretty bool) error {
@@ -727,6 +791,22 @@ type captureOutputRequest struct {
 
 type setLayoutModeRequest struct {
 	Mode string `json:"mode"`
+}
+
+type updateLayoutSettingsRequest struct {
+	Rule        *string     `json:"rule,omitempty"`
+	Mode        *string     `json:"mode,omitempty"`
+	Gaps        *layoutGaps `json:"gaps,omitempty"`
+	MasterCount *int        `json:"master_count,omitempty"`
+	MasterRatio *float64    `json:"master_ratio,omitempty"`
+	SmartGaps   *bool       `json:"smart_gaps,omitempty"`
+}
+
+type layoutGaps struct {
+	OuterHorizontal int `json:"outer_horizontal"`
+	OuterVertical   int `json:"outer_vertical"`
+	InnerHorizontal int `json:"inner_horizontal"`
+	InnerVertical   int `json:"inner_vertical"`
 }
 
 type surfaceRequest struct {

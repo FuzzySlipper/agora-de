@@ -322,6 +322,46 @@ func TestRunLayoutSetModeCallsCompositorControlSocket(t *testing.T) {
 	}
 }
 
+func TestRunLayoutSetSettingsCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"layout", "set-settings",
+		"--rule", "dwindle",
+		"--mode", "columns",
+		"--outer-horizontal", "4",
+		"--outer-vertical", "6",
+		"--inner-horizontal", "8",
+		"--inner-vertical", "10",
+		"--master-count", "2",
+		"--master-ratio", "0.6",
+		"--smart-gaps=false",
+	}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run layout set-settings error = %v", err)
+	}
+	request := (*requests)[0]
+	if request.Method != methodUpdateLayoutSettings {
+		t.Fatalf("method = %q, want %q", request.Method, methodUpdateLayoutSettings)
+	}
+	var body updateLayoutSettingsRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Rule == nil || *body.Rule != "dwindle" || body.Mode == nil || *body.Mode != "columns" {
+		t.Fatalf("body = %+v", body)
+	}
+	if body.Gaps == nil || body.Gaps.OuterHorizontal != 4 || body.Gaps.InnerVertical != 10 {
+		t.Fatalf("gaps = %+v", body.Gaps)
+	}
+	if body.MasterCount == nil || *body.MasterCount != 2 || body.MasterRatio == nil || *body.MasterRatio != 0.6 || body.SmartGaps == nil || *body.SmartGaps {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
 func TestRunSurfaceMoveResizeCallsCompositorControlSocket(t *testing.T) {
 	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
 		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}

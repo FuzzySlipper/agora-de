@@ -154,3 +154,40 @@ func TestLayoutSetFloatingActionCanDisableFloating(t *testing.T) {
 		t.Fatalf("args = %#v, want %#v", args, want)
 	}
 }
+
+func TestLayoutSettingsActionForwardsBackendOwnedSettings(t *testing.T) {
+	args, err := actionArgs(actionRequest{
+		Action: "setSettings",
+		Settings: &layoutSettings{
+			Rule:        "dwindle",
+			Mode:        "columns",
+			MasterCount: 2,
+			MasterRatio: 0.6,
+			SmartGaps:   false,
+			Gaps: layoutGaps{
+				OuterHorizontal: 4,
+				OuterVertical:   6,
+				InnerHorizontal: 8,
+				InnerVertical:   10,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"layout", "set-settings",
+		"--rule", "dwindle",
+		"--mode", "columns",
+		"--outer-horizontal", "4",
+		"--outer-vertical", "6",
+		"--inner-horizontal", "8",
+		"--inner-vertical", "10",
+		"--master-count", "2",
+		"--master-ratio", "0.60",
+		"--smart-gaps=false",
+	}
+	if strings.Join(args, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}

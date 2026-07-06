@@ -37,6 +37,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`id="operator-button"`,
 		`id="running-list"`,
 		`id="wm-controls"`,
+		`id="target-label"`,
 		`id="focus-prev-button"`,
 		`id="focus-next-button"`,
 		`id="promote-button"`,
@@ -46,6 +47,11 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`id="maximize-button"`,
 		`id="close-focus-button"`,
 		`id="reset-layout-button"`,
+		`id="rule-button"`,
+		`id="master-count-button"`,
+		`id="master-ratio-button"`,
+		`id="gaps-button"`,
+		`id="smart-gaps-button"`,
 		`id="layout-rule-label"`,
 		`id="workspace-label"`,
 		`id="layout-mode-button"`,
@@ -66,7 +72,9 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`setMode`,
 		`workspaceZones`,
 		`nextLayoutMode`,
+		`nextLayoutRule`,
 		`layoutSettingsLabel`,
+		`normalizedSettings`,
 		`manageableLayoutSurfaces`,
 		`renderWMControls`,
 		`focusRelative`,
@@ -74,6 +82,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`moveTargetToNextZone`,
 		`toggleTargetFloating`,
 		`resetLayout`,
+		`setSettings`,
 		`actionStatus`,
 		`setFeedback`,
 		`floating, action: "setFloating"`,
@@ -388,6 +397,9 @@ case "$1 $2" in
   "layout set-mode")
     printf '%s\n' '{"decision":"accepted"}'
     ;;
+  "layout set-settings")
+    printf '%s\n' '{"decision":"accepted"}'
+    ;;
   "surface assign-zone")
     printf '%s\n' '{"decision":"accepted"}'
     ;;
@@ -469,6 +481,12 @@ esac
 		t.Fatalf("layout promote status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
 	}
 
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LayoutActionPath, strings.NewReader(`{"action":"setSettings","settings":{"rule":"dwindle","mode":"columns","gaps":{"outerHorizontal":4,"outerVertical":6,"innerHorizontal":8,"innerVertical":10},"masterCount":2,"masterRatio":0.6,"smartGaps":false}}`)))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("layout setSettings status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+
 	calls, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
@@ -476,6 +494,9 @@ esac
 	for _, want := range []string{
 		"layout get",
 		"layout set-mode --mode zones",
+		"layout set-settings --rule dwindle --mode columns",
+		"--outer-horizontal 4 --outer-vertical 6 --inner-horizontal 8 --inner-vertical 10",
+		"--master-count 2 --master-ratio 0.60 --smart-gaps=false",
 		"surface assign-zone --surface view-live --zone secondary",
 		"--workspace workspace-1",
 		"--x 20 --y 40 --width 500 --height 360",

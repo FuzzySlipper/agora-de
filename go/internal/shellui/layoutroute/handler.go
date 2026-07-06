@@ -143,6 +143,8 @@ type actionRequest struct {
 	WorkspaceID string                 `json:"workspaceId"`
 	ZoneID      string                 `json:"zoneId"`
 	Geometry    *surfaces.GeometryView `json:"geometry"`
+	Rule        string                 `json:"rule"`
+	Settings    *layoutSettings        `json:"settings"`
 	Floating    *bool                  `json:"floating"`
 	Enabled     *bool                  `json:"enabled"`
 }
@@ -245,6 +247,8 @@ func actionArgs(action actionRequest) ([]string, error) {
 			return nil, fmt.Errorf("mode is required")
 		}
 		return []string{"layout", "set-mode", "--mode", mode}, nil
+	case "setSettings":
+		return settingsActionArgs(action)
 	case "assignZone":
 		return zoneActionArgs("assign-zone", action)
 	case "promote":
@@ -293,6 +297,30 @@ func actionArgs(action actionRequest) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported layout action")
 	}
+}
+
+func settingsActionArgs(action actionRequest) ([]string, error) {
+	settings := action.Settings
+	if settings == nil {
+		return nil, fmt.Errorf("settings are required")
+	}
+	args := []string{"layout", "set-settings"}
+	if rule := strings.TrimSpace(firstNonEmpty(action.Rule, settings.Rule)); rule != "" {
+		args = append(args, "--rule", rule)
+	}
+	if mode := strings.TrimSpace(firstNonEmpty(action.Mode, settings.Mode)); mode != "" {
+		args = append(args, "--mode", mode)
+	}
+	args = append(args,
+		"--outer-horizontal", fmt.Sprint(settings.Gaps.OuterHorizontal),
+		"--outer-vertical", fmt.Sprint(settings.Gaps.OuterVertical),
+		"--inner-horizontal", fmt.Sprint(settings.Gaps.InnerHorizontal),
+		"--inner-vertical", fmt.Sprint(settings.Gaps.InnerVertical),
+		"--master-count", fmt.Sprint(settings.MasterCount),
+		"--master-ratio", fmt.Sprintf("%.2f", settings.MasterRatio),
+		fmt.Sprintf("--smart-gaps=%t", settings.SmartGaps),
+	)
+	return args, nil
 }
 
 func zoneActionArgs(command string, action actionRequest) ([]string, error) {

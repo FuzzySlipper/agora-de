@@ -19,22 +19,23 @@ import (
 )
 
 const (
-	MethodListSurfaces       = "list_surfaces"
-	MethodListOutputs        = "list_outputs"
-	MethodCaptureOutput      = "capture_output"
-	MethodGetLayout          = "get_layout"
-	MethodSetLayoutMode      = "set_layout_mode"
-	MethodFocusSurface       = "focus_surface"
-	MethodCloseSurface       = "close_surface"
-	MethodMoveResizeSurface  = "move_resize_surface"
-	MethodTileSurface        = "tile_surface"
-	MethodSetSurfaceFloating = "set_surface_floating"
-	MethodAssignSurfaceZone  = "assign_surface_zone"
-	MethodPromoteSurface     = "promote_surface"
-	MethodMaximizeSurface    = "maximize_surface"
-	MethodMinimizeSurface    = "minimize_surface"
-	MethodFullscreenSurface  = "fullscreen_surface"
-	MethodActivateWorkspace  = "activate_workspace"
+	MethodListSurfaces         = "list_surfaces"
+	MethodListOutputs          = "list_outputs"
+	MethodCaptureOutput        = "capture_output"
+	MethodGetLayout            = "get_layout"
+	MethodSetLayoutMode        = "set_layout_mode"
+	MethodUpdateLayoutSettings = "update_layout_settings"
+	MethodFocusSurface         = "focus_surface"
+	MethodCloseSurface         = "close_surface"
+	MethodMoveResizeSurface    = "move_resize_surface"
+	MethodTileSurface          = "tile_surface"
+	MethodSetSurfaceFloating   = "set_surface_floating"
+	MethodAssignSurfaceZone    = "assign_surface_zone"
+	MethodPromoteSurface       = "promote_surface"
+	MethodMaximizeSurface      = "maximize_surface"
+	MethodMinimizeSurface      = "minimize_surface"
+	MethodFullscreenSurface    = "fullscreen_surface"
+	MethodActivateWorkspace    = "activate_workspace"
 )
 
 const (
@@ -186,6 +187,16 @@ func (bridge *Bridge) Dispatch(request Request) (json.RawMessage, error) {
 			return nil, err
 		}
 		response, err := bridge.SetLayoutMode(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodUpdateLayoutSettings:
+		var body UpdateLayoutSettingsRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.UpdateLayoutSettings(body)
 		if err != nil {
 			return nil, err
 		}
@@ -378,6 +389,70 @@ func (bridge *Bridge) SetLayoutMode(request SetLayoutModeRequest) (LayoutActionR
 		Action:   "layout.set_mode",
 		Decision: DecisionAccepted,
 		Reason:   "layout mode updated",
+		Layout:   &layout,
+	}, nil
+}
+
+func (bridge *Bridge) UpdateLayoutSettings(request UpdateLayoutSettingsRequest) (LayoutActionResponse, error) {
+	bridge.mu.Lock()
+	settings := bridge.layoutSettings
+	if request.Rule != nil {
+		settings.Rule = strings.TrimSpace(*request.Rule)
+	}
+	if request.Mode != nil {
+		settings.Mode = *request.Mode
+	}
+	if request.Gaps != nil {
+		settings.Gaps = *request.Gaps
+	}
+	if request.MasterCount != nil {
+		settings.MasterCount = *request.MasterCount
+	}
+	if request.MasterRatio != nil {
+		settings.MasterRatio = *request.MasterRatio
+	}
+	if request.SmartGaps != nil {
+		settings.SmartGaps = *request.SmartGaps
+	}
+	if err := validateLayoutSettings(settings); err != nil {
+		bridge.mu.Unlock()
+		return LayoutActionResponse{}, err
+	}
+	bridge.layoutSettings = settings
+	bridge.layoutMode = settings.Mode
+	bridge.layoutSeq++
+	for id, tracked := range bridge.surfaces {
+		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		tracked.LayoutMode = string(settings.Mode)
+		tracked.Surface.LayoutMode = string(settings.Mode)
+		tracked.LayoutRevision = bridge.layoutSeq
+		bridge.surfaces[id] = tracked
+	}
+	if bridge.backendLayout != nil {
+		layout := cloneLayoutState(*bridge.backendLayout)
+		layout.Mode = settings.Mode
+		layout.Settings = settings
+		layout.Revision = bridge.layoutSeq
+		for index := range layout.Surfaces {
+			layout.Surfaces[index].Mode = settings.Mode
+		}
+		bridge.backendLayout = cloneLayoutStatePtr(layout)
+	}
+	layout := bridge.layoutLocked()
+	settingsPath := bridge.layoutSettingsPath
+	bridge.mu.Unlock()
+	if err := SaveLayoutSettings(settingsPath, settings); err != nil {
+		return LayoutActionResponse{}, err
+	}
+	if settings.Mode != LayoutModeFreeform {
+		bridge.requestAutoLayout("layout_settings")
+	}
+	return LayoutActionResponse{
+		Action:   "layout.update_settings",
+		Decision: DecisionAccepted,
+		Reason:   "layout settings updated",
 		Layout:   &layout,
 	}, nil
 }
