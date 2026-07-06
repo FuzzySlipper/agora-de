@@ -534,15 +534,12 @@ mod tests {
     #[test]
     fn unsupported_planner_rules_are_explicit() {
         let mut input = PlannerInput::new(Geometry::new(0, 0, 1000, 800), "workspace-1");
-        input.rule = LayoutRule::MasterStack;
+        input.rule = LayoutRule::Dwindle;
         input.surfaces = vec![PlannerSurface::tiled(SurfaceId::new("view-a"), 0)];
 
-        let error = LayoutPlan::plan(&input).expect_err("master-stack belongs to task 4320");
+        let error = LayoutPlan::plan(&input).expect_err("dwindle belongs to task 4321");
 
-        assert_eq!(
-            error,
-            LayoutPlanError::UnsupportedRule(LayoutRule::MasterStack)
-        );
+        assert_eq!(error, LayoutPlanError::UnsupportedRule(LayoutRule::Dwindle));
     }
 
     #[test]
