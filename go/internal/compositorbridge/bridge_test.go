@@ -732,6 +732,58 @@ func TestAutoLayoutOrderUsesPlacementZonesOverStaleTrackedZones(t *testing.T) {
 	}
 }
 
+func TestNormalizeLayoutStateRemovesStaleZoneMembership(t *testing.T) {
+	layout := LayoutState{
+		Mode: LayoutModeZones,
+		Surfaces: []LayoutSurface{
+			{
+				SurfaceID:     "view-a",
+				WorkspaceID:   "workspace-1",
+				ZoneID:        zoneMaster,
+				Mode:          LayoutModeZones,
+				Participation: SurfaceLayoutRoleTiled,
+				Geometry:      &SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 700},
+			},
+			{
+				SurfaceID:     "view-b",
+				WorkspaceID:   "workspace-1",
+				ZoneID:        zoneStack,
+				Mode:          LayoutModeZones,
+				Participation: SurfaceLayoutRoleTiled,
+				Geometry:      &SurfaceGeometry{X: 600, Y: 0, Width: 600, Height: 700},
+			},
+		},
+		Workspaces: []LayoutWorkspace{
+			{
+				ID:           "workspace-1",
+				Name:         "workspace 1",
+				Active:       true,
+				SurfaceOrder: []string{"view-a", "view-a", "view-b"},
+				Zones: []LayoutZone{
+					{ID: zoneMaster, Name: zoneMaster, Kind: "work", SurfaceIDs: []string{"view-a", "view-b"}},
+					{ID: zoneStack, Name: zoneStack, Kind: "work", SurfaceIDs: []string{"view-b", "view-b"}},
+				},
+			},
+		},
+	}
+
+	normalizeLayoutState(&layout)
+
+	if got := layout.Workspaces[0].SurfaceOrder; len(got) != 2 || got[0] != "view-a" || got[1] != "view-b" {
+		t.Fatalf("surface order = %+v", got)
+	}
+	zones := map[string][]string{}
+	for _, zone := range layout.Workspaces[0].Zones {
+		zones[zone.ID] = zone.SurfaceIDs
+	}
+	if got := zones[zoneMaster]; len(got) != 1 || got[0] != "view-a" {
+		t.Fatalf("master zone membership = %+v, want only view-a", zones[zoneMaster])
+	}
+	if got := zones[zoneStack]; len(got) != 1 || got[0] != "view-b" {
+		t.Fatalf("stack zone membership = %+v, want only view-b", zones[zoneStack])
+	}
+}
+
 func TestSetLayoutModeUpdatesStateAndFreeformDisablesAutoLayout(t *testing.T) {
 	bridge := New(Config{})
 	response, err := bridge.SetLayoutMode(SetLayoutModeRequest{Mode: LayoutModeFreeform})

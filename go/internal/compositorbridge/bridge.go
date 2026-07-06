@@ -1337,6 +1337,13 @@ func normalizeLayoutState(layout *LayoutState) {
 	if len(layout.Workspaces) == 0 {
 		layout.Workspaces = []LayoutWorkspace{{ID: "workspace-1", Name: "workspace 1", Active: true}}
 	}
+	for index := range layout.Workspaces {
+		workspace := &layout.Workspaces[index]
+		workspace.SurfaceOrder = uniqueStrings(workspace.SurfaceOrder)
+		for zoneIndex := range workspace.Zones {
+			workspace.Zones[zoneIndex].SurfaceIDs = uniqueStrings(workspace.Zones[zoneIndex].SurfaceIDs)
+		}
+	}
 	for index := range layout.Surfaces {
 		surface := &layout.Surfaces[index]
 		if surface.SurfaceID == "" {
@@ -1363,6 +1370,7 @@ func normalizeLayoutState(layout *LayoutState) {
 		if workspace.OutputID == "" {
 			workspace.OutputID = surface.OutputID
 		}
+		removeSurfaceFromOtherZones(workspace, surface.ZoneID, surface.SurfaceID)
 		if !containsString(workspace.SurfaceOrder, surface.SurfaceID) {
 			workspace.SurfaceOrder = append(workspace.SurfaceOrder, surface.SurfaceID)
 		}
@@ -1401,6 +1409,15 @@ func ensureZoneContains(workspace *LayoutWorkspace, zoneID string, surfaceID str
 	})
 }
 
+func removeSurfaceFromOtherZones(workspace *LayoutWorkspace, zoneID string, surfaceID string) {
+	for index := range workspace.Zones {
+		if workspace.Zones[index].ID == zoneID {
+			continue
+		}
+		workspace.Zones[index].SurfaceIDs = filterString(workspace.Zones[index].SurfaceIDs, surfaceID)
+	}
+}
+
 func containsString(values []string, needle string) bool {
 	for _, value := range values {
 		if value == needle {
@@ -1408,6 +1425,22 @@ func containsString(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) < 2 {
+		return values
+	}
+	seen := map[string]bool{}
+	unique := values[:0]
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func cloneLayoutStatePtr(layout LayoutState) *LayoutState {
