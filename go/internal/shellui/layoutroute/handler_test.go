@@ -115,3 +115,24 @@ func TestLayoutZoneActionsRejectInvalidPlannerGeometry(t *testing.T) {
 		t.Fatalf("err = %v, want positive geometry error", err)
 	}
 }
+
+func TestLayoutSetFloatingActionCanDisableFloating(t *testing.T) {
+	enabled := false
+	args, err := actionArgs(actionRequest{
+		Action:    "setFloating",
+		SurfaceID: "view-live",
+		Floating:  &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"surface", "set-floating",
+		"--surface", "view-live",
+		"--enabled=false",
+		"--timeout-ms", "2000",
+	}
+	if strings.Join(args, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}

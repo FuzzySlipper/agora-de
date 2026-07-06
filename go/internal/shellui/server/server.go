@@ -2280,6 +2280,36 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 58px;
       padding: 0 10px;
     }
+    .wm-controls {
+      flex: 0 1 auto;
+      max-width: 520px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .wm-control {
+      background: var(--agora-surface);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      flex: 0 0 auto;
+      height: var(--agora-control-height);
+      min-width: 54px;
+      padding: 0 10px;
+    }
+    .wm-control.primary {
+      border-color: var(--agora-accent);
+    }
+    .wm-control:disabled {
+      color: var(--agora-text-muted);
+      cursor: default;
+      opacity: 0.65;
+    }
+    .wm-rule {
+      background: var(--agora-surface-strong);
+      border-color: var(--agora-border-subtle);
+      max-width: 150px;
+      min-width: 96px;
+    }
     .surface-meta {
       font-size: 12px;
       min-width: 78px;
@@ -2312,6 +2342,18 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     <section class="dock-section running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
     </section>
+    <section class="dock-section wm-controls" id="wm-controls" aria-label="Window controls">
+      <button class="wm-control" id="focus-prev-button" type="button">Prev</button>
+      <button class="wm-control" id="focus-next-button" type="button">Next</button>
+      <button class="wm-control primary" id="promote-button" type="button">Master</button>
+      <button class="wm-control" id="move-zone-button" type="button">Move</button>
+      <button class="wm-control" id="float-button" type="button">Float</button>
+      <button class="wm-control" id="fullscreen-button" type="button">Full</button>
+      <button class="wm-control" id="maximize-button" type="button">Max</button>
+      <button class="wm-control" id="close-focus-button" type="button">Close</button>
+      <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
+      <span class="dock-item surface-meta wm-rule" id="layout-rule-label">master_stack</span>
+    </section>
     <button class="workspace" id="workspace-label" type="button">workspace 1</button>
     <button class="layout-status" id="layout-mode-button" type="button">freeform</button>
     <span class="status" id="status-label">starting</span>
@@ -2323,6 +2365,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       surfaces: [],
       layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
+      feedback: {label: "", className: "", until: 0},
       surface: %q
     };
 
@@ -2368,6 +2411,38 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     function layoutSurface(surfaceId) {
       const surfaces = Array.isArray(state.layout.surfaces) ? state.layout.surfaces : [];
       return surfaces.find((surface) => surface.surfaceId === surfaceId);
+    }
+
+    function layoutSurfaces() {
+      return Array.isArray(state.layout.surfaces) ? state.layout.surfaces : [];
+    }
+
+    function manageableLayoutSurfaces() {
+      return layoutSurfaces()
+        .filter((surface) => surface.visible !== false && surface.participation !== "transient")
+        .sort((left, right) => Number(left.order || 0) - Number(right.order || 0));
+    }
+
+    function focusedLayoutSurface() {
+      return manageableLayoutSurfaces().find((surface) => surface.focused) || manageableLayoutSurfaces()[0] || null;
+    }
+
+    function targetSurface() {
+      const layout = focusedLayoutSurface();
+      if (layout) {
+        return layout;
+      }
+      const surface = state.surfaces.find((candidate) =>
+        candidate.mapped &&
+        candidate.surfaceKind !== "layer_shell" &&
+        candidate.appId !== "io.agorade.ShellLauncher" &&
+        candidate.focused
+      ) || state.surfaces.find((candidate) =>
+        candidate.mapped &&
+        candidate.surfaceKind !== "layer_shell" &&
+        candidate.appId !== "io.agorade.ShellLauncher"
+      );
+      return surface ? {surfaceId: surface.id, appId: surface.appId, title: surface.title, zoneId: surface.zoneId, focused: surface.focused, floating: surface.layoutRole === "floating"} : null;
     }
 
     function activeLayoutWorkspace() {
@@ -2421,6 +2496,62 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return text(settings.rule, "master_stack") + master + ratio + gapLabel;
     }
 
+    function setFeedback(label, className) {
+      state.feedback = {
+        label,
+        className: className || "ready",
+        until: Date.now() + 3500
+      };
+    }
+
+    function statusFromFeedback() {
+      if (state.feedback.label && Date.now() < state.feedback.until) {
+        return state.feedback;
+      }
+      return null;
+    }
+
+    function actionStatus(result) {
+      return text(result && (result.status || result.decision), "accepted");
+    }
+
+    function setControlDisabled(id, disabled) {
+      const element = document.getElementById(id);
+      if (element) {
+        element.disabled = disabled;
+      }
+    }
+
+    function renderWMControls() {
+      const target = targetSurface();
+      const hasTarget = Boolean(target && target.surfaceId);
+      [
+        "focus-prev-button",
+        "focus-next-button",
+        "promote-button",
+        "move-zone-button",
+        "float-button",
+        "fullscreen-button",
+        "maximize-button",
+        "close-focus-button"
+      ].forEach((id) => setControlDisabled(id, !hasTarget));
+      const floatButton = document.getElementById("float-button");
+      if (floatButton) {
+        floatButton.textContent = target && target.floating ? "Tile" : "Float";
+        floatButton.title = target ? "Toggle floating for " + text(target.title, text(target.appId, target.surfaceId)) : "Toggle floating";
+      }
+      const moveButton = document.getElementById("move-zone-button");
+      if (moveButton && target) {
+        moveButton.title = "Move " + text(target.title, target.surfaceId) + " to " + nextZone(text(target.zoneId, "primary"));
+      }
+      const ruleLabel = document.getElementById("layout-rule-label");
+      const settings = state.layout.settings || {};
+      ruleLabel.textContent = layoutSettingsLabel();
+      ruleLabel.title = "rule " + text(settings.rule, "master_stack") +
+        " / mode " + text(state.layout.mode, "freeform") +
+        " / revision " + Number(state.layout.revision || 0);
+    }
+
     function render() {
       const launcher = launcherSurface();
       const appsButton = document.getElementById("apps-button");
@@ -2448,7 +2579,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         return group;
       });
       const status = document.getElementById("status-label");
-      if (launcher) {
+      const feedback = statusFromFeedback();
+      if (feedback) {
+        status.textContent = feedback.label;
+        status.className = "status " + feedback.className;
+      } else if (launcher) {
         status.textContent = "apps open";
         status.className = "status ready";
       } else {
@@ -2462,6 +2597,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const layoutStatus = document.getElementById("layout-mode-button");
       layoutStatus.textContent = layoutMode + (state.layout.revision ? " r" + state.layout.revision : "");
       layoutStatus.title = layoutSettingsLabel() + " / zones: " + workspaceZones().join(" / ");
+      renderWMControls();
     }
 
     async function loadJSON(path) {
@@ -2511,8 +2647,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       status.textContent = "launching";
       status.className = "status ready";
       try {
-        await postJSON("/api/catalog/launch", {appId});
+        const result = await postJSON("/api/catalog/launch", {appId});
         await refresh();
+        setFeedback(actionStatus(result), "ready");
+        render();
       } catch (error) {
         status.textContent = "launch failed";
         status.className = "status warn";
@@ -2524,8 +2662,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       status.textContent = action;
       status.className = "status ready";
       try {
-        await postJSON("/api/surfaces/action", {surfaceId, action});
+        const result = await postJSON("/api/surfaces/action", {surfaceId, action});
         await refresh();
+        setFeedback(action + " " + actionStatus(result), "ready");
+        render();
       } catch (error) {
         status.textContent = action + " failed";
         status.className = "status warn";
@@ -2537,8 +2677,16 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       status.textContent = "zone";
       status.className = "status ready";
       try {
-        await postJSON("/api/layout/action", {surfaceId, zoneId, action: "assignZone"});
+        const target = layoutSurface(surfaceId) || {};
+        const result = await postJSON("/api/layout/action", {
+          surfaceId,
+          workspaceId: text(target.workspaceId, state.workspace.id),
+          zoneId,
+          action: "assignZone"
+        });
         await refresh();
+        setFeedback("zone " + actionStatus(result), "ready");
+        render();
       } catch (error) {
         status.textContent = "zone unsupported";
         status.className = "status warn";
@@ -2550,8 +2698,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       status.textContent = mode;
       status.className = "status ready";
       try {
-        await postJSON("/api/layout/action", {mode, action: "setMode"});
+        const result = await postJSON("/api/layout/action", {mode, action: "setMode"});
         await refresh();
+        setFeedback("layout " + actionStatus(result), "ready");
+        render();
       } catch (error) {
         status.textContent = "layout unsupported";
         status.className = "status warn";
@@ -2573,6 +2723,67 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         status.textContent = "workspace failed";
         status.className = "status warn";
       }
+    }
+
+    async function focusRelative(delta) {
+      const surfaces = manageableLayoutSurfaces();
+      const target = targetSurface();
+      if (!surfaces.length || !target) {
+        return;
+      }
+      const current = surfaces.findIndex((surface) => surface.surfaceId === target.surfaceId);
+      const next = surfaces[(Math.max(current, 0) + delta + surfaces.length) %% surfaces.length];
+      if (next) {
+        await actOnSurface(next.surfaceId, "focus");
+      }
+    }
+
+    async function promoteTarget() {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      await actOnSurface(target.surfaceId, "focus");
+    }
+
+    async function moveTargetToNextZone() {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      await assignZone(target.surfaceId, nextZone(text(target.zoneId, "primary")));
+    }
+
+    async function toggleTargetFloating() {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      const floating = !Boolean(target.floating);
+      const status = document.getElementById("status-label");
+      status.textContent = floating ? "floating" : "tiling";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {surfaceId: target.surfaceId, floating, action: "setFloating"});
+        await refresh();
+        setFeedback((floating ? "float " : "tile ") + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "float failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function actOnTarget(action) {
+      const target = targetSurface();
+      if (target) {
+        await actOnSurface(target.surfaceId, action);
+      }
+    }
+
+    async function resetLayout() {
+      const mode = text(state.layout.mode, "freeform");
+      await setLayoutMode(mode === "freeform" ? "zones" : mode);
     }
 
     async function toggleApps() {
@@ -2606,6 +2817,15 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
     document.getElementById("workspace-label").addEventListener("click", activateWorkspace);
     document.getElementById("layout-mode-button").addEventListener("click", () => setLayoutMode(nextLayoutMode(text(state.layout.mode, "freeform"))));
+    document.getElementById("focus-prev-button").addEventListener("click", () => focusRelative(-1));
+    document.getElementById("focus-next-button").addEventListener("click", () => focusRelative(1));
+    document.getElementById("promote-button").addEventListener("click", promoteTarget);
+    document.getElementById("move-zone-button").addEventListener("click", moveTargetToNextZone);
+    document.getElementById("float-button").addEventListener("click", toggleTargetFloating);
+    document.getElementById("fullscreen-button").addEventListener("click", () => actOnTarget("fullscreen"));
+    document.getElementById("maximize-button").addEventListener("click", () => actOnTarget("maximize"));
+    document.getElementById("close-focus-button").addEventListener("click", () => actOnTarget("close"));
+    document.getElementById("reset-layout-button").addEventListener("click", resetLayout);
     updateClock();
     refresh();
     setInterval(updateClock, 30000);
