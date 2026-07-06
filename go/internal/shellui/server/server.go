@@ -265,10 +265,10 @@ func launchTargets() map[string]launchTarget {
 			Title:         "Agora DE App Launcher",
 			AppID:         "io.agorade.ShellLauncher",
 			LayerShell:    true,
-			LayerRole:     "overlay",
-			Width:         2560,
-			Height:        1440,
-			ExclusiveZone: 0,
+			LayerRole:     "popup",
+			Width:         760,
+			Height:        600,
+			ExclusiveZone: 96,
 		},
 	}
 }
@@ -1834,15 +1834,14 @@ func writeLauncherHTML(response http.ResponseWriter) {
       border-bottom-color: var(--agora-accent);
       border-radius: var(--agora-radius-control);
       box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
-      bottom: calc(var(--agora-panel-height) + 10px);
       display: grid;
       grid-template-rows: auto 1fr auto;
-      height: min(600px, calc(100vh - var(--agora-panel-height) - 24px));
-      left: var(--agora-panel-padding-x);
+      height: 100vh;
+      inset: 0;
       min-height: 0;
       overflow: hidden;
       position: fixed;
-      width: min(760px, calc(100vw - 44px));
+      width: 100vw;
     }
     .launcher-header {
       align-items: center;

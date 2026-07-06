@@ -13,7 +13,7 @@ def main() -> int:
         description="Launch an agora-de GTK4/WebKit layer-shell surface."
     )
     parser.add_argument("--url", required=True)
-    parser.add_argument("--role", choices=("background", "panel", "overlay"), required=True)
+    parser.add_argument("--role", choices=("background", "panel", "overlay", "popup"), required=True)
     parser.add_argument("--width", type=int, required=True)
     parser.add_argument("--height", type=int, required=True)
     parser.add_argument("--exclusive-zone", type=int, default=96)
@@ -50,7 +50,7 @@ def main() -> int:
             configure_layer_shell(Gtk4LayerShell, self.window, args.role, args.app_id, args.exclusive_zone)
 
             webview = WebKit.WebView()
-            if args.role in ("overlay", "panel"):
+            if args.role in ("overlay", "panel", "popup"):
                 rgba = Gdk.RGBA()
                 rgba.red = 0.0
                 rgba.green = 0.0
@@ -97,7 +97,7 @@ def configure_layer_shell(Gtk4LayerShell, window, role: str, namespace: str, exc
         return
 
     if role == "overlay":
-        Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.TOP)
+        Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.OVERLAY)
         for edge in (
             Gtk4LayerShell.Edge.TOP,
             Gtk4LayerShell.Edge.BOTTOM,
@@ -107,6 +107,17 @@ def configure_layer_shell(Gtk4LayerShell, window, role: str, namespace: str, exc
             Gtk4LayerShell.set_anchor(window, edge, True)
         if hasattr(Gtk4LayerShell, "KeyboardMode") and hasattr(Gtk4LayerShell, "set_keyboard_mode"):
             Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.NONE)
+        return
+
+    if role == "popup":
+        Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.OVERLAY)
+        Gtk4LayerShell.set_anchor(window, Gtk4LayerShell.Edge.BOTTOM, True)
+        Gtk4LayerShell.set_anchor(window, Gtk4LayerShell.Edge.LEFT, True)
+        if hasattr(Gtk4LayerShell, "set_margin"):
+            Gtk4LayerShell.set_margin(window, Gtk4LayerShell.Edge.BOTTOM, max(0, exclusive_zone) + 10)
+            Gtk4LayerShell.set_margin(window, Gtk4LayerShell.Edge.LEFT, 22)
+        if hasattr(Gtk4LayerShell, "KeyboardMode") and hasattr(Gtk4LayerShell, "set_keyboard_mode"):
+            Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.ON_DEMAND)
         return
 
     Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.TOP)

@@ -48,8 +48,8 @@ install -D -m 0644 deploy/shellui/agora-de-shellui.user.service ~/.config/system
 install -D -m 0644 deploy/shellui/agora-de-shell-background.user.service ~/.config/systemd/user/agora-de-shell-background.service
 install -D -m 0644 deploy/shellui/agora-de-shell-panel.user.service ~/.config/systemd/user/agora-de-shell-panel.service
 install -D -m 0644 deploy/shellui/agora-de-shell-overlay.user.service ~/.config/systemd/user/agora-de-shell-overlay.service
-install -D -m 0755 deploy/shellui/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
-install -D -m 0755 deploy/shellui/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
+install -D -m 0755 chrome/webview-layer-shell/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
+install -D -m 0755 chrome/panel-supervisor/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
 install -D -m 0644 deploy/shellui/shellui.user.env.example ~/.config/agora-de/shellui.env
 systemctl --user daemon-reload
 systemctl --user enable --now agora-de-shellui.service

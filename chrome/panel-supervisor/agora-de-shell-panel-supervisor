@@ -61,7 +61,7 @@ launcher_pid = sys.argv[3]
 data = json.load(sys.stdin)
 matches = []
 def role_matches(observed, wanted):
-    return observed == wanted or (wanted == "overlay" and observed == "background")
+    return observed == wanted
 for item in data.get("surfaces", []):
     surface = item.get("surface") or {}
     if surface.get("app_id") != app_id or not role_matches(surface.get("role"), role):
@@ -91,7 +91,7 @@ app_id = sys.argv[1]
 role = sys.argv[2]
 data = json.load(sys.stdin)
 def role_matches(observed, wanted):
-    return observed == wanted or (wanted == "overlay" and observed == "background")
+    return observed == wanted
 for item in data.get("surfaces", []):
     surface = item.get("surface") or {}
     if surface.get("app_id") == app_id and role_matches(surface.get("role"), role):

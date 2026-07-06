@@ -1,4 +1,5 @@
 # Panel Supervisor Scaffold
 
-Placeholder for installed shell-panel supervision work. Deployment scripts live
-under `deploy/shellui/`.
+Installed shell-panel supervision source. Deployment scripts install this helper
+into the operator's chosen artifact path; they do not own the supervision
+behavior.
