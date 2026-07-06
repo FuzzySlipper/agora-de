@@ -12,6 +12,7 @@ import urllib.request
 SCHEMA = "agora-de.auto-tiling-wm-live.v1"
 SCENARIO = "den-k8-auto-tiling-wm-visible"
 OLD_COMPOSITORCTL = pathlib.Path("/usr/local/bin/compositorctl")
+SUCCESSFUL_LAUNCH_STATUSES = {"launched", "surface_observed_after_timeout", "reused_existing_window"}
 
 
 def main() -> int:
@@ -216,7 +217,7 @@ def check_catalog(structured, base_url: str, app_ids: list[str]) -> dict:
 def launch_app(structured, base_url: str, app_id: str, expected_app_id: str) -> tuple[dict, dict | None]:
     launch = structured.post_json(base_url + "/api/catalog/launch", {"appId": app_id})
     surface_id = launch.get("surfaceId") or ""
-    if launch.get("status") != "launched" or not surface_id:
+    if launch.get("status") not in SUCCESSFUL_LAUNCH_STATUSES or not surface_id:
         return failed("launch", f"unexpected launch response for {app_id!r}", appId=app_id, response=launch), None
     return (
         passed("launch", "native app launched through shell catalog path", appId=app_id, expectedAppId=expected_app_id, surfaceId=surface_id),

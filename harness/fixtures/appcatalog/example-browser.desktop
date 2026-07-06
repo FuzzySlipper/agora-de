@@ -3,5 +3,5 @@ Type=Application
 Name=Example Browser
 Exec=example-browser --new-window %u
 Icon=example-browser
+StartupWMClass=ExampleBrowser
 NoDisplay=false
-

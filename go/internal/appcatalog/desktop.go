@@ -12,16 +12,17 @@ import (
 )
 
 type Entry struct {
-	ID            string
-	Type          string
-	Name          string
-	Exec          string
-	ExecTokens    []string
-	ExecSupported bool
-	Icon          string
-	Categories    []string
-	NoDisplay     bool
-	Hidden        bool
+	ID             string
+	Type           string
+	Name           string
+	Exec           string
+	ExecTokens     []string
+	ExecSupported  bool
+	Icon           string
+	Categories     []string
+	StartupWMClass string
+	NoDisplay      bool
+	Hidden         bool
 }
 
 func ParseDesktopEntry(id string, reader io.Reader) (Entry, error) {
@@ -57,16 +58,17 @@ func ParseDesktopEntry(id string, reader io.Reader) (Entry, error) {
 
 	tokens, execSupported := NormalizeExec(values["Exec"])
 	entry := Entry{
-		ID:            strings.TrimSpace(id),
-		Type:          strings.TrimSpace(values["Type"]),
-		Name:          values["Name"],
-		Exec:          values["Exec"],
-		ExecTokens:    tokens,
-		ExecSupported: execSupported,
-		Icon:          values["Icon"],
-		Categories:    ParseCategories(values["Categories"]),
-		NoDisplay:     parseDesktopBool(values["NoDisplay"]),
-		Hidden:        parseDesktopBool(values["Hidden"]),
+		ID:             strings.TrimSpace(id),
+		Type:           strings.TrimSpace(values["Type"]),
+		Name:           values["Name"],
+		Exec:           values["Exec"],
+		ExecTokens:     tokens,
+		ExecSupported:  execSupported,
+		Icon:           values["Icon"],
+		Categories:     ParseCategories(values["Categories"]),
+		StartupWMClass: strings.TrimSpace(values["StartupWMClass"]),
+		NoDisplay:      parseDesktopBool(values["NoDisplay"]),
+		Hidden:         parseDesktopBool(values["Hidden"]),
 	}
 	if entry.ID == "" {
 		return Entry{}, fmt.Errorf("desktop entry missing id")

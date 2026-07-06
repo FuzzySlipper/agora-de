@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"agora-de.local/go/internal/appcatalog"
@@ -20,11 +21,14 @@ var (
 type Status string
 
 const (
-	StatusLaunched               Status = "launched"
-	StatusLaunchedWithoutSurface Status = "launched_without_surface"
-	StatusRejected               Status = "rejected"
-	StatusFailed                 Status = "failed"
-	StatusTimedOut               Status = "timed_out"
+	StatusLaunched                    Status = "launched"
+	StatusLaunchedWithoutSurface      Status = "launched_without_surface"
+	StatusRejected                    Status = "rejected"
+	StatusFailed                      Status = "failed"
+	StatusTimedOut                    Status = "timed_out"
+	StatusTimedOutNoSurface           Status = "timed_out_no_surface"
+	StatusSurfaceObservedAfterTimeout Status = "surface_observed_after_timeout"
+	StatusReusedExistingWindow        Status = "reused_existing_window"
 )
 
 const DefaultWaitTimeout = 5 * time.Second
@@ -53,6 +57,7 @@ type BridgeRequest struct {
 	Args               []string
 	Environment        []string
 	WorkingDirectory   string
+	ExpectedAppID      string
 	RequesterUID       int
 	RequesterGID       int
 	SessionToken       session.Token
@@ -112,6 +117,7 @@ func (launcher Launcher) Launch(ctx context.Context, request Request) (Result, e
 		Args:               args,
 		Environment:        BuildEnvironment(request.BaseEnvironment),
 		WorkingDirectory:   workingDirectory,
+		ExpectedAppID:      expectedAppID(request.Entry),
 		RequesterUID:       request.RequesterUID,
 		RequesterGID:       request.RequesterGID,
 		SessionToken:       request.SessionToken,
@@ -162,7 +168,7 @@ func validateBridgeResult(request Request, bridgeResult BridgeResult, status Sta
 		if bridgeResult.SurfaceID == "" {
 			return fmt.Errorf("%w: launched result missing surface id", ErrInvalidRequest)
 		}
-	case StatusLaunchedWithoutSurface, StatusTimedOut, StatusFailed:
+	case StatusLaunchedWithoutSurface, StatusTimedOut, StatusTimedOutNoSurface, StatusSurfaceObservedAfterTimeout, StatusReusedExistingWindow, StatusFailed:
 		return nil
 	case StatusRejected:
 		return fmt.Errorf("%w: bridge rejected launch", ErrInvalidRequest)
@@ -170,4 +176,15 @@ func validateBridgeResult(request Request, bridgeResult BridgeResult, status Sta
 		return fmt.Errorf("%w: unknown bridge status %q", ErrInvalidRequest, status)
 	}
 	return nil
+}
+
+func expectedAppID(entry appcatalog.Entry) string {
+	if value := strings.TrimSpace(entry.StartupWMClass); value != "" {
+		return value
+	}
+	id := strings.TrimSpace(entry.ID)
+	if strings.HasSuffix(id, ".desktop") {
+		id = strings.TrimSuffix(id, ".desktop")
+	}
+	return id
 }

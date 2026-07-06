@@ -10,6 +10,7 @@ import urllib.request
 
 
 OLD_COMPOSITORCTL = pathlib.Path("/usr/local/bin/compositorctl")
+SUCCESSFUL_LAUNCH_STATUSES = {"launched", "surface_observed_after_timeout", "reused_existing_window"}
 
 
 def main() -> int:
@@ -74,7 +75,7 @@ def main() -> int:
 
         launch = post_json(args.base_url + "/api/catalog/launch", {"appId": args.app_id})
         launched_surface = launch.get("surfaceId") or ""
-        if launch.get("appId") != args.app_id or launch.get("status") != "launched" or not launched_surface:
+        if launch.get("appId") != args.app_id or launch.get("status") not in SUCCESSFUL_LAUNCH_STATUSES or not launched_surface:
             checks.append(failed("launch", f"unexpected launch response: {launch}"))
             return finish(checks, evidence_packets, args.app_id, args.expected_app_id, launched_surface, checked_at)
         checks.append(

@@ -888,6 +888,8 @@ printf '%s\n' '{"launch_id":"native-launch","surface":{"surface":{"id":"native-v
 		"session-1",
 		"--audit-correlation-id",
 		"shellui:terminal.desktop",
+		"--expected-app-id",
+		"terminal",
 		"--output",
 		"HDMI-A-1",
 		"--wait-surface",

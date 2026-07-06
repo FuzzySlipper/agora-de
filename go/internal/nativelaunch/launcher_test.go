@@ -20,11 +20,13 @@ func TestLauncherCallsBridgeWithStructuredRequest(t *testing.T) {
 
 	result, err := launcher.Launch(context.Background(), Request{
 		Entry: appcatalog.Entry{
-			Type:          "Application",
-			Name:          "Alacritty",
-			Exec:          `alacritty --title "%c"`,
-			ExecTokens:    []string{"alacritty", "--title"},
-			ExecSupported: true,
+			ID:             "Alacritty.desktop",
+			Type:           "Application",
+			Name:           "Alacritty",
+			Exec:           `alacritty --title "%c"`,
+			ExecTokens:     []string{"alacritty", "--title"},
+			ExecSupported:  true,
+			StartupWMClass: "Alacritty",
 		},
 		RequesterUID:       1000,
 		RequesterGID:       1000,
@@ -49,6 +51,9 @@ func TestLauncherCallsBridgeWithStructuredRequest(t *testing.T) {
 	}
 	if bridge.request.WorkingDirectory != home {
 		t.Fatalf("bridge cwd = %q, want %q", bridge.request.WorkingDirectory, home)
+	}
+	if bridge.request.ExpectedAppID != "Alacritty" {
+		t.Fatalf("bridge expected app id = %q, want Alacritty", bridge.request.ExpectedAppID)
 	}
 	if bridge.request.SessionToken != session.MustToken("session-1") {
 		t.Fatalf("bridge session token = %q", bridge.request.SessionToken)
@@ -127,6 +132,24 @@ func TestLauncherPreservesExplicitWaitTimeout(t *testing.T) {
 	}
 	if bridge.request.WaitTimeout != 2*time.Second {
 		t.Fatalf("wait timeout = %s, want 2s", bridge.request.WaitTimeout)
+	}
+}
+
+func TestLauncherAcceptsClassifiedDelayedAndReusedStatuses(t *testing.T) {
+	for _, status := range []Status{StatusSurfaceObservedAfterTimeout, StatusReusedExistingWindow, StatusTimedOutNoSurface} {
+		t.Run(string(status), func(t *testing.T) {
+			bridge := &recordingBridge{
+				result: BridgeResult{LaunchID: "launch-1", SurfaceID: "view-1", Status: status},
+			}
+			launcher := New(bridge)
+			result, err := launcher.Launch(context.Background(), validRequest(t))
+			if err != nil {
+				t.Fatalf("Launch error = %v", err)
+			}
+			if result.Status != status {
+				t.Fatalf("status = %q, want %q", result.Status, status)
+			}
+		})
 	}
 }
 

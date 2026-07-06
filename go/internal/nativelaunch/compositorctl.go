@@ -29,6 +29,9 @@ func (bridge CompositorctlBridge) Launch(ctx context.Context, request BridgeRequ
 	if request.WorkingDirectory != "" {
 		args = append(args, "--cwd", request.WorkingDirectory)
 	}
+	if request.ExpectedAppID != "" {
+		args = append(args, "--expected-app-id", request.ExpectedAppID)
+	}
 	if request.RequesterUID > 0 {
 		args = append(args, "--uid", strconv.Itoa(request.RequesterUID))
 	}

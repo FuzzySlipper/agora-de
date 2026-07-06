@@ -34,6 +34,9 @@ func TestParseDesktopEntryFixture(t *testing.T) {
 	if entry.Icon != "example-browser" {
 		t.Fatalf("icon = %q, want example-browser", entry.Icon)
 	}
+	if entry.StartupWMClass != "ExampleBrowser" {
+		t.Fatalf("startup wm class = %q, want ExampleBrowser", entry.StartupWMClass)
+	}
 	if len(entry.Categories) != 0 {
 		t.Fatalf("categories = %+v, want empty fixture categories", entry.Categories)
 	}

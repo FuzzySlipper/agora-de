@@ -63,12 +63,17 @@ type Result struct {
 Required statuses:
 
 - `launched`: process launch accepted and an expected mapped surface was found;
+- `surface_observed_after_timeout`: no surface was found during the primary
+  bounded wait, but a matching visible surface appeared during the short
+  reconciliation window;
+- `reused_existing_window`: process launch accepted and an already-visible
+  surface matched the expected app id or title, as with browser process reuse;
 - `launched_without_surface`: launch accepted for an explicitly non-windowed
   target;
 - `rejected`: request failed validation before process launch;
 - `failed`: launcher or compositor bridge reported failure after validation;
-- `timed_out`: process launch was accepted but no expected surface was observed
-  before the bounded wait expired.
+- `timed_out_no_surface`: process launch was accepted but no expected surface
+  was observed before the bounded wait and reconciliation window expired.
 
 Shellui should translate these into the existing `/api/catalog/launch` response
 without learning how to parse or execute desktop-entry commands.
@@ -130,8 +135,11 @@ surface. Prefer bridge-owned launch id and PID ancestry association. App id and
 title matching are hints, not authority. A launch should not be marked
 `launched` only because a process was spawned.
 
-The wait must be bounded. Timeout returns `timed_out` with the launch id so
-cleanup and later reconciliation can still find the process or surface.
+The wait must be bounded. Timeout returns `timed_out_no_surface` with the launch
+id so cleanup can still find the process. A short post-timeout reconciliation
+window may classify a delayed surface as `surface_observed_after_timeout`, and
+pre-existing surfaces may classify as `reused_existing_window` only when an
+explicit app id or title hint matches.
 
 Non-windowed launches are not part of the first visible desktop slice unless a
 desktop entry is explicitly allowlisted as non-windowed and the result records

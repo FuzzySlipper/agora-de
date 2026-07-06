@@ -19,6 +19,15 @@ import (
 const defaultCompositorControlSocket = "/run/agent-os/compositor-control.sock"
 
 const (
+	launchStatusLaunched                    = "launched"
+	launchStatusLaunchedWithoutSurface      = "launched_without_surface"
+	launchStatusSurfaceObservedAfterTimeout = "surface_observed_after_timeout"
+	launchStatusTimedOutNoSurface           = "timed_out_no_surface"
+	launchStatusReusedExistingWindow        = "reused_existing_window"
+	launchStatusFailed                      = "failed"
+)
+
+const (
 	methodListSurfaces         = "list_surfaces"
 	methodListOutputs          = "list_outputs"
 	methodCaptureOutput        = "capture_output"
@@ -162,6 +171,14 @@ func runLaunch(args []string, stdout io.Writer) error {
 
 	launchID := fmt.Sprintf("launch-%d", time.Now().UnixNano())
 	startedAt := time.Now()
+	var reusableIDs map[string]bool
+	if *waitSurface {
+		reusableIDs = reusableSurfaceIDs(launchSurfaceMatch{
+			StartedAt:     startedAt,
+			ExpectedAppID: *expectedAppID,
+			ExpectedTitle: *webviewTitle,
+		})
+	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -186,34 +203,33 @@ func runLaunch(args []string, stdout io.Writer) error {
 	response := launchResponse{
 		LaunchID:            launchID,
 		PID:                 cmd.Process.Pid,
-		Status:              "launched_without_surface",
+		Status:              launchStatusLaunchedWithoutSurface,
 		SessionTokenPresent: *sessionToken != "",
 		AuditCorrelationID:  *auditCorrelationID,
 		OutputName:          *outputName,
 	}
 	if *waitSurface {
 		timeout := time.Duration(*waitTimeoutMs) * time.Millisecond
-		surface, ok, err := waitForSurface(launchSurfaceMatch{
+		observation, err := waitForSurface(launchSurfaceMatch{
 			RootPID:       cmd.Process.Pid,
 			StartedAt:     startedAt,
 			ExpectedAppID: *expectedAppID,
 			ExpectedTitle: *webviewTitle,
+			ReusableIDs:   reusableIDs,
 		}, timeout, done)
 		if err != nil {
-			response.Status = "failed"
+			response.Status = launchStatusFailed
 			_ = json.NewEncoder(stdout).Encode(response)
 			return err
 		}
-		if ok {
-			response.Status = "launched"
-			response.SurfaceID = surface.Surface.ID
+		response.Status = observation.Status
+		if observation.Surface.Surface.ID != "" {
+			response.SurfaceID = observation.Surface.Surface.ID
 			response.Surface = &launchSurfaceEnvelope{Surface: launchSurfaceIdentity{
-				ID:    surface.Surface.ID,
-				AppID: surface.Surface.AppID,
-				Title: surface.Surface.Title,
+				ID:    observation.Surface.Surface.ID,
+				AppID: observation.Surface.Surface.AppID,
+				Title: observation.Surface.Surface.Title,
 			}}
-		} else {
-			response.Status = "timed_out"
 		}
 	}
 	return json.NewEncoder(stdout).Encode(response)
@@ -698,61 +714,118 @@ type launchSurfaceMatch struct {
 	StartedAt     time.Time
 	ExpectedAppID string
 	ExpectedTitle string
+	ReusableIDs   map[string]bool
 }
 
-func waitForSurface(match launchSurfaceMatch, timeout time.Duration, done <-chan error) (trackedSurface, bool, error) {
+type launchSurfaceObservation struct {
+	Surface trackedSurface
+	Status  string
+}
+
+func waitForSurface(match launchSurfaceMatch, timeout time.Duration, done <-chan error) (launchSurfaceObservation, error) {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	grace := timeout / 2
+	if grace > 3*time.Second {
+		grace = 3 * time.Second
+	}
+	if grace < 500*time.Millisecond {
+		grace = 500 * time.Millisecond
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+grace)
 	defer cancel()
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
+	primaryDeadline := time.Now().Add(timeout)
+	processDone := false
 
 	for {
-		surface, ok := findSurfaceForLaunch(match)
+		surface, status, ok := findSurfaceForLaunch(match, time.Now().After(primaryDeadline))
 		if ok {
-			return surface, true, nil
+			return launchSurfaceObservation{Surface: surface, Status: status}, nil
 		}
 		select {
 		case err := <-done:
 			if err != nil {
-				return trackedSurface{}, false, err
+				return launchSurfaceObservation{Status: launchStatusFailed}, err
 			}
-			return trackedSurface{}, false, nil
+			processDone = true
 		case <-ctx.Done():
-			return trackedSurface{}, false, nil
+			if processDone {
+				return launchSurfaceObservation{Status: launchStatusTimedOutNoSurface}, nil
+			}
+			return launchSurfaceObservation{Status: launchStatusTimedOutNoSurface}, nil
 		case <-ticker.C:
 		}
 	}
 }
 
-func findSurfaceForLaunch(match launchSurfaceMatch) (trackedSurface, bool) {
+func reusableSurfaceIDs(match launchSurfaceMatch) map[string]bool {
+	if match.ExpectedAppID == "" && match.ExpectedTitle == "" {
+		return nil
+	}
 	surfaces, err := listSurfacesFunc()
 	if err != nil {
-		return trackedSurface{}, false
+		return nil
+	}
+	ids := map[string]bool{}
+	for _, surface := range surfaces {
+		if surface.Surface.ID == "" || !surfaceVisible(surface) {
+			continue
+		}
+		if launchHintMatches(surface, match) {
+			ids[surface.Surface.ID] = true
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
+func findSurfaceForLaunch(match launchSurfaceMatch, afterPrimaryTimeout bool) (trackedSurface, string, bool) {
+	surfaces, err := listSurfacesFunc()
+	if err != nil {
+		return trackedSurface{}, "", false
 	}
 	for _, surface := range surfaces {
-		if surface.Surface.ID == "" || surface.Client.PID <= 0 {
+		if surface.Surface.ID == "" {
 			continue
 		}
-		if !surface.Mapped && !surface.Visible && !surface.Surface.Visible {
+		if !surfaceVisible(surface) {
 			continue
 		}
-		if !surface.UpdatedAt.IsZero() && surface.UpdatedAt.Before(match.StartedAt.Add(-500*time.Millisecond)) {
+		if match.ReusableIDs[surface.Surface.ID] && launchHintMatches(surface, match) {
+			return surface, launchStatusReusedExistingWindow, true
+		}
+		recent := surface.UpdatedAt.IsZero() || !surface.UpdatedAt.Before(match.StartedAt.Add(-500*time.Millisecond))
+		if !recent {
 			continue
 		}
-		if surface.Client.PID == match.RootPID || processDescendsFrom(surface.Client.PID, match.RootPID) {
-			return surface, true
+		status := launchStatusLaunched
+		if afterPrimaryTimeout {
+			status = launchStatusSurfaceObservedAfterTimeout
 		}
-		if match.ExpectedAppID != "" && surface.Surface.AppID == match.ExpectedAppID {
-			return surface, true
+		if surface.Client.PID > 0 && (surface.Client.PID == match.RootPID || processDescendsFrom(surface.Client.PID, match.RootPID)) {
+			return surface, status, true
 		}
-		if match.ExpectedTitle != "" && surface.Surface.Title == match.ExpectedTitle {
-			return surface, true
+		if launchHintMatches(surface, match) {
+			return surface, status, true
 		}
 	}
-	return trackedSurface{}, false
+	return trackedSurface{}, "", false
+}
+
+func surfaceVisible(surface trackedSurface) bool {
+	return surface.Mapped || surface.Visible || surface.Surface.Visible
+}
+
+func launchHintMatches(surface trackedSurface, match launchSurfaceMatch) bool {
+	if match.ExpectedAppID != "" && surface.Surface.AppID == match.ExpectedAppID {
+		return true
+	}
+	return match.ExpectedTitle != "" && surface.Surface.Title == match.ExpectedTitle
 }
 
 func listSurfaces() ([]trackedSurface, error) {

@@ -582,8 +582,10 @@ func processExists(pid int) bool {
 }
 
 type compositorctlLaunchResponse struct {
-	LaunchID string `json:"launch_id"`
-	Surface  struct {
+	LaunchID  string `json:"launch_id"`
+	SurfaceID string `json:"surface_id"`
+	Status    string `json:"status"`
+	Surface   struct {
 		Surface struct {
 			ID string `json:"id"`
 		} `json:"surface"`
@@ -598,10 +600,18 @@ func decodeCompositorctlLaunch(payload []byte) (catalogroute.LaunchResult, error
 	if response.LaunchID == "" {
 		return catalogroute.LaunchResult{}, fmt.Errorf("compositorctl launch missing launch_id")
 	}
+	surfaceID := response.SurfaceID
+	if surfaceID == "" {
+		surfaceID = response.Surface.Surface.ID
+	}
+	status := response.Status
+	if status == "" {
+		status = "launched"
+	}
 	return catalogroute.LaunchResult{
 		LaunchID:  response.LaunchID,
-		SurfaceID: response.Surface.Surface.ID,
-		Status:    "launched",
+		SurfaceID: surfaceID,
+		Status:    status,
 	}, nil
 }
 

@@ -516,6 +516,39 @@ POST /api/surfaces/action {"surfaceId":"view-58","action":"maximize"}
 POST /api/surfaces/action {"surfaceId":"view-58","action":"minimize"}
 ```
 
+## 2026-07-06 Task 4451 Launch Completion Classification
+
+Installed-service validation rebuilt `/home/agent/.local/bin/agora-de-shellui`
+and `/home/agent/.local/bin/agora-de-compositorctl`, then restarted the user
+shell services.
+
+`POST /api/catalog/launch {"appId":"firefox.desktop"}` first returned
+`status: launched`, `surfaceId: view-63`. A second Firefox launch, while the
+existing Firefox surface was visible, returned:
+
+```json
+{
+  "appId": "firefox.desktop",
+  "launchId": "launch-1783346814410396899",
+  "surfaceId": "view-63",
+  "status": "reused_existing_window"
+}
+```
+
+This proves browser-style process reuse no longer appears as a generic timeout.
+The true no-window path remains classified:
+
+```bash
+agora-de-compositorctl launch \
+  --arg /bin/true \
+  --session-token task-4451-nosurface \
+  --audit-correlation-id task-4451-nosurface \
+  --wait-surface \
+  --wait-timeout-ms 100
+```
+
+returned `status: timed_out_no_surface` and no `surface_id`.
+
 - `AGORA_DE_LIVE_SYSTEMD_UNITS`
 - `AGORA_DE_LIVE_SOCKETS`
 - `AGORA_DE_LIVE_CAPTURE_JSON`

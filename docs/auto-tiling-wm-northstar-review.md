@@ -36,7 +36,7 @@ Recent commits and evidence:
 | Agent controls expose stable ids, labels, app ids, bounds, zone membership, focus order, results, and recovery | Pass | `/api/layout`, `/api/surfaces`, compositorctl, overlay labels, and recovery helpers cover the current single-workspace model. |
 | Visual evidence includes always-available non-occluding overlay/bounds model | Pass | Native overlay is opt-in but installed and proven non-occluding; default desktop remains usable with overlay disabled. |
 | Theming/presentation remains centralized and separate from WM plumbing | Pass | Theme tokens and docs are centralized; WM plumbing does not own visual styling. |
-| Live harnesses prove non-overlap, placement, focus/order, controls, cleanup, capture, restart/recovery | Pass with known launch caveat | Auto-tiling, daily workflow, overlay, native launch, planner, and recovery checks exist. Firefox can produce a visible surface after a launch timeout, which needs launch lifecycle cleanup for agent reliability. |
+| Live harnesses prove non-overlap, placement, focus/order, controls, cleanup, capture, restart/recovery | Pass | Auto-tiling, daily workflow, overlay, native launch, planner, and recovery checks exist. Launch completion now distinguishes delayed surfaces, reused existing windows, and true no-surface timeouts. |
 | Failure handling is classified and observable | Pass | Current harnesses distinguish launch, visibility, planner mismatch, backend placement, occlusion, focus/order, shell action, agent action, overlay, capture, restart, cleanup, stale, unsupported, and unavailable states. |
 | Documentation records user model, agent model, backend boundary, deployment, and evidence | Pass with install rehearsal gap | Docs are present, but the non-agora-os existing-Linux install path still needs rehearsal. |
 
@@ -50,12 +50,7 @@ Recent commits and evidence:
    The current single `workspace-1` model is deterministic and useful, but the
    northstar names workspace operations as part of the target WM behavior.
 
-3. Native launch completion semantics are still too coarse for apps that reuse
-   an existing process or create a window after the shell request times out.
-   Firefox was observed in task 4422 evidence as producing a mapped visible
-   surface even after a `timed_out` launch response.
-
-5. Final closeout should rerun the full installed-service evidence suite after
+3. Final closeout should rerun the full installed-service evidence suite after
    the above gaps are either implemented or explicitly scoped out.
 
 ## Next Decision

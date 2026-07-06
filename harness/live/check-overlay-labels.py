@@ -11,6 +11,7 @@ import urllib.request
 
 
 OLD_COMPOSITORCTL = pathlib.Path("/usr/local/bin/compositorctl")
+SUCCESSFUL_LAUNCH_STATUSES = {"launched", "surface_observed_after_timeout", "reused_existing_window"}
 
 
 def main() -> int:
@@ -87,18 +88,12 @@ def main() -> int:
             existing_surface_ids = surface_ids_for_app(args.base_url, expected_app_id)
             launch = post_json(args.base_url + "/api/catalog/launch", {"appId": app_id})
             surface_id = launch.get("surfaceId") or ""
-            if launch.get("status") != "launched" or not surface_id:
-                recovered_surface = wait_for_new_surface(
-                    args.base_url,
-                    expected_app_id,
-                    existing_surface_ids,
-                    args.timeout_seconds,
-                )
+            if not surface_id and launch.get("status") == "timed_out_no_surface":
+                recovered_surface = wait_for_new_surface(args.base_url, expected_app_id, existing_surface_ids, min(args.timeout_seconds, 2))
                 if recovered_surface:
-                    surface_id = recovered_surface.get("id") or ""
-                    launch["status"] = "surface_observed_after_timeout"
-                    launch["surfaceId"] = surface_id
-            if not surface_id or launch.get("status") not in {"launched", "surface_observed_after_timeout"}:
+                    checks.append(failed("launch", "launch API returned timed_out_no_surface even though a matching surface appeared", appId=app_id, response=launch, recoveredSurfaceId=recovered_surface.get("id") or ""))
+                    return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, focus_sequence, latest_layout, checked_at)
+            if not surface_id or launch.get("status") not in SUCCESSFUL_LAUNCH_STATUSES:
                 checks.append(failed("launch", f"unexpected launch response for {app_id!r}: {launch}", appId=app_id))
                 return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, focus_sequence, latest_layout, checked_at)
             launched.append({"appId": app_id, "expectedAppId": expected_app_id, "surfaceId": surface_id})

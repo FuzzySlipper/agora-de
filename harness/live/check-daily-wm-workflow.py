@@ -13,6 +13,7 @@ SCHEMA = "agora-de.daily-wm-workflow-live.v1"
 SCENARIO = "den-k8-daily-wm-workflow-visible"
 OLD_COMPOSITORCTL = pathlib.Path("/usr/local/bin/compositorctl")
 PANEL_APP_IDS = {"io.agorade.ShellLauncher", "io.agorade.ShellStatus", "io.agorade.ShellOverlay"}
+SUCCESSFUL_LAUNCH_STATUSES = {"launched", "surface_observed_after_timeout", "reused_existing_window"}
 
 
 def main() -> int:
@@ -350,7 +351,7 @@ def exercise_launcher_and_status(structured, base_url: str, timeout_seconds: flo
         launch = structured.post_json(base_url + "/api/catalog/launch", {"appId": app_id})
         surface_id = launch.get("surfaceId") or ""
         events.append({"action": "launchPanel", "appId": app_id, "surfaceId": surface_id, "response": launch})
-        if launch.get("status") != "launched" or not surface_id:
+        if launch.get("status") not in SUCCESSFUL_LAUNCH_STATUSES or not surface_id:
             failures.append({"appId": app_id, "reason": "launch_failed", "response": launch})
             continue
         surface = structured.wait_for_surface(base_url, surface_id, expected_app_id, timeout_seconds)

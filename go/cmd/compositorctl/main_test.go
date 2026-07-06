@@ -185,7 +185,7 @@ func TestRunLaunchWaitsForExpectedAppIDWhenWebKitPIDDiffers(t *testing.T) {
 		return []trackedSurface{surface}, nil
 	}
 
-	surface, ok, err := waitForSurface(launchSurfaceMatch{
+	observation, err := waitForSurface(launchSurfaceMatch{
 		RootPID:       123456,
 		StartedAt:     time.Now().Add(-time.Second),
 		ExpectedAppID: "io.agorade.ShellStatus",
@@ -194,8 +194,72 @@ func TestRunLaunchWaitsForExpectedAppIDWhenWebKitPIDDiffers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("waitForSurface error = %v", err)
 	}
-	if !ok || surface.Surface.ID != "view-webkit" {
-		t.Fatalf("surface = %+v ok=%v, want view-webkit", surface, ok)
+	if observation.Status != "launched" || observation.Surface.Surface.ID != "view-webkit" {
+		t.Fatalf("observation = %+v, want launched view-webkit", observation)
+	}
+}
+
+func TestRunLaunchClassifiesReusedExistingWindow(t *testing.T) {
+	oldListSurfaces := listSurfacesFunc
+	t.Cleanup(func() { listSurfacesFunc = oldListSurfaces })
+	startedAt := time.Now()
+	listSurfacesFunc = func() ([]trackedSurface, error) {
+		var surface trackedSurface
+		surface.Surface.ID = "view-firefox"
+		surface.Surface.AppID = "firefox"
+		surface.Surface.Title = "Mozilla Firefox"
+		surface.Surface.Visible = true
+		surface.Client.PID = 999999
+		surface.Mapped = true
+		surface.Visible = true
+		surface.UpdatedAt = startedAt.Add(-10 * time.Second)
+		return []trackedSurface{surface}, nil
+	}
+
+	match := launchSurfaceMatch{
+		RootPID:       123456,
+		StartedAt:     startedAt,
+		ExpectedAppID: "firefox",
+		ReusableIDs:   reusableSurfaceIDs(launchSurfaceMatch{ExpectedAppID: "firefox"}),
+	}
+	observation, err := waitForSurface(match, 50*time.Millisecond, closedDone(nil))
+	if err != nil {
+		t.Fatalf("waitForSurface error = %v", err)
+	}
+	if observation.Status != "reused_existing_window" || observation.Surface.Surface.ID != "view-firefox" {
+		t.Fatalf("observation = %+v, want reused existing Firefox", observation)
+	}
+}
+
+func TestRunLaunchClassifiesSurfaceObservedAfterTimeout(t *testing.T) {
+	oldListSurfaces := listSurfacesFunc
+	t.Cleanup(func() { listSurfacesFunc = oldListSurfaces })
+	startedAt := time.Now()
+	listSurfacesFunc = func() ([]trackedSurface, error) {
+		if time.Since(startedAt) < 120*time.Millisecond {
+			return nil, nil
+		}
+		var surface trackedSurface
+		surface.Surface.ID = "view-slow"
+		surface.Surface.AppID = "slow.app"
+		surface.Surface.Visible = true
+		surface.Client.PID = 999999
+		surface.Mapped = true
+		surface.Visible = true
+		surface.UpdatedAt = time.Now()
+		return []trackedSurface{surface}, nil
+	}
+
+	observation, err := waitForSurface(launchSurfaceMatch{
+		RootPID:       123456,
+		StartedAt:     startedAt,
+		ExpectedAppID: "slow.app",
+	}, 50*time.Millisecond, make(chan error))
+	if err != nil {
+		t.Fatalf("waitForSurface error = %v", err)
+	}
+	if observation.Status != "surface_observed_after_timeout" || observation.Surface.Surface.ID != "view-slow" {
+		t.Fatalf("observation = %+v, want post-timeout slow surface", observation)
 	}
 }
 
@@ -532,6 +596,12 @@ func atoi(value string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+func closedDone(err error) <-chan error {
+	done := make(chan error, 1)
+	done <- err
+	return done
 }
 
 func serveControlSocket(t *testing.T, handle func(controlRequest) controlResponse) *[]controlRequest {

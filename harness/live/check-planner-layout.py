@@ -9,6 +9,7 @@ import time
 
 
 OLD_COMPOSITORCTL = pathlib.Path("/usr/local/bin/compositorctl")
+SUCCESSFUL_LAUNCH_STATUSES = {"launched", "surface_observed_after_timeout", "reused_existing_window"}
 
 
 def main() -> int:
@@ -68,7 +69,7 @@ def main() -> int:
         for app_id, expected_app_id in zip(app_ids, expected_app_ids):
             launch = structured.post_json(args.base_url + "/api/catalog/launch", {"appId": app_id})
             surface_id = launch.get("surfaceId") or ""
-            if launch.get("status") != "launched" or not surface_id:
+            if launch.get("status") not in SUCCESSFUL_LAUNCH_STATUSES or not surface_id:
                 checks.append(failed("launch", f"unexpected launch response for {app_id!r}: {launch}", appId=app_id))
                 return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, latest_layout, planner_summary, checked_at)
             launched.append({"appId": app_id, "expectedAppId": expected_app_id, "surfaceId": surface_id})
