@@ -819,7 +819,7 @@ func (bridge *Bridge) geometryForZone(surfaceID string, zoneID string, action st
 	if width <= 0 || height <= 0 {
 		return SurfaceGeometry{}, classifiedError{class: ErrorBackendUnsupported, message: "output geometry is not available for zone placement"}
 	}
-	height -= bridge.reservedBottomHeightLocked(output.Name, width)
+	height -= bridge.reservedBottomHeightLocked(output.Name, width, height)
 	if height <= 0 {
 		return SurfaceGeometry{}, classifiedError{class: ErrorBackendUnsupported, message: "output work area is empty after chrome reservation"}
 	}
@@ -830,7 +830,7 @@ func (bridge *Bridge) geometryForZone(surfaceID string, zoneID string, action st
 	return SurfaceGeometry{X: output.PhysicalX + leftWidth, Y: output.PhysicalY, Width: width - leftWidth, Height: height}, nil
 }
 
-func (bridge *Bridge) reservedBottomHeightLocked(outputName string, outputWidth int) int {
+func (bridge *Bridge) reservedBottomHeightLocked(outputName string, outputWidth int, outputHeight int) int {
 	reserved := 0
 	for _, surface := range bridge.surfaces {
 		if surface.Surface.SurfaceKind != SurfaceKindLayer || firstNonEmpty(surface.OutputID, surface.Surface.OutputID) != outputName {
@@ -850,7 +850,35 @@ func (bridge *Bridge) reservedBottomHeightLocked(outputName string, outputWidth 
 			reserved = geometry.Height
 		}
 	}
+	if reserved == 0 || bridge.hasLayerShellWorkAreaReadbackLocked(outputName, outputWidth, outputHeight) {
+		return 0
+	}
 	return reserved
+}
+
+func (bridge *Bridge) hasLayerShellWorkAreaReadbackLocked(outputName string, outputWidth int, outputHeight int) bool {
+	if outputHeight <= 0 {
+		return false
+	}
+	for _, surface := range bridge.surfaces {
+		if surface.Surface.SurfaceKind != SurfaceKindLayer || firstNonEmpty(surface.OutputID, surface.Surface.OutputID) != outputName {
+			continue
+		}
+		if firstNonEmpty(surface.Surface.Role, surface.LayoutRole) == "panel" {
+			continue
+		}
+		geometry := firstGeometry(surface)
+		if geometry == nil || geometry.Height <= 0 {
+			continue
+		}
+		if outputWidth > 0 && geometry.Width > 0 && geometry.Width < outputWidth/2 {
+			continue
+		}
+		if geometry.Height >= outputHeight {
+			return true
+		}
+	}
+	return false
 }
 
 func (bridge *Bridge) updateBackendLayoutSurfaceLocked(tracked TrackedSurface) {

@@ -262,7 +262,7 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
-	height -= bridge.reservedBottomHeightLocked(output.Name, width)
+	height -= bridge.reservedBottomHeightLocked(output.Name, width, height)
 	if height <= 0 {
 		return nil
 	}

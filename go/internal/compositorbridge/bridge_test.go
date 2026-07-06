@@ -507,7 +507,7 @@ func TestAssignSurfaceZonePlacesSurfaceThroughPlugin(t *testing.T) {
 		t.Fatalf("place command = %+v", command)
 	}
 	geometry, ok := command["geometry"].(map[string]any)
-	if !ok || int(geometry["x"].(float64)) != 1280 || int(geometry["width"].(float64)) != 1280 || int(geometry["height"].(float64)) != 1248 {
+	if !ok || int(geometry["x"].(float64)) != 1280 || int(geometry["width"].(float64)) != 1280 || int(geometry["height"].(float64)) != 1344 {
 		t.Fatalf("place geometry = %+v", command["geometry"])
 	}
 	if err := json.NewEncoder(pluginClient).Encode(map[string]any{
@@ -681,7 +681,7 @@ func TestAutoLayoutPlacesMappedSurfacesAndRelayoutsAfterUnmap(t *testing.T) {
 			OutputID:    "HDMI-A-1",
 		},
 	})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 800}, SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 800})
 
 	bridge.handleSurfaceEvent(pluginEvent{
 		Type:  PluginSurfaceEvent,
@@ -695,8 +695,8 @@ func TestAutoLayoutPlacesMappedSurfacesAndRelayoutsAfterUnmap(t *testing.T) {
 			OutputID:    "HDMI-A-1",
 		},
 	})
-	readPlaceAndAckNoWait(t, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 600, Y: 0, Width: 600, Height: 760}, SurfaceGeometry{X: 610, Y: 10, Width: 580, Height: 740})
+	readPlaceAndAckNoWait(t, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 800}, SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 800})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 600, Y: 0, Width: 600, Height: 800}, SurfaceGeometry{X: 610, Y: 10, Width: 580, Height: 780})
 
 	layout := bridge.GetLayout().Layout
 	if layout.Mode != LayoutModeZones || len(layout.Surfaces) != 2 {
@@ -717,12 +717,56 @@ func TestAutoLayoutPlacesMappedSurfacesAndRelayoutsAfterUnmap(t *testing.T) {
 		Event:   EventUnmapped,
 		Surface: CompositorSurface{ID: "view-b"},
 	})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 760})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 800}, SurfaceGeometry{X: 0, Y: 0, Width: 1200, Height: 800})
 
 	layout = bridge.GetLayout().Layout
 	if len(layout.Surfaces) != 1 || layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[0].Geometry.Width != 1200 {
 		t.Fatalf("layout after auto unmap = %+v", layout)
 	}
+}
+
+func TestReservedBottomUsesLayerShellWorkAreaReadback(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "layer-panel",
+			SurfaceKind: SurfaceKindLayer,
+			Role:        "panel",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 1200, Height: 40},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+
+	bridge.mu.RLock()
+	if got := bridge.reservedBottomHeightLocked("HDMI-A-1", 1200, 840); got != 40 {
+		bridge.mu.RUnlock()
+		t.Fatalf("panel-only reservation = %d, want 40", got)
+	}
+	bridge.mu.RUnlock()
+
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "layer-background",
+			SurfaceKind: SurfaceKindLayer,
+			Role:        "background",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 1200, Height: 800},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+
+	bridge.mu.RLock()
+	if got := bridge.reservedBottomHeightLocked("HDMI-A-1", 1200, 800); got != 0 {
+		bridge.mu.RUnlock()
+		t.Fatalf("work-area readback reservation = %d, want 0", got)
+	}
+	bridge.mu.RUnlock()
 }
 
 func TestAutoLayoutKeepsStableOrderOnCompositorFocus(t *testing.T) {
