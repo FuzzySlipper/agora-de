@@ -96,6 +96,163 @@ func TestCloseSurfaceQueuesPluginMessage(t *testing.T) {
 	}
 }
 
+func TestSurfaceStateActionsRoundTripThroughPlugin(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		action     string
+		stateField string
+		call       func(*Bridge, SurfaceLayoutActionRequest) (LayoutActionResponse, error)
+	}{
+		{name: "maximize", action: "surface.maximize", stateField: "maximized", call: (*Bridge).MaximizeSurface},
+		{name: "minimize", action: "surface.minimize", stateField: "minimized", call: (*Bridge).MinimizeSurface},
+		{name: "fullscreen", action: "surface.fullscreen", stateField: "fullscreen", call: (*Bridge).FullscreenSurface},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bridge := New(Config{})
+			pluginClient, pluginServer := net.Pipe()
+			defer pluginClient.Close()
+			defer pluginServer.Close()
+			bridge.installPlugin(&pluginSession{conn: pluginServer, enc: json.NewEncoder(pluginServer)})
+			visible := true
+			bridge.handleSurfaceEvent(pluginEvent{
+				Type:    PluginSurfaceEvent,
+				Event:   EventMapped,
+				Surface: CompositorSurface{ID: "view-state", SurfaceKind: SurfaceKindXDG, Visible: &visible},
+			})
+
+			done := make(chan struct {
+				response LayoutActionResponse
+				err      error
+			}, 1)
+			go func() {
+				response, err := tc.call(bridge, SurfaceLayoutActionRequest{SurfaceID: "view-state", WaitTimeoutMs: 5000})
+				done <- struct {
+					response LayoutActionResponse
+					err      error
+				}{response: response, err: err}
+			}()
+
+			var command map[string]any
+			if err := json.NewDecoder(pluginClient).Decode(&command); err != nil {
+				t.Fatalf("decode state command: %v", err)
+			}
+			requestID, ok := command["request_id"].(string)
+			if !ok || requestID == "" {
+				t.Fatalf("state command missing request_id: %+v", command)
+			}
+			if command["type"] != PluginSetSurfaceState || command["surface_id"] != "view-state" || command[tc.stateField] != true {
+				t.Fatalf("state command = %+v", command)
+			}
+			for _, other := range []string{"fullscreen", "maximized", "minimized"} {
+				if other != tc.stateField && command[other] != nil {
+					t.Fatalf("state command set unrelated field %q: %+v", other, command)
+				}
+			}
+			bridge.handlePluginEvent(pluginEvent{Type: PluginSurfaceStateResponse, RequestID: requestID, SurfaceID: "view-state", OK: true})
+
+			select {
+			case result := <-done:
+				if result.err != nil {
+					t.Fatalf("%s: %v", tc.name, result.err)
+				}
+				if result.response.Action != tc.action || result.response.SurfaceID != "view-state" || result.response.Decision != DecisionAccepted || result.response.Surface == nil {
+					t.Fatalf("response = %+v", result.response)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for state response")
+			}
+		})
+	}
+}
+
+func TestSurfaceStateActionFailsFastWhenPluginDisconnects(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	defer pluginServer.Close()
+	session := &pluginSession{conn: pluginServer, enc: json.NewEncoder(pluginServer)}
+	bridge.installPlugin(session)
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventMapped,
+		Surface: CompositorSurface{ID: "view-state", SurfaceKind: SurfaceKindXDG, Visible: &visible},
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := bridge.FullscreenSurface(SurfaceLayoutActionRequest{SurfaceID: "view-state", WaitTimeoutMs: 5000})
+		done <- err
+	}()
+
+	var command map[string]any
+	if err := json.NewDecoder(pluginClient).Decode(&command); err != nil {
+		t.Fatalf("decode state command: %v", err)
+	}
+	if command["type"] != PluginSetSurfaceState || command["surface_id"] != "view-state" || command["fullscreen"] != true {
+		t.Fatalf("state command = %+v", command)
+	}
+	bridge.clearPlugin(session)
+
+	select {
+	case err := <-done:
+		if class, _ := classifyError(err); class != ErrorCompositorUnavailable {
+			t.Fatalf("state error = %v class=%s, want %s", err, class, ErrorCompositorUnavailable)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("state request waited after plugin disconnect")
+	}
+}
+
+func TestMinimizeRestoreAllowsMinimizedInvisibleSurface(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	defer pluginServer.Close()
+	bridge.installPlugin(&pluginSession{conn: pluginServer, enc: json.NewEncoder(pluginServer)})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventMapped,
+		Surface: CompositorSurface{ID: "view-state", SurfaceKind: SurfaceKindXDG, Visible: &visible},
+	})
+	minimizedVisible := false
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventMinimized,
+		Surface: CompositorSurface{ID: "view-state", SurfaceKind: SurfaceKindXDG, Visible: &minimizedVisible},
+	})
+
+	enabled := false
+	done := make(chan error, 1)
+	go func() {
+		_, err := bridge.MinimizeSurface(SurfaceLayoutActionRequest{SurfaceID: "view-state", Enabled: &enabled, WaitTimeoutMs: 5000})
+		done <- err
+	}()
+
+	var command map[string]any
+	if err := json.NewDecoder(pluginClient).Decode(&command); err != nil {
+		t.Fatalf("decode restore command: %v", err)
+	}
+	requestID, ok := command["request_id"].(string)
+	if !ok || requestID == "" {
+		t.Fatalf("state command missing request_id: %+v", command)
+	}
+	if command["type"] != PluginSetSurfaceState || command["surface_id"] != "view-state" || command["minimized"] != false {
+		t.Fatalf("restore command = %+v", command)
+	}
+	bridge.handlePluginEvent(pluginEvent{Type: PluginSurfaceStateResponse, RequestID: requestID, SurfaceID: "view-state", OK: true})
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("restore minimize: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for restore response")
+	}
+}
+
 func TestPlaceSurfaceFailsFastWhenPluginDisconnects(t *testing.T) {
 	bridge := New(Config{})
 	pluginClient, pluginServer := net.Pipe()

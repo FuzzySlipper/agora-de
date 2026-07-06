@@ -2433,6 +2433,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       <button class="wm-control" id="float-button" type="button">Float</button>
       <button class="wm-control" id="fullscreen-button" type="button">Full</button>
       <button class="wm-control" id="maximize-button" type="button">Max</button>
+      <button class="wm-control" id="minimize-button" type="button">Min</button>
       <button class="wm-control" id="close-focus-button" type="button">Close</button>
       <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
       <button class="wm-control" id="rule-button" type="button">Rule</button>
@@ -2456,7 +2457,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       feedback: {label: "", className: "", until: 0},
       surface: %q
     };
-    const unsupportedSurfaceActions = new Set(["fullscreen", "maximize"]);
+    const unsupportedSurfaceActions = new Set([]);
 
     function text(value, fallback) {
       const trimmed = String(value || "").trim();
@@ -2668,19 +2669,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         "float-button",
         "fullscreen-button",
         "maximize-button",
+        "minimize-button",
         "close-focus-button"
       ].forEach((id) => setControlDisabled(id, !hasTarget));
-      [
-        ["fullscreen-button", "Fullscreen is unsupported by the current compositor backend"],
-        ["maximize-button", "Maximize is unsupported by the current compositor backend"]
-      ].forEach(([id, title]) => {
-        const element = document.getElementById(id);
-        if (element) {
-          element.disabled = true;
-          element.setAttribute("aria-disabled", "true");
-          element.title = title;
-        }
-      });
       const targetLabel = document.getElementById("target-label");
       if (targetLabel) {
         const targetName = target ? text(target.title, text(target.appId, target.surfaceId)) : "no target";
@@ -2809,7 +2800,17 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         body: JSON.stringify(body)
       });
       if (!response.ok) {
-        throw new Error(path + " returned " + response.status);
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch (error) {
+          payload = {};
+        }
+        const message = payload.error || path + " returned " + response.status;
+        const error = new Error(message);
+        error.errorClass = payload.errorClass || "";
+        error.status = response.status;
+        throw error;
       }
       return response.json();
     }
@@ -3060,6 +3061,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     document.getElementById("float-button").addEventListener("click", toggleTargetFloating);
     document.getElementById("fullscreen-button").addEventListener("click", () => actOnTarget("fullscreen"));
     document.getElementById("maximize-button").addEventListener("click", () => actOnTarget("maximize"));
+    document.getElementById("minimize-button").addEventListener("click", () => actOnTarget("minimize"));
     document.getElementById("close-focus-button").addEventListener("click", () => actOnTarget("close"));
     document.getElementById("reset-layout-button").addEventListener("click", resetLayout);
     document.getElementById("rule-button").addEventListener("click", cycleLayoutRule);

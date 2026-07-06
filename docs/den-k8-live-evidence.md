@@ -372,7 +372,7 @@ three or more native work surfaces through the installed shell catalog path,
 uses `/api/layout/action` to select zones mode, waits for continuous
 `master_stack` auto-placement, checks backend-acknowledged geometry and
 non-overlap, verifies focus promotion/order, exercises shell controls for
-floating/tiling/fullscreen classification, exercises compositorctl agent
+floating/tiling and compositor state actions, exercises compositorctl agent
 controls, closes and relaunches a surface to prove recovery, verifies overlay
 label state, optionally captures the physical output, and cleans up all launched
 surfaces. Capture packets use `scenario: den-k8-auto-tiling-wm-visible`.
@@ -481,6 +481,41 @@ After installation, `systemctl cat compositor-bridge.service` should show
 `ExecStart=/usr/local/bin/agora-de-compositor-bridge`. The Wayfire plugin is
 still provided by the current Wayfire session and remains the active backend
 runtime dependency.
+
+## 2026-07-06 Task 4449 Compositor State Actions
+
+Installed-service validation used `/home/agent/.local/bin/agora-de-compositorctl`
+against the running den-k8 Wayfire session. `Alacritty.desktop` launched through
+`POST /api/catalog/launch` as `view-58`.
+
+The installed compositor bridge returned accepted compositor-backed responses
+for each state transition:
+
+```bash
+agora-de-compositorctl surface fullscreen --surface view-58 --enabled=true
+agora-de-compositorctl surface fullscreen --surface view-58 --enabled=false
+agora-de-compositorctl surface maximize --surface view-58 --enabled=true
+agora-de-compositorctl surface maximize --surface view-58 --enabled=false
+agora-de-compositorctl surface minimize --surface view-58 --enabled=true
+agora-de-compositorctl surface minimize --surface view-58 --enabled=false
+```
+
+Each command returned `decision: accepted` with
+`reason: state changed via compositor plugin`. The minimize restore path first
+exposed a real bridge bug: a minimized tracked surface could be non-visible and
+therefore rejected before `minimized=false` reached Wayfire. The bridge now
+allows `minimized=false` for tracked non-layer surfaces even when hidden, while
+stale/unmapped surfaces still fail as stale. Final readback showed `view-58`
+visible with `last_event: restored`.
+
+Shell API smoke also returned `status: accepted` for:
+
+```bash
+POST /api/surfaces/action {"surfaceId":"view-58","action":"fullscreen"}
+POST /api/surfaces/action {"surfaceId":"view-58","action":"maximize"}
+POST /api/surfaces/action {"surfaceId":"view-58","action":"minimize"}
+```
+
 - `AGORA_DE_LIVE_SYSTEMD_UNITS`
 - `AGORA_DE_LIVE_SOCKETS`
 - `AGORA_DE_LIVE_CAPTURE_JSON`

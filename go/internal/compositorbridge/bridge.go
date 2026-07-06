@@ -46,6 +46,8 @@ const (
 	PluginPlaceSurface         = "place_surface"
 	PluginPlaceResponse        = "place_response"
 	PluginCloseSurface         = "close_surface"
+	PluginSetSurfaceState      = "set_surface_state"
+	PluginSurfaceStateResponse = "surface_state_response"
 	PluginPolicyReplace        = "policy_replace"
 	PluginInputContext         = "input_context"
 	EventMapped                = "mapped"
@@ -53,6 +55,7 @@ const (
 	EventFocused               = "focused"
 	EventFrameDone             = "frame_done"
 	EventContentCommit         = "content_committed"
+	EventMinimized             = "minimized"
 	SurfaceKindLayer           = "layer_shell"
 	SurfaceKindXDG             = "xdg_view"
 	DecisionAccepted           = "accepted"
@@ -86,6 +89,9 @@ type Bridge struct {
 	placeSeq           uint64
 	placeWaiters       map[string]chan pluginResponse
 	placeWaiterSession map[string]uint64
+	stateSeq           uint64
+	stateWaiters       map[string]chan pluginResponse
+	stateWaiterSession map[string]uint64
 	captureSeq         uint64
 	layoutSeq          uint64
 	layoutMode         LayoutMode
@@ -112,6 +118,8 @@ func New(config Config) *Bridge {
 		focusWaiterSession: map[string]uint64{},
 		placeWaiters:       map[string]chan pluginResponse{},
 		placeWaiterSession: map[string]uint64{},
+		stateWaiters:       map[string]chan pluginResponse{},
+		stateWaiterSession: map[string]uint64{},
 		layoutMode:         settings.Mode,
 		layoutSettings:     settings,
 		layoutSettingsPath: config.LayoutSettingsPath,
@@ -629,15 +637,15 @@ func (bridge *Bridge) PromoteSurface(request SurfaceLayoutActionRequest) (Layout
 }
 
 func (bridge *Bridge) MaximizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
-	return bridge.unsupportedSurfaceLayoutAction("surface.maximize", request.SurfaceID)
+	return bridge.setSurfaceState(request, "surface.maximize", "maximized")
 }
 
 func (bridge *Bridge) MinimizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
-	return bridge.unsupportedSurfaceLayoutAction("surface.minimize", request.SurfaceID)
+	return bridge.setSurfaceState(request, "surface.minimize", "minimized")
 }
 
 func (bridge *Bridge) FullscreenSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
-	return bridge.unsupportedSurfaceLayoutAction("surface.fullscreen", request.SurfaceID)
+	return bridge.setSurfaceState(request, "surface.fullscreen", "fullscreen")
 }
 
 func (bridge *Bridge) ActivateWorkspace(request WorkspaceActionRequest) (LayoutActionResponse, error) {
@@ -688,6 +696,87 @@ func (bridge *Bridge) unsupportedSurfaceLayoutAction(action string, surfaceID st
 		Decision:  "unsupported",
 		Surface:   &surface,
 	}, classifiedError{class: ErrorBackendUnsupported, message: fmt.Sprintf("%s requires compositor backend geometry authority", action)}
+}
+
+func (bridge *Bridge) setSurfaceState(request SurfaceLayoutActionRequest, action string, stateField string) (LayoutActionResponse, error) {
+	enabled := true
+	if request.Enabled != nil {
+		enabled = *request.Enabled
+	}
+	surface, err := bridge.requireStateSurface(request.SurfaceID, action, stateField, enabled)
+	if err != nil {
+		return LayoutActionResponse{}, err
+	}
+	session, requestID, waiter, err := bridge.startStateWaiter(request.SurfaceID)
+	if err != nil {
+		return LayoutActionResponse{}, err
+	}
+	defer bridge.clearStateWaiter(requestID)
+
+	message := map[string]any{
+		"type":       PluginSetSurfaceState,
+		"request_id": requestID,
+		"surface_id": request.SurfaceID,
+		stateField:   enabled,
+	}
+	if err := bridge.sendPluginMessage(session, message); err != nil {
+		return LayoutActionResponse{}, err
+	}
+	timeout := time.Duration(request.WaitTimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	select {
+	case response := <-waiter:
+		if !response.OK {
+			message := response.Error
+			if message == "" {
+				message = action + " rejected by compositor plugin"
+			}
+			class := firstNonEmpty(response.ErrorClass, ErrorProtocol)
+			return LayoutActionResponse{}, classifiedError{class: class, message: message}
+		}
+	case <-time.After(timeout):
+		return LayoutActionResponse{}, classifiedError{class: ErrorFrameTimeout, message: action + " request timed out"}
+	}
+
+	bridge.mu.Lock()
+	if tracked, ok := bridge.surfaces[request.SurfaceID]; ok {
+		surface = tracked
+	}
+	layout := bridge.layoutLocked()
+	bridge.mu.Unlock()
+	return LayoutActionResponse{
+		Action:    action,
+		SurfaceID: request.SurfaceID,
+		Decision:  DecisionAccepted,
+		Reason:    "state changed via compositor plugin",
+		Layout:    &layout,
+		Surface:   &surface,
+	}, nil
+}
+
+func (bridge *Bridge) requireStateSurface(surfaceID string, action string, stateField string, enabled bool) (TrackedSurface, error) {
+	if surfaceID == "" {
+		return TrackedSurface{}, fmt.Errorf("surface_id is required")
+	}
+	bridge.mu.RLock()
+	surface, ok := bridge.surfaces[surfaceID]
+	_, stale := bridge.stale[surfaceID]
+	bridge.mu.RUnlock()
+	if !ok {
+		if stale {
+			return TrackedSurface{}, classifiedError{class: ErrorSurfaceStale, message: fmt.Sprintf("surface %s is unmapped/stale", surfaceID)}
+		}
+		return TrackedSurface{}, classifiedError{class: ErrorSurfaceNotFound, message: fmt.Sprintf("surface %s not found", surfaceID)}
+	}
+	if surface.Surface.SurfaceKind == SurfaceKindLayer {
+		return TrackedSurface{}, classifiedError{class: ErrorBackendUnsupported, message: fmt.Sprintf("surface %s is a layer-shell surface and cannot run %s as a work surface", surfaceID, action)}
+	}
+	if !surface.Visible && !(stateField == "minimized" && !enabled) {
+		return TrackedSurface{}, classifiedError{class: ErrorSurfaceStale, message: fmt.Sprintf("surface %s is not visible", surfaceID)}
+	}
+	return surface, nil
 }
 
 func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action string, geometry SurfaceGeometry, zoneID string, role SurfaceLayoutRole) (LayoutActionResponse, error) {
@@ -1131,6 +1220,8 @@ func (bridge *Bridge) handlePluginEvent(event pluginEvent) {
 		bridge.handleFocusResponse(event)
 	case PluginPlaceResponse:
 		bridge.handlePlaceResponse(event)
+	case PluginSurfaceStateResponse:
+		bridge.handleSurfaceStateResponse(event)
 	}
 }
 
@@ -1394,6 +1485,19 @@ func (bridge *Bridge) handlePlaceResponse(event pluginEvent) {
 	}
 	select {
 	case waiter <- pluginResponse{OK: event.OK, Error: event.Error, Geometry: cloneGeometry(event.Geometry)}:
+	default:
+	}
+}
+
+func (bridge *Bridge) handleSurfaceStateResponse(event pluginEvent) {
+	bridge.mu.RLock()
+	waiter := bridge.stateWaiters[event.RequestID]
+	bridge.mu.RUnlock()
+	if waiter == nil {
+		return
+	}
+	select {
+	case waiter <- pluginResponse{OK: event.OK, Error: event.Error}:
 	default:
 	}
 }
@@ -1809,6 +1913,27 @@ func (bridge *Bridge) clearPlaceWaiter(requestID string) {
 	delete(bridge.placeWaiterSession, requestID)
 }
 
+func (bridge *Bridge) startStateWaiter(surfaceID string) (*pluginSession, string, chan pluginResponse, error) {
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	if bridge.plugin == nil {
+		return nil, "", nil, classifiedError{class: ErrorCompositorUnavailable, message: "no plugin connected"}
+	}
+	bridge.stateSeq++
+	requestID := fmt.Sprintf("state-%d-%d", time.Now().UnixNano(), bridge.stateSeq)
+	waiter := make(chan pluginResponse, 1)
+	bridge.stateWaiters[requestID] = waiter
+	bridge.stateWaiterSession[requestID] = bridge.plugin.id
+	return bridge.plugin, requestID, waiter, nil
+}
+
+func (bridge *Bridge) clearStateWaiter(requestID string) {
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	delete(bridge.stateWaiters, requestID)
+	delete(bridge.stateWaiterSession, requestID)
+}
+
 func (bridge *Bridge) installPlugin(session *pluginSession) *pluginSession {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
@@ -1851,6 +1976,17 @@ func (bridge *Bridge) failPluginWaitersLocked(sessionID uint64, message string) 
 		}
 		delete(bridge.placeWaiters, requestID)
 		delete(bridge.placeWaiterSession, requestID)
+	}
+	for requestID, waiter := range bridge.stateWaiters {
+		if bridge.stateWaiterSession[requestID] != sessionID {
+			continue
+		}
+		select {
+		case waiter <- response:
+		default:
+		}
+		delete(bridge.stateWaiters, requestID)
+		delete(bridge.stateWaiterSession, requestID)
 	}
 }
 

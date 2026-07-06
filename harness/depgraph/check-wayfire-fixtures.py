@@ -15,6 +15,8 @@ KNOWN_TYPES = {
     "close_surfaces_by_uid",
     "place_surface",
     "place_response",
+    "set_surface_state",
+    "surface_state_response",
 }
 
 PROBE_SCHEMA = "agora-de.wayfire-layout-authority-probe.v1"

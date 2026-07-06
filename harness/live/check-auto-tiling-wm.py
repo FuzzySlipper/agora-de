@@ -178,6 +178,7 @@ def check_shell_controls_route(base_url: str) -> dict:
         'id="float-button"',
         'id="fullscreen-button"',
         'id="maximize-button"',
+        'id="minimize-button"',
         'id="close-focus-button"',
         'id="reset-layout-button"',
         'id="layout-rule-label"',
@@ -378,12 +379,13 @@ def exercise_shell_escape_hatches(base_url: str, launched: list[dict], timeout_s
         return failed("shell-action", "tile action did not restore layout participation", surfaceId=target["surfaceId"]), events, {}
     layout = retiled_layout
 
-    status, payload = post_json_result(base_url + "/api/surfaces/action", {"action": "fullscreen", "surfaceId": target["surfaceId"]})
-    if status < 300 or payload.get("errorClass") == "backend_unsupported":
-        events.append({"action": "fullscreen", "status": status, "response": payload})
-    else:
-        return failed("shell-action", "fullscreen escape hatch failed without backend classification", status=status, payload=payload), events, layout
-    return passed("shell-action", "shell controls exercised floating, tiling, and fullscreen classification", events=events), events, layout
+    for action in ["fullscreen", "maximize", "minimize"]:
+        status, payload = post_json_result(base_url + "/api/surfaces/action", {"action": action, "surfaceId": target["surfaceId"]})
+        if status < 300 or payload.get("errorClass") == "backend_unsupported":
+            events.append({"action": action, "status": status, "response": payload})
+            continue
+        return failed("shell-action", action + " action failed without backend classification", status=status, payload=payload), events, layout
+    return passed("shell-action", "shell controls exercised floating, tiling, and compositor state actions", events=events), events, layout
 
 
 def wait_for_participation(base_url: str, surface_id: str, participation: str, timeout_seconds: float) -> dict | None:

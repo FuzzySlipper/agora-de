@@ -10,16 +10,18 @@ import (
 type MessageType string
 
 const (
-	MessageTypeSurfaceEvent       MessageType = "surface_event"
-	MessageTypeLayoutState        MessageType = "layout_state"
-	MessageTypePolicyReplace      MessageType = "policy_replace"
-	MessageTypePolicyUpsert       MessageType = "policy_upsert"
-	MessageTypePolicyRemove       MessageType = "policy_remove"
-	MessageTypeInputContext       MessageType = "input_context"
-	MessageTypeCloseSurface       MessageType = "close_surface"
-	MessageTypeCloseSurfacesByUID MessageType = "close_surfaces_by_uid"
-	MessageTypePlaceSurface       MessageType = "place_surface"
-	MessageTypePlaceResponse      MessageType = "place_response"
+	MessageTypeSurfaceEvent         MessageType = "surface_event"
+	MessageTypeLayoutState          MessageType = "layout_state"
+	MessageTypePolicyReplace        MessageType = "policy_replace"
+	MessageTypePolicyUpsert         MessageType = "policy_upsert"
+	MessageTypePolicyRemove         MessageType = "policy_remove"
+	MessageTypeInputContext         MessageType = "input_context"
+	MessageTypeCloseSurface         MessageType = "close_surface"
+	MessageTypeCloseSurfacesByUID   MessageType = "close_surfaces_by_uid"
+	MessageTypePlaceSurface         MessageType = "place_surface"
+	MessageTypePlaceResponse        MessageType = "place_response"
+	MessageTypeSetSurfaceState      MessageType = "set_surface_state"
+	MessageTypeSurfaceStateResponse MessageType = "surface_state_response"
 )
 
 type SurfaceEventKind string
@@ -97,6 +99,15 @@ type CloseSurfacesByUIDMessage struct {
 	OwnerUID int         `json:"owner_uid"`
 }
 
+type SetSurfaceStateMessage struct {
+	Type       MessageType `json:"type"`
+	RequestID  string      `json:"request_id"`
+	SurfaceID  string      `json:"surface_id"`
+	Fullscreen *bool       `json:"fullscreen,omitempty"`
+	Maximized  *bool       `json:"maximized,omitempty"`
+	Minimized  *bool       `json:"minimized,omitempty"`
+}
+
 func DecodeLine(line []byte) (MessageType, error) {
 	var envelope struct {
 		Type MessageType `json:"type"`
@@ -141,7 +152,9 @@ func knownType(messageType MessageType) bool {
 		MessageTypeCloseSurface,
 		MessageTypeCloseSurfacesByUID,
 		MessageTypePlaceSurface,
-		MessageTypePlaceResponse:
+		MessageTypePlaceResponse,
+		MessageTypeSetSurfaceState,
+		MessageTypeSurfaceStateResponse:
 		return true
 	default:
 		return false

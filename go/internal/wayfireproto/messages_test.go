@@ -55,6 +55,7 @@ func TestDecodeBridgeCommandFixture(t *testing.T) {
 		MessageTypeCloseSurface,
 		MessageTypeCloseSurfacesByUID,
 		MessageTypePlaceSurface,
+		MessageTypeSetSurfaceState,
 	}
 	if len(types) != len(want) {
 		t.Fatalf("decoded %d messages, want %d", len(types), len(want))
@@ -97,6 +98,16 @@ func TestDecodeLayoutActionEventFixture(t *testing.T) {
 
 	if len(types) != 1 || types[0] != MessageTypePlaceResponse {
 		t.Fatalf("decoded message types = %+v, want [%s]", types, MessageTypePlaceResponse)
+	}
+}
+
+func TestDecodeSurfaceStateResponseFixture(t *testing.T) {
+	messageType, err := DecodeLine([]byte(`{"type":"surface_state_response","request_id":"state-1","surface_id":"view-42","ok":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != MessageTypeSurfaceStateResponse {
+		t.Fatalf("message type = %q, want %q", messageType, MessageTypeSurfaceStateResponse)
 	}
 }
 

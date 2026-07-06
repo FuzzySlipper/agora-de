@@ -32,7 +32,7 @@ Recent commits and evidence:
 | Installed den-k8 deployment runs continuously without VM-only validation or old shims | Pass for den-k8 | All live validation targets the installed service; no legacy agora-os shell shim was added. |
 | Auto-layout reacts to map, unmap, focus, close, mode, and settings changes | Pass | Auto-layout worker and live checks cover map/close/focus recovery. |
 | Lifecycle rules cover normal apps, browsers, file manager, shell/transient surfaces, and stale cleanup | Mostly pass | Terminal, Firefox, Dolphin, shell launcher/status, stale layer-shell cleanup, and close recovery are covered. Dialog/transient behavior is classified conservatively; deeper transient policy can remain future refinement. |
-| User controls expose common WM actions without CLI | Mostly pass | Panel controls cover focus, promote, move, float/tile, reset, settings, close, and honest unsupported states. Fullscreen/maximize/minimize still return `backend_unsupported` rather than performing a compositor-owned state change. |
+| User controls expose common WM actions without CLI | Pass | Panel controls cover focus, promote, move, float/tile, fullscreen, maximize, minimize, reset, settings, and close. State actions are acknowledged by the compositor-backed Wayfire adapter, while unsupported future adapters must return `backend_unsupported`. |
 | Agent controls expose stable ids, labels, app ids, bounds, zone membership, focus order, results, and recovery | Pass | `/api/layout`, `/api/surfaces`, compositorctl, overlay labels, and recovery helpers cover the current single-workspace model. |
 | Visual evidence includes always-available non-occluding overlay/bounds model | Pass | Native overlay is opt-in but installed and proven non-occluding; default desktop remains usable with overlay disabled. |
 | Theming/presentation remains centralized and separate from WM plumbing | Pass | Theme tokens and docs are centralized; WM plumbing does not own visual styling. |
@@ -46,17 +46,11 @@ Recent commits and evidence:
    Den task 4372 already tracks this. It should remain the next required
    northstar task before closeout.
 
-2. Fullscreen/maximize/minimize are honest but not implemented as compositor
-   state changes.
-   Current behavior is acceptable for daily tiled use because the UI reports
-   `backend_unsupported`, but it does not fully satisfy the northstar control
-   list.
-
-3. Multi-workspace compositor placement is not implemented.
+2. Multi-workspace compositor placement is not implemented.
    The current single `workspace-1` model is deterministic and useful, but the
    northstar names workspace operations as part of the target WM behavior.
 
-4. Native launch completion semantics are still too coarse for apps that reuse
+3. Native launch completion semantics are still too coarse for apps that reuse
    an existing process or create a window after the shell request times out.
    Firefox was observed in task 4422 evidence as producing a mapped visible
    surface even after a `timed_out` launch response.
