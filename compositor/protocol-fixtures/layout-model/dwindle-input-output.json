@@ -1,0 +1,168 @@
+{
+  "schema": "agora-de.layout-model.planner-input-output.v1",
+  "description": "Backend-neutral dwindle planner fixture. Planned rectangles are desired placements produced by Rust layout-model. Backend acknowledgement geometry remains the final compositor truth after an adapter applies the plan.",
+  "boundary": {
+    "planner_input": [
+      "output work area",
+      "reserved shell chrome",
+      "workspace id",
+      "visible normal surfaces",
+      "surface order",
+      "focus order",
+      "participation",
+      "selected layout rule",
+      "gaps",
+      "nmaster",
+      "mfact",
+      "dwindle split tree"
+    ],
+    "planner_output": [
+      "desired rectangles",
+      "zone membership",
+      "surface order",
+      "focus order",
+      "next revision",
+      "command result classes"
+    ],
+    "backend_acknowledgement": [
+      "post-placement geometry",
+      "backend-supported or backend-unsupported outcome",
+      "final visibility and focus state"
+    ]
+  },
+  "input": {
+    "rule": "dwindle",
+    "revision": 11,
+    "output": {
+      "x": 0,
+      "y": 0,
+      "width": 1000,
+      "height": 800
+    },
+    "reserved_chrome": {
+      "top": 0,
+      "right": 0,
+      "bottom": 0,
+      "left": 0
+    },
+    "workspace_id": "workspace-1",
+    "settings": {
+      "gaps": {
+        "outer_horizontal": 0,
+        "outer_vertical": 0,
+        "inner_horizontal": 0,
+        "inner_vertical": 0
+      },
+      "nmaster": 1,
+      "mfact": 0.5,
+      "smart_gaps": true
+    },
+    "dwindle_tree": {
+      "type": "split",
+      "axis": "horizontal",
+      "ratio": 0.6,
+      "first": {
+        "type": "leaf",
+        "surface_id": "view-a"
+      },
+      "second": {
+        "type": "split",
+        "axis": "vertical",
+        "ratio": 0.5,
+        "first": {
+          "type": "leaf",
+          "surface_id": "view-b"
+        },
+        "second": {
+          "type": "leaf",
+          "surface_id": "view-c"
+        }
+      }
+    },
+    "surfaces": [
+      {
+        "surface_id": "view-a",
+        "workspace_id": "workspace-1",
+        "participation": "tiled",
+        "order": 0,
+        "focused": true
+      },
+      {
+        "surface_id": "view-b",
+        "workspace_id": "workspace-1",
+        "participation": "tiled",
+        "order": 1,
+        "focused": false
+      },
+      {
+        "surface_id": "view-c",
+        "workspace_id": "workspace-1",
+        "participation": "tiled",
+        "order": 2,
+        "focused": false
+      }
+    ],
+    "focus_order": [
+      "view-a",
+      "view-b",
+      "view-c"
+    ]
+  },
+  "expected_plan": {
+    "rule": "dwindle",
+    "mode": "zones",
+    "revision": 12,
+    "workspace_id": "workspace-1",
+    "surface_order": [
+      "view-a",
+      "view-b",
+      "view-c"
+    ],
+    "focus_order": [
+      "view-a",
+      "view-b",
+      "view-c"
+    ],
+    "surfaces": [
+      {
+        "surface_id": "view-a",
+        "workspace_id": "workspace-1",
+        "zone_id": "dwindle",
+        "participation": "tiled",
+        "desired_geometry": {
+          "x": 0,
+          "y": 0,
+          "width": 600,
+          "height": 800
+        },
+        "order": 0
+      },
+      {
+        "surface_id": "view-b",
+        "workspace_id": "workspace-1",
+        "zone_id": "dwindle",
+        "participation": "tiled",
+        "desired_geometry": {
+          "x": 600,
+          "y": 0,
+          "width": 400,
+          "height": 400
+        },
+        "order": 1
+      },
+      {
+        "surface_id": "view-c",
+        "workspace_id": "workspace-1",
+        "zone_id": "dwindle",
+        "participation": "tiled",
+        "desired_geometry": {
+          "x": 600,
+          "y": 400,
+          "width": 400,
+          "height": 400
+        },
+        "order": 2
+      }
+    ]
+  }
+}

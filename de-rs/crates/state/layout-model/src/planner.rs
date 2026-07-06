@@ -2,6 +2,9 @@ use crate::Geometry;
 use de_ids::SurfaceId;
 use protocol_compositor::{LayoutMode, SurfaceLayoutParticipation};
 
+pub mod dwindle;
+use dwindle::DwindleTree;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlannerInput {
     pub rule: LayoutRule,
@@ -11,6 +14,7 @@ pub struct PlannerInput {
     pub surfaces: Vec<PlannerSurface>,
     pub focus_order: Vec<SurfaceId>,
     pub settings: PlannerSettings,
+    pub dwindle_tree: Option<DwindleTree>,
     pub revision: u64,
 }
 
@@ -24,6 +28,7 @@ impl PlannerInput {
             surfaces: Vec::new(),
             focus_order: Vec::new(),
             settings: PlannerSettings::default(),
+            dwindle_tree: None,
             revision: 0,
         }
     }
@@ -189,7 +194,7 @@ impl LayoutPlan {
         match input.rule {
             LayoutRule::Zones => Ok(plan_zones(input)),
             LayoutRule::MasterStack => Ok(plan_master_stack(input)),
-            LayoutRule::Dwindle => Err(LayoutPlanError::UnsupportedRule(input.rule.clone())),
+            LayoutRule::Dwindle => Ok(dwindle::plan_dwindle(input)),
         }
     }
 }
@@ -464,7 +469,10 @@ fn clamp_repeated_gap(requested_gap: u32, extent: u32, count: usize) -> u32 {
     requested_gap.min(max_gap)
 }
 
-fn normalize_focus_order(focus_order: &[SurfaceId], planned: &[PlannedSurface]) -> Vec<SurfaceId> {
+pub(super) fn normalize_focus_order(
+    focus_order: &[SurfaceId],
+    planned: &[PlannedSurface],
+) -> Vec<SurfaceId> {
     let mut normalized = Vec::new();
     for surface_id in focus_order {
         if planned
@@ -483,15 +491,15 @@ fn normalize_focus_order(focus_order: &[SurfaceId], planned: &[PlannedSurface]) 
     normalized
 }
 
-fn clamped_i32(value: u32) -> i32 {
+pub(super) fn clamped_i32(value: u32) -> i32 {
     value.min(i32::MAX as u32) as i32
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        Geometry, LayoutGaps, LayoutPlan, LayoutPlanError, LayoutRule, PlannerInput,
-        PlannerSettings, PlannerSurface, ReservedChrome,
+        Geometry, LayoutGaps, LayoutPlan, LayoutRule, PlannerInput, PlannerSettings,
+        PlannerSurface, ReservedChrome,
     };
     use de_ids::SurfaceId;
     use protocol_compositor::LayoutMode;
@@ -629,17 +637,6 @@ mod tests {
             assert!(surface.desired_geometry.width > 0);
             assert!(surface.desired_geometry.height > 0);
         }
-    }
-
-    #[test]
-    fn dwindle_remains_explicitly_unsupported_until_task_4321() {
-        let mut input = PlannerInput::new(Geometry::new(0, 0, 1000, 800), "workspace-1");
-        input.rule = LayoutRule::Dwindle;
-        input.surfaces = vec![PlannerSurface::tiled(SurfaceId::new("view-a"), 0)];
-
-        let error = LayoutPlan::plan(&input).expect_err("dwindle belongs to task 4321");
-
-        assert_eq!(error, LayoutPlanError::UnsupportedRule(LayoutRule::Dwindle));
     }
 
     fn sample_master_stack_plan(surface_count: usize, nmaster: usize) -> super::LayoutPlan {

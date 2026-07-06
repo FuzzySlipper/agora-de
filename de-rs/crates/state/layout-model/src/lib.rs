@@ -2,6 +2,7 @@ use de_ids::SurfaceId;
 use protocol_compositor::{LayoutActionKind, LayoutMode, SurfaceLayoutParticipation};
 
 mod planner;
+pub use planner::dwindle::{DwindleAssignment, DwindleNode, DwindleTree, SplitAxis};
 pub use planner::{
     LayoutGaps, LayoutPlan, LayoutPlanError, LayoutRule, PlannedSurface, PlannerInput,
     PlannerSettings, PlannerSurface, ReservedChrome,
@@ -450,8 +451,8 @@ impl LayoutErrorClass {
 mod tests {
     use super::{
         Geometry, LayoutCommand, LayoutCommandStatus, LayoutErrorClass, LayoutGaps, LayoutPlan,
-        LayoutPlanError, LayoutRule, LayoutState, LayoutSurface, PlannerInput, PlannerSettings,
-        PlannerSurface, ReservedChrome,
+        LayoutRule, LayoutState, LayoutSurface, PlannerInput, PlannerSettings, PlannerSurface,
+        ReservedChrome,
     };
     use de_ids::SurfaceId;
     use protocol_compositor::{LayoutActionKind, LayoutMode, SurfaceLayoutParticipation};
@@ -532,14 +533,15 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_planner_rules_are_explicit() {
+    fn dwindle_planner_is_available_from_layout_plan() {
         let mut input = PlannerInput::new(Geometry::new(0, 0, 1000, 800), "workspace-1");
         input.rule = LayoutRule::Dwindle;
         input.surfaces = vec![PlannerSurface::tiled(SurfaceId::new("view-a"), 0)];
 
-        let error = LayoutPlan::plan(&input).expect_err("dwindle belongs to task 4321");
+        let plan = LayoutPlan::plan(&input).expect("dwindle should plan after task 4321");
 
-        assert_eq!(error, LayoutPlanError::UnsupportedRule(LayoutRule::Dwindle));
+        assert_eq!(plan.rule, LayoutRule::Dwindle);
+        assert_eq!(plan.surfaces[0].zone_id, "dwindle");
     }
 
     #[test]

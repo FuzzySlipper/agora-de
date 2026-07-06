@@ -148,6 +148,8 @@ def validate_planner_fixture(fixture: dict, fixture_name: str, failures: list[st
     validate_reserved_chrome(planner_input.get("reserved_chrome"), failures)
     validate_settings(planner_input.get("settings"), failures)
     validate_string_list(planner_input.get("focus_order"), "planner input focus_order", failures)
+    if planner_input.get("rule") == "dwindle":
+        validate_dwindle_tree(planner_input.get("dwindle_tree"), fixture_name, failures)
 
     surfaces = planner_input.get("surfaces")
     if not isinstance(surfaces, list) or len(surfaces) < 2:
@@ -200,6 +202,8 @@ def validate_planner_fixture(fixture: dict, fixture_name: str, failures: list[st
             failures.append(f"{fixture_name}: zones plan must include primary and secondary zones")
         if expected.get("rule") == "master_stack" and not {"master", "stack"}.issubset(zones):
             failures.append(f"{fixture_name}: master-stack plan must include master and stack zones")
+        if expected.get("rule") == "dwindle" and "dwindle" not in zones:
+            failures.append(f"{fixture_name}: dwindle plan must include dwindle zone")
 
 
 def validate_geometry(value: object, prefix: str, failures: list[str]) -> None:
@@ -241,6 +245,27 @@ def validate_settings(value: object, failures: list[str]) -> None:
         failures.append("planner-input-output.json: settings.mfact must be numeric")
     if not isinstance(value.get("smart_gaps"), bool):
         failures.append("planner-input-output.json: settings.smart_gaps must be boolean")
+
+
+def validate_dwindle_tree(value: object, fixture_name: str, failures: list[str]) -> None:
+    if not isinstance(value, dict):
+        failures.append(f"{fixture_name}: input.dwindle_tree must be an object for dwindle")
+        return
+    node_type = value.get("type")
+    if node_type == "leaf":
+        if not isinstance(value.get("surface_id"), str) or not value["surface_id"]:
+            failures.append(f"{fixture_name}: dwindle leaf requires surface_id")
+        return
+    if node_type != "split":
+        failures.append(f"{fixture_name}: dwindle node type must be leaf or split")
+        return
+    if value.get("axis") not in {"horizontal", "vertical"}:
+        failures.append(f"{fixture_name}: dwindle split axis must be horizontal or vertical")
+    ratio = value.get("ratio")
+    if not isinstance(ratio, (int, float)) or ratio <= 0 or ratio >= 1:
+        failures.append(f"{fixture_name}: dwindle split ratio must be between 0 and 1")
+    validate_dwindle_tree(value.get("first"), fixture_name, failures)
+    validate_dwindle_tree(value.get("second"), fixture_name, failures)
 
 
 def validate_string_list(value: object, prefix: str, failures: list[str]) -> None:
