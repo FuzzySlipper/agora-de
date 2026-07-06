@@ -1217,6 +1217,27 @@ func writeOverlayHTML(response http.ResponseWriter) {
       padding: 5px 8px;
       position: absolute;
     }
+    .meta {
+      align-items: center;
+      bottom: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: calc(100%% - 16px);
+      position: absolute;
+      right: 8px;
+    }
+    .chip {
+      background: var(--agora-surface-strong);
+      border: 2px solid var(--agora-border);
+      color: var(--agora-fg);
+      font: var(--agora-font-code);
+      padding: 5px 7px;
+    }
+    .action-hints {
+      border-color: var(--agora-evidence-accent);
+      color: var(--agora-text-muted);
+    }
     .fallback-stack {
       display: grid;
       gap: 10px;
@@ -1244,7 +1265,7 @@ func writeOverlayHTML(response http.ResponseWriter) {
 </head>
 <body data-surface="overlay">
   <main class="agent-overlay" id="agent-overlay-surface" aria-label="Agent-visible window labels and bounds overlay">
-    <section class="zone-hints" aria-label="Workspace zone hints">
+    <section class="zone-hints" id="zone-hints" aria-label="Workspace zone hints">
       <span class="zone-hint">primary</span>
       <span class="zone-hint">secondary</span>
     </section>
@@ -1285,6 +1306,44 @@ func writeOverlayHTML(response http.ResponseWriter) {
       return text(surface.title, text(surface.appId, surface.surfaceId));
     }
 
+    function activeWorkspace() {
+      const workspaces = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
+      return workspaces.find((workspace) => workspace.active) || workspaces[0] || {zones: []};
+    }
+
+    function layoutRuleLabel() {
+      const settings = state.layout.settings || {};
+      return text(settings.rule, text(state.layout.mode, "freeform"));
+    }
+
+    function renderZoneHints() {
+      const target = document.getElementById("zone-hints");
+      const zones = Array.isArray(activeWorkspace().zones) ? activeWorkspace().zones : [];
+      const zoneLabels = zones.length ? zones.map((zone) => text(zone.id, "zone")) : ["primary", "secondary"];
+      target.replaceChildren();
+      target.style.gridTemplateColumns = "repeat(" + Math.max(1, zoneLabels.length) + ", 1fr)";
+      zoneLabels.forEach((zoneId) => {
+        const hint = document.createElement("span");
+        hint.className = "zone-hint";
+        hint.textContent = zoneId;
+        target.appendChild(hint);
+      });
+    }
+
+    function actionHints(surface) {
+      const participation = text(surface.participation, surface.floating ? "floating" : "tiled");
+      return participation === "floating" || participation === "transient"
+        ? "focus close tile"
+        : "focus close float zone reset";
+    }
+
+    function chip(value, className) {
+      const element = document.createElement("span");
+      element.className = "chip" + (className ? " " + className : "");
+      element.textContent = value;
+      return element;
+    }
+
     function renderBox(surface) {
       const geometry = geometryFor(surface);
       if (!geometry) {
@@ -1294,6 +1353,9 @@ func writeOverlayHTML(response http.ResponseWriter) {
       element.className = "window-box" + (surface.focused ? " focused" : "");
       element.dataset.surfaceId = surface.surfaceId;
       element.dataset.zoneId = text(surface.zoneId, "primary");
+      element.dataset.order = String(number(surface.order, 0));
+      element.dataset.participation = text(surface.participation, surface.floating ? "floating" : "tiled");
+      element.dataset.layoutRule = layoutRuleLabel();
       element.style.left = Math.max(0, geometry.x) + "px";
       element.style.top = Math.max(0, geometry.y) + "px";
       element.style.width = geometry.width + "px";
@@ -1306,13 +1368,23 @@ func writeOverlayHTML(response http.ResponseWriter) {
       numberBadge.textContent = text(surface.label, String(number(surface.order, 0) + 1));
       const copy = document.createElement("span");
       copy.className = "copy";
-      copy.textContent = surfaceName(surface) + " / " + text(surface.zoneId, "primary");
+      copy.textContent = "#" + text(surface.surfaceId, "?") + " / " + surfaceName(surface);
       label.append(numberBadge, copy);
 
       const bounds = document.createElement("span");
       bounds.className = "bounds";
       bounds.textContent = geometry.x + "," + geometry.y + " " + geometry.width + "x" + geometry.height;
-      element.append(label, bounds);
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.append(
+        chip("order " + String(number(surface.order, 0))),
+        chip(text(surface.zoneId, "primary")),
+        chip(text(surface.participation, surface.floating ? "floating" : "tiled")),
+        chip(layoutRuleLabel()),
+        chip(surface.focused ? "focused" : "unfocused"),
+        chip(actionHints(surface), "action-hints")
+      );
+      element.append(label, bounds, meta);
       return element;
     }
 
@@ -1331,6 +1403,7 @@ func writeOverlayHTML(response http.ResponseWriter) {
     function render() {
       const target = document.getElementById("overlay-labels");
       target.replaceChildren();
+      renderZoneHints();
       const surfaces = (Array.isArray(state.layout.surfaces) ? state.layout.surfaces : [])
         .filter((surface) => surface && surface.visible !== false);
       if (!surfaces.length) {

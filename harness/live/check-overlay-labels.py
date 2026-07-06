@@ -182,8 +182,12 @@ def check_overlay_route(base_url: str) -> dict:
         'data-surface="overlay"',
         'id="agent-overlay-surface"',
         'id="overlay-labels"',
+        'id="zone-hints"',
         'className = "window-box"',
         'className = "bounds"',
+        'className = "meta"',
+        'action-hints',
+        'dataset.layoutRule',
         "/api/layout",
         "/api/surfaces",
     ]
