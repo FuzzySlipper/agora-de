@@ -2176,6 +2176,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 0;
     }
     .apps {
+      display: none;
       flex: 0 1 680px;
       overflow: hidden;
     }
@@ -2183,6 +2184,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       flex: 1 1 860px;
     }
     .panel.apps-open .apps {
+      display: flex;
       flex: 1 1 auto;
     }
     .app-list {
@@ -2344,6 +2346,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     <button class="control" id="apps-button" type="button" aria-pressed="false">Apps</button>
     <button class="control secondary" id="refresh-button" type="button">Refresh</button>
     <button class="control secondary" id="operator-button" type="button">Status</button>
+    <section class="dock-section apps" id="panel-apps-section" aria-label="Applications">
+      <div class="app-list" id="panel-app-list">
+        <span class="dock-item muted">loading apps</span>
+      </div>
+    </section>
     <section class="dock-section running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
     </section>
@@ -2377,6 +2384,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
       feedback: {label: "", className: "", until: 0},
+      appsOpen: false,
       surface: %q
     };
 
@@ -2411,6 +2419,41 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         return;
       }
       values.slice(0, limit || 4).forEach((value) => target.appendChild(mapper(value)));
+    }
+
+    function renderPanelApps() {
+      const target = document.getElementById("panel-app-list");
+      target.replaceChildren();
+      if (!state.apps.length) {
+        target.appendChild(item("no apps", "muted"));
+        return;
+      }
+      state.apps.forEach((app) => {
+        const label = text(app.name, app.id);
+        const reason = text(app.disabledReason, app.launchable ? "" : "not launchable");
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = "dock-item app-item" + (app.launchable ? "" : " disabled");
+        element.disabled = !app.launchable;
+        element.title = reason ? label + " / " + reason : label;
+        element.addEventListener("click", () => launchApp(app.id));
+        const icon = document.createElement("span");
+        icon.className = "app-icon";
+        icon.textContent = text(app.iconLabel, label.slice(0, 1).toUpperCase());
+        const copy = document.createElement("span");
+        copy.className = "app-copy";
+        const name = document.createElement("span");
+        name.className = "app-name";
+        name.textContent = label;
+        const meta = document.createElement("span");
+        meta.className = reason ? "app-reason" : "app-meta";
+        meta.textContent = reason || text(app.category, "Other");
+        copy.appendChild(name);
+        copy.appendChild(meta);
+        element.appendChild(icon);
+        element.appendChild(copy);
+        target.appendChild(element);
+      });
     }
 
     function launcherSurface() {
@@ -2634,10 +2677,13 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
 
     function render() {
       const launcher = launcherSurface();
+      const showingApps = Boolean(launcher) || state.appsOpen;
+      document.querySelector(".panel").classList.toggle("apps-open", showingApps);
       const appsButton = document.getElementById("apps-button");
-      appsButton.textContent = launcher ? "Hide Apps" : "Apps";
-      appsButton.title = launcher ? "Close applications" : state.apps.length + " apps";
-      appsButton.setAttribute("aria-pressed", launcher ? "true" : "false");
+      appsButton.textContent = showingApps ? "Hide Apps" : "Apps";
+      appsButton.title = showingApps ? "Close applications" : state.apps.length + " apps";
+      appsButton.setAttribute("aria-pressed", showingApps ? "true" : "false");
+      renderPanelApps();
       const workSurfaces = state.surfaces.filter((surface) =>
         surface.mapped &&
         surface.surfaceKind !== "layer_shell" &&
@@ -2665,6 +2711,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         status.className = "status " + feedback.className;
       } else if (launcher) {
         status.textContent = "apps open";
+        status.className = "status ready";
+      } else if (state.appsOpen) {
+        status.textContent = state.apps.length + " apps";
         status.className = "status ready";
       } else {
         status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
@@ -2928,10 +2977,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const status = document.getElementById("status-label");
       const launcher = launcherSurface();
       if (launcher) {
-        status.textContent = "closing apps";
+        status.textContent = "apps";
         status.className = "status ready";
         try {
           await postJSON("/api/surfaces/action", {surfaceId: launcher.id, action: "close"});
+          state.appsOpen = true;
           await refresh();
         } catch (error) {
           status.textContent = "close failed";
@@ -2939,7 +2989,8 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         }
         return;
       }
-      await launchApp("shell-launcher");
+      state.appsOpen = !state.appsOpen;
+      render();
     }
 
     function updateClock() {
