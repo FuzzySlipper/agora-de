@@ -692,6 +692,161 @@ func TestSetLayoutModeUpdatesStateAndFreeformDisablesAutoLayout(t *testing.T) {
 	assertNoPluginCommand(t, decoder)
 }
 
+func TestLifecycleClassifiesEverydayAppsShellSurfacesAndDialogs(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	for _, surface := range []CompositorSurface{
+		{
+			ID:          "firefox",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "firefox",
+			Role:        "toplevel",
+			Visible:     &visible,
+			OutputID:    "HDMI-A-1",
+		},
+		{
+			ID:          "dolphin",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "org.kde.dolphin",
+			Role:        "toplevel",
+			Visible:     &visible,
+			OutputID:    "HDMI-A-1",
+		},
+		{
+			ID:          "launcher",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "io.agorade.ShellLauncher",
+			Role:        "toplevel",
+			Visible:     &visible,
+			OutputID:    "HDMI-A-1",
+		},
+		{
+			ID:          "dialog",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "firefox",
+			Role:        "dialog",
+			Visible:     &visible,
+			OutputID:    "HDMI-A-1",
+		},
+	} {
+		bridge.handleSurfaceEvent(pluginEvent{Type: PluginSurfaceEvent, Event: EventMapped, Surface: surface})
+	}
+
+	surfaces := map[string]TrackedSurface{}
+	for _, surface := range bridge.ListSurfaces() {
+		surfaces[surface.Surface.ID] = surface
+	}
+	for _, id := range []string{"firefox", "dolphin"} {
+		surface := surfaces[id]
+		if surface.LayoutRole != string(SurfaceLayoutRoleTiled) || surface.LayoutMode != string(LayoutModeZones) {
+			t.Fatalf("%s classified as %+v, want tiled zones", id, surface)
+		}
+	}
+	for _, id := range []string{"launcher", "dialog"} {
+		surface := surfaces[id]
+		if surface.LayoutRole != string(SurfaceLayoutRoleTransient) || surface.LayoutMode != string(LayoutModeFreeform) || surface.ZoneID != zoneTransient {
+			t.Fatalf("%s classified as %+v, want transient freeform", id, surface)
+		}
+	}
+}
+
+func TestSetSurfaceFloatingEscapesAndReturnsToAutoLayout(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+	decoder := json.NewDecoder(pluginClient)
+	encoder := json.NewEncoder(pluginClient)
+	readInitialPluginMessages(t, decoder)
+
+	visible := true
+	for _, event := range []pluginEvent{
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "layer-background",
+				SurfaceKind: SurfaceKindLayer,
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 1000, Height: 600},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-a",
+				SurfaceKind: SurfaceKindXDG,
+				AppID:       "Alacritty",
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+	} {
+		bridge.handleSurfaceEvent(event)
+	}
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-b",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "firefox",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600})
+
+	enabled := true
+	response, err := bridge.SetSurfaceFloating(SurfaceLayoutActionRequest{SurfaceID: "view-b", Floating: &enabled})
+	if err != nil {
+		t.Fatalf("SetSurfaceFloating(true): %v", err)
+	}
+	if response.Decision != DecisionAccepted || response.Surface == nil || response.Surface.LayoutRole != string(SurfaceLayoutRoleFloating) {
+		t.Fatalf("floating response = %+v", response)
+	}
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600})
+	layout := bridge.GetLayout().Layout
+	if len(layout.Surfaces) != 2 || layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[1].SurfaceID != "view-b" {
+		t.Fatalf("floating surface should remain visible after tiled surfaces: %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[1].Participation != SurfaceLayoutRoleFloating || layout.Surfaces[1].ZoneID != zoneTransient {
+		t.Fatalf("floating layout surface = %+v", layout.Surfaces[1])
+	}
+	surfaces := bridge.ListSurfaces()
+	var floating TrackedSurface
+	for _, surface := range surfaces {
+		if surface.Surface.ID == "view-b" {
+			floating = surface
+			break
+		}
+	}
+	if floating.LayoutRole != string(SurfaceLayoutRoleFloating) || floating.ZoneID != zoneTransient {
+		t.Fatalf("floating surface state = %+v", floating)
+	}
+
+	enabled = false
+	response, err = bridge.SetSurfaceFloating(SurfaceLayoutActionRequest{SurfaceID: "view-b", Floating: &enabled})
+	if err != nil {
+		t.Fatalf("SetSurfaceFloating(false): %v", err)
+	}
+	if response.Decision != DecisionAccepted {
+		t.Fatalf("return-to-tiling response = %+v", response)
+	}
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600})
+	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600})
+	layout = bridge.GetLayout().Layout
+	if len(layout.Surfaces) != 2 || layout.Surfaces[1].SurfaceID != "view-b" || layout.Surfaces[1].Participation != SurfaceLayoutRoleTiled {
+		t.Fatalf("surface did not return to tiled layout: %+v", layout.Surfaces)
+	}
+}
+
 func readInitialPluginMessages(t *testing.T, decoder *json.Decoder) {
 	t.Helper()
 	for range 2 {

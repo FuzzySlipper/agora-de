@@ -382,7 +382,55 @@ func (bridge *Bridge) SetSurfaceFloating(request SurfaceLayoutActionRequest) (La
 	if request.Floating == nil {
 		return LayoutActionResponse{}, fmt.Errorf("floating is required")
 	}
-	return bridge.unsupportedSurfaceLayoutAction("surface.set_floating", request.SurfaceID)
+	surface, err := bridge.requireWorkSurface(request.SurfaceID, "surface.set_floating")
+	if err != nil {
+		return LayoutActionResponse{}, err
+	}
+	bridge.mu.Lock()
+	tracked := bridge.surfaces[request.SurfaceID]
+	enabled := *request.Floating
+	if request.Enabled != nil {
+		enabled = *request.Enabled
+	}
+	if enabled {
+		tracked.LayoutMode = string(LayoutModeFreeform)
+		tracked.Surface.LayoutMode = tracked.LayoutMode
+		tracked.LayoutRole = string(SurfaceLayoutRoleFloating)
+		tracked.Surface.LayoutRole = tracked.LayoutRole
+		tracked.ZoneID = zoneTransient
+		tracked.Surface.ZoneID = tracked.ZoneID
+	} else {
+		tracked.LayoutMode = string(bridge.tiledLayoutModeLocked())
+		tracked.Surface.LayoutMode = tracked.LayoutMode
+		tracked.LayoutRole = string(SurfaceLayoutRoleTiled)
+		tracked.Surface.LayoutRole = tracked.LayoutRole
+		tracked.ZoneID = firstNonEmpty(tracked.ZoneID, zoneMaster)
+		if tracked.ZoneID == zoneTransient {
+			tracked.ZoneID = zoneMaster
+		}
+		tracked.Surface.ZoneID = tracked.ZoneID
+	}
+	bridge.layoutSeq++
+	tracked.LayoutRevision = bridge.layoutSeq
+	tracked.UpdatedAt = time.Now()
+	bridge.surfaces[request.SurfaceID] = tracked
+	bridge.updateBackendLayoutSurfaceLocked(tracked)
+	layout := bridge.layoutLocked()
+	bridge.mu.Unlock()
+	if !enabled {
+		bridge.requestAutoLayout("surface_set_tiled")
+	} else {
+		bridge.requestAutoLayout("surface_set_floating")
+	}
+	surface = tracked
+	return LayoutActionResponse{
+		Action:    "surface.set_floating",
+		SurfaceID: request.SurfaceID,
+		Decision:  DecisionAccepted,
+		Reason:    "surface layout participation updated",
+		Layout:    &layout,
+		Surface:   &surface,
+	}, nil
 }
 
 func (bridge *Bridge) AssignSurfaceZone(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
@@ -931,10 +979,7 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 		mergeSurfaceReadback(&tracked, previous, event.Event, now)
 	}
 	applyLayoutDefaults(&tracked)
-	if tracked.Surface.SurfaceKind != SurfaceKindLayer && tracked.LayoutMode == string(LayoutModeFreeform) && bridge.layoutMode != LayoutModeFreeform {
-		tracked.LayoutMode = string(bridge.layoutMode)
-		tracked.Surface.LayoutMode = string(bridge.layoutMode)
-	}
+	bridge.applyLifecycleClassificationLocked(&tracked)
 	if event.Event == EventFrameDone {
 		tracked.FrameCount++
 		tracked.LastPresentTimestamp = &now
