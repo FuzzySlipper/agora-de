@@ -77,12 +77,15 @@ type Bridge struct {
 
 	mu                 sync.RWMutex
 	plugin             *pluginSession
+	pluginSeq          uint64
 	surfaces           map[string]TrackedSurface
 	stale              map[string]time.Time
 	focusSeq           uint64
 	focusWaiters       map[string]chan pluginResponse
+	focusWaiterSession map[string]uint64
 	placeSeq           uint64
 	placeWaiters       map[string]chan pluginResponse
+	placeWaiterSession map[string]uint64
 	captureSeq         uint64
 	layoutSeq          uint64
 	layoutMode         LayoutMode
@@ -106,7 +109,9 @@ func New(config Config) *Bridge {
 		surfaces:           map[string]TrackedSurface{},
 		stale:              map[string]time.Time{},
 		focusWaiters:       map[string]chan pluginResponse{},
+		focusWaiterSession: map[string]uint64{},
 		placeWaiters:       map[string]chan pluginResponse{},
+		placeWaiterSession: map[string]uint64{},
 		layoutMode:         settings.Mode,
 		layoutSettings:     settings,
 		layoutSettingsPath: config.LayoutSettingsPath,
@@ -700,7 +705,7 @@ func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, ac
 	}
 	defer bridge.clearPlaceWaiter(requestID)
 
-	if err := session.Send(map[string]any{
+	if err := bridge.sendPluginMessage(session, map[string]any{
 		"type":       PluginPlaceSurface,
 		"request_id": requestID,
 		"surface_id": request.SurfaceID,
@@ -720,7 +725,8 @@ func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, ac
 			if message == "" {
 				message = "placement rejected by compositor plugin"
 			}
-			return LayoutActionResponse{}, classifiedError{class: ErrorProtocol, message: message}
+			class := firstNonEmpty(response.ErrorClass, ErrorProtocol)
+			return LayoutActionResponse{}, classifiedError{class: class, message: message}
 		}
 		if response.Geometry != nil {
 			if response.Geometry.Width <= 0 || response.Geometry.Height <= 0 {
@@ -1030,7 +1036,7 @@ func (bridge *Bridge) FocusSurface(request FocusSurfaceRequest) (SurfaceActionRe
 	}
 	defer bridge.clearFocusWaiter(requestID)
 
-	if err := session.Send(map[string]any{"type": PluginFocusSurface, "request_id": requestID, "surface_id": request.SurfaceID}); err != nil {
+	if err := bridge.sendPluginMessage(session, map[string]any{"type": PluginFocusSurface, "request_id": requestID, "surface_id": request.SurfaceID}); err != nil {
 		return SurfaceActionResponse{}, err
 	}
 	timeout := time.Duration(request.WaitTimeoutMs) * time.Millisecond
@@ -1044,7 +1050,8 @@ func (bridge *Bridge) FocusSurface(request FocusSurfaceRequest) (SurfaceActionRe
 			if message == "" {
 				message = "focus rejected by compositor plugin"
 			}
-			return SurfaceActionResponse{}, classifiedError{class: ErrorProtocol, message: message}
+			class := firstNonEmpty(response.ErrorClass, ErrorProtocol)
+			return SurfaceActionResponse{}, classifiedError{class: class, message: message}
 		}
 	case <-time.After(timeout):
 		return SurfaceActionResponse{}, classifiedError{class: ErrorFrameTimeout, message: "focus request timed out"}
@@ -1100,7 +1107,7 @@ func (bridge *Bridge) CloseSurface(request CloseSurfaceRequest) (SurfaceActionRe
 	if session == nil {
 		return SurfaceActionResponse{}, classifiedError{class: ErrorCompositorUnavailable, message: "no plugin connected"}
 	}
-	if err := session.Send(map[string]any{"type": PluginCloseSurface, "surface_id": request.SurfaceID}); err != nil {
+	if err := bridge.sendPluginMessage(session, map[string]any{"type": PluginCloseSurface, "surface_id": request.SurfaceID}); err != nil {
 		return SurfaceActionResponse{}, err
 	}
 	return SurfaceActionResponse{
@@ -1770,6 +1777,7 @@ func (bridge *Bridge) startFocusWaiter(surfaceID string) (*pluginSession, string
 	requestID := fmt.Sprintf("focus-%d-%d", time.Now().UnixNano(), bridge.focusSeq)
 	waiter := make(chan pluginResponse, 1)
 	bridge.focusWaiters[requestID] = waiter
+	bridge.focusWaiterSession[requestID] = bridge.plugin.id
 	return bridge.plugin, requestID, waiter, nil
 }
 
@@ -1777,6 +1785,7 @@ func (bridge *Bridge) clearFocusWaiter(requestID string) {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
 	delete(bridge.focusWaiters, requestID)
+	delete(bridge.focusWaiterSession, requestID)
 }
 
 func (bridge *Bridge) startPlaceWaiter(surfaceID string) (*pluginSession, string, chan pluginResponse, error) {
@@ -1789,6 +1798,7 @@ func (bridge *Bridge) startPlaceWaiter(surfaceID string) (*pluginSession, string
 	requestID := fmt.Sprintf("place-%d-%d", time.Now().UnixNano(), bridge.placeSeq)
 	waiter := make(chan pluginResponse, 1)
 	bridge.placeWaiters[requestID] = waiter
+	bridge.placeWaiterSession[requestID] = bridge.plugin.id
 	return bridge.plugin, requestID, waiter, nil
 }
 
@@ -1796,11 +1806,14 @@ func (bridge *Bridge) clearPlaceWaiter(requestID string) {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
 	delete(bridge.placeWaiters, requestID)
+	delete(bridge.placeWaiterSession, requestID)
 }
 
 func (bridge *Bridge) installPlugin(session *pluginSession) *pluginSession {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
+	bridge.pluginSeq++
+	session.id = bridge.pluginSeq
 	previous := bridge.plugin
 	bridge.plugin = session
 	return previous
@@ -1812,6 +1825,46 @@ func (bridge *Bridge) clearPlugin(session *pluginSession) {
 	if bridge.plugin == session {
 		bridge.plugin = nil
 	}
+	bridge.failPluginWaitersLocked(session.id, "plugin disconnected")
+}
+
+func (bridge *Bridge) failPluginWaitersLocked(sessionID uint64, message string) {
+	response := pluginResponse{OK: false, Error: message, ErrorClass: ErrorCompositorUnavailable}
+	for requestID, waiter := range bridge.focusWaiters {
+		if bridge.focusWaiterSession[requestID] != sessionID {
+			continue
+		}
+		select {
+		case waiter <- response:
+		default:
+		}
+		delete(bridge.focusWaiters, requestID)
+		delete(bridge.focusWaiterSession, requestID)
+	}
+	for requestID, waiter := range bridge.placeWaiters {
+		if bridge.placeWaiterSession[requestID] != sessionID {
+			continue
+		}
+		select {
+		case waiter <- response:
+		default:
+		}
+		delete(bridge.placeWaiters, requestID)
+		delete(bridge.placeWaiterSession, requestID)
+	}
+}
+
+func (bridge *Bridge) sendPluginMessage(session *pluginSession, message any) error {
+	bridge.mu.RLock()
+	current := bridge.plugin == session
+	bridge.mu.RUnlock()
+	if !current {
+		return classifiedError{class: ErrorCompositorUnavailable, message: "plugin connection changed before request could be sent"}
+	}
+	if err := session.Send(message); err != nil {
+		return classifiedError{class: ErrorCompositorUnavailable, message: "plugin connection unavailable: " + err.Error()}
+	}
+	return nil
 }
 
 func (bridge *Bridge) pluginPeerAllowed(conn net.Conn) bool {
@@ -1838,6 +1891,7 @@ func (bridge *Bridge) pluginPeerAllowed(conn net.Conn) bool {
 }
 
 type pluginSession struct {
+	id   uint64
 	conn net.Conn
 	enc  *json.Encoder
 	mu   sync.Mutex
@@ -1854,9 +1908,10 @@ func (session *pluginSession) Close() error {
 }
 
 type pluginResponse struct {
-	OK       bool
-	Error    string
-	Geometry *SurfaceGeometry
+	OK         bool
+	Error      string
+	ErrorClass string
+	Geometry   *SurfaceGeometry
 }
 
 func writeResponse(writer io.Writer, response Response) {

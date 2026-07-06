@@ -717,7 +717,7 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"launch", "surface=operator", "--expected-app-id io.agorade.ShellStatus"} {
+	for _, want := range []string{"launch", "surface=operator", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup", "--expected-app-id io.agorade.ShellStatus"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("status launch compositorctl calls missing %q: %s", want, calls)
 		}
@@ -1009,7 +1009,7 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"surface=operator", "--expected-app-id io.agorade.ShellStatus"} {
+	for _, want := range []string{"surface=operator", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup", "--expected-app-id io.agorade.ShellStatus"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("status launch compositorctl calls missing %q: %s", want, calls)
 		}
@@ -1087,7 +1087,7 @@ esac
 	}
 }
 
-func TestHandlerClosesLauncherLayerByTerminatingShellClient(t *testing.T) {
+func TestHandlerClosesShellLayerByTerminatingShellClient(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture is Unix-specific")
 	}
@@ -1098,7 +1098,7 @@ func TestHandlerClosesLauncherLayerByTerminatingShellClient(t *testing.T) {
 printf '%s\n' "$*" >> "$CALL_LOG"
 case "$1" in
   list-surfaces)
-    printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-launcher","app_id":"io.agorade.ShellLauncher","surface_kind":"layer_shell","visible":true},"client":{"pid":424242,"uid":60010},"last_event":"content_committed","visible":true}]}'
+    printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-status","app_id":"io.agorade.ShellStatus","surface_kind":"layer_shell","visible":true},"client":{"pid":424242,"uid":60010},"last_event":"content_committed","visible":true}]}'
     ;;
   surface)
     printf '%s\n' '{"status":"accepted"}'
@@ -1133,7 +1133,7 @@ esac
 	}
 
 	recorder := httptest.NewRecorder()
-	body := strings.NewReader(`{"surfaceId":"layer-launcher","action":"close"}`)
+	body := strings.NewReader(`{"surfaceId":"layer-status","action":"close"}`)
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, SurfaceActionPath, body))
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("close launcher status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
@@ -1148,7 +1148,7 @@ esac
 	if !strings.Contains(string(calls), "list-surfaces") {
 		t.Fatalf("compositorctl calls missing list-surfaces: %s", calls)
 	}
-	if strings.Contains(string(calls), "surface close --surface layer-launcher") {
+	if strings.Contains(string(calls), "surface close --surface layer-status") {
 		t.Fatalf("launcher layer close should not use work-surface close: %s", calls)
 	}
 }

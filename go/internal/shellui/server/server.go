@@ -256,9 +256,14 @@ func launchTargets() map[string]launchTarget {
 			AppID: "io.agorade.ExampleBrowser",
 		},
 		"shell-status": {
-			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=operator",
-			Title: "Agora DE Shell Status",
-			AppID: "io.agorade.ShellStatus",
+			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=operator",
+			Title:         "Agora DE Shell Status",
+			AppID:         "io.agorade.ShellStatus",
+			LayerShell:    true,
+			LayerRole:     "popup",
+			Width:         980,
+			Height:        720,
+			ExclusiveZone: 96,
 		},
 		"shell-launcher": {
 			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=launcher",
@@ -725,7 +730,7 @@ func closeShellLayerSurface(ctx context.Context, compositorctlPath string, surfa
 
 func isCloseableShellLayerApp(appID string) bool {
 	switch strings.TrimSpace(appID) {
-	case "io.agorade.ShellLauncher", "io.agorade.ShellOverlay":
+	case "io.agorade.ShellLauncher", "io.agorade.ShellOverlay", "io.agorade.ShellStatus":
 		return true
 	default:
 		return false

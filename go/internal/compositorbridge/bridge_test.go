@@ -96,6 +96,92 @@ func TestCloseSurfaceQueuesPluginMessage(t *testing.T) {
 	}
 }
 
+func TestPlaceSurfaceFailsFastWhenPluginDisconnects(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	defer pluginServer.Close()
+	session := &pluginSession{conn: pluginServer, enc: json.NewEncoder(pluginServer)}
+	bridge.installPlugin(session)
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventMapped,
+		Surface: CompositorSurface{ID: "view-place", SurfaceKind: SurfaceKindXDG, Visible: &visible},
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := bridge.placeSurfaceChecked(
+			SurfaceLayoutActionRequest{SurfaceID: "view-place", WaitTimeoutMs: 5000},
+			"test.place",
+			SurfaceGeometry{X: 0, Y: 0, Width: 100, Height: 100},
+			zoneMaster,
+			SurfaceLayoutRoleTiled,
+			nil,
+			true,
+		)
+		done <- err
+	}()
+
+	var command map[string]any
+	if err := json.NewDecoder(pluginClient).Decode(&command); err != nil {
+		t.Fatalf("decode place command: %v", err)
+	}
+	if command["type"] != PluginPlaceSurface || command["surface_id"] != "view-place" {
+		t.Fatalf("place command = %+v", command)
+	}
+	bridge.clearPlugin(session)
+
+	select {
+	case err := <-done:
+		if class, _ := classifyError(err); class != ErrorCompositorUnavailable {
+			t.Fatalf("place error = %v class=%s, want %s", err, class, ErrorCompositorUnavailable)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("place request waited after plugin disconnect")
+	}
+}
+
+func TestFocusSurfaceFailsFastWhenPluginDisconnects(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	defer pluginServer.Close()
+	session := &pluginSession{conn: pluginServer, enc: json.NewEncoder(pluginServer)}
+	bridge.installPlugin(session)
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventMapped,
+		Surface: CompositorSurface{ID: "view-focus", SurfaceKind: SurfaceKindXDG, Visible: &visible},
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := bridge.FocusSurface(FocusSurfaceRequest{SurfaceID: "view-focus", WaitTimeoutMs: 5000})
+		done <- err
+	}()
+
+	var command map[string]any
+	if err := json.NewDecoder(pluginClient).Decode(&command); err != nil {
+		t.Fatalf("decode focus command: %v", err)
+	}
+	if command["type"] != PluginFocusSurface || command["surface_id"] != "view-focus" {
+		t.Fatalf("focus command = %+v", command)
+	}
+	bridge.clearPlugin(session)
+
+	select {
+	case err := <-done:
+		if class, _ := classifyError(err); class != ErrorCompositorUnavailable {
+			t.Fatalf("focus error = %v class=%s, want %s", err, class, ErrorCompositorUnavailable)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("focus request waited after plugin disconnect")
+	}
+}
+
 func TestListOutputsIncludesPhysicalSurfaceReadback(t *testing.T) {
 	bridge := New(Config{})
 	visible := true
