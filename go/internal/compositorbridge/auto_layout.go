@@ -34,7 +34,7 @@ func (bridge *Bridge) autoLayoutWorker(reason string) {
 		bridge.mu.RLock()
 		targetSeq := bridge.autoLayoutSeq
 		bridge.mu.RUnlock()
-		if err := bridge.applyAutoLayoutOnce(reason); err != nil {
+		if err := bridge.applyAutoLayoutOnce(reason, targetSeq); err != nil {
 			log.Printf("auto layout: %v", err)
 		}
 		bridge.mu.Lock()
@@ -47,7 +47,7 @@ func (bridge *Bridge) autoLayoutWorker(reason string) {
 	}
 }
 
-func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
+func (bridge *Bridge) applyAutoLayoutOnce(reason string, targetSeq uint64) error {
 	placements := bridge.autoLayoutPlan()
 	applied := make([]autoLayoutPlacement, 0, len(placements))
 	for _, placement := range placements {
@@ -75,10 +75,16 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 		}
 		applied = append(applied, placement)
 	}
-	if len(applied) == len(placements) {
+	if len(applied) == len(placements) && bridge.isCurrentAutoLayoutSeq(targetSeq) {
 		bridge.applyAutoLayoutOrder(applied)
 	}
 	return nil
+}
+
+func (bridge *Bridge) isCurrentAutoLayoutSeq(targetSeq uint64) bool {
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+	return bridge.autoLayoutSeq == targetSeq
 }
 
 func (bridge *Bridge) shouldApplyAutoLayoutPlacement(surfaceID string) bool {
