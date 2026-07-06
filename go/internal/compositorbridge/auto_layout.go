@@ -64,7 +64,7 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 		guard := func(tracked TrackedSurface) bool {
 			return isAutoTileSurface(tracked)
 		}
-		if _, err := bridge.placeSurfaceChecked(request, "layout.auto_tile", placement.Geometry, placement.ZoneID, SurfaceLayoutRoleTiled, guard); err != nil {
+		if _, err := bridge.placeSurfaceChecked(request, "layout.auto_tile", placement.Geometry, placement.ZoneID, SurfaceLayoutRoleTiled, guard, false); err != nil {
 			class, _ := classifyError(err)
 			switch class {
 			case ErrorSurfaceNotFound, ErrorSurfaceStale, ErrorCompositorUnavailable:
@@ -75,7 +75,9 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 		}
 		applied = append(applied, placement)
 	}
-	bridge.applyAutoLayoutOrder(applied)
+	if len(applied) == len(placements) {
+		bridge.applyAutoLayoutOrder(applied)
+	}
 	return nil
 }
 

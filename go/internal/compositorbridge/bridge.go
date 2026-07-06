@@ -526,10 +526,10 @@ func (bridge *Bridge) unsupportedSurfaceLayoutAction(action string, surfaceID st
 }
 
 func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action string, geometry SurfaceGeometry, zoneID string, role SurfaceLayoutRole) (LayoutActionResponse, error) {
-	return bridge.placeSurfaceChecked(request, action, geometry, zoneID, role, nil)
+	return bridge.placeSurfaceChecked(request, action, geometry, zoneID, role, nil, true)
 }
 
-func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, action string, geometry SurfaceGeometry, zoneID string, role SurfaceLayoutRole, guard func(TrackedSurface) bool) (LayoutActionResponse, error) {
+func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, action string, geometry SurfaceGeometry, zoneID string, role SurfaceLayoutRole, guard func(TrackedSurface) bool, updateBackend bool) (LayoutActionResponse, error) {
 	surface, err := bridge.requireWorkSurface(request.SurfaceID, action)
 	if err != nil {
 		return LayoutActionResponse{}, err
@@ -600,7 +600,9 @@ func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, ac
 	tracked.LayoutRevision = bridge.layoutSeq
 	tracked.UpdatedAt = time.Now()
 	bridge.surfaces[request.SurfaceID] = tracked
-	bridge.updateBackendLayoutSurfaceLocked(tracked)
+	if updateBackend {
+		bridge.updateBackendLayoutSurfaceLocked(tracked)
+	}
 	layout := bridge.layoutLocked()
 	bridge.mu.Unlock()
 

@@ -567,7 +567,7 @@ func TestAutoLayoutPlacesMappedSurfacesAndRelayoutsAfterUnmap(t *testing.T) {
 			OutputID:    "HDMI-A-1",
 		},
 	})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760})
+	readPlaceAndAckNoWait(t, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760}, SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 760})
 	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 600, Y: 0, Width: 600, Height: 760}, SurfaceGeometry{X: 610, Y: 10, Width: 580, Height: 740})
 
 	layout := bridge.GetLayout().Layout
@@ -645,7 +645,7 @@ func TestAutoLayoutPromotesFocusedSurfaceToMaster(t *testing.T) {
 			OutputID:    "HDMI-A-1",
 		},
 	})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700})
+	readPlaceAndAckNoWait(t, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700})
 	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700})
 
 	bridge.handleSurfaceEvent(pluginEvent{
@@ -653,7 +653,7 @@ func TestAutoLayoutPromotesFocusedSurfaceToMaster(t *testing.T) {
 		Event:   EventFocused,
 		Surface: CompositorSurface{ID: "view-b", Visible: &visible},
 	})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700})
+	readPlaceAndAckNoWait(t, decoder, encoder, "view-b", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700})
 	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700})
 
 	layout := bridge.GetLayout().Layout
@@ -827,6 +827,7 @@ func TestAutoLayoutPlacementDoesNotOverrideNewerFloatingDecision(t *testing.T) {
 			func(tracked TrackedSurface) bool {
 				return isAutoTileSurface(tracked)
 			},
+			false,
 		)
 		done <- err
 	}()
@@ -1011,7 +1012,7 @@ func TestSetSurfaceFloatingEscapesAndReturnsToAutoLayout(t *testing.T) {
 			OutputID:    "HDMI-A-1",
 		},
 	})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600})
+	readPlaceAndAckNoWait(t, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600})
 	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600})
 
 	enabled := true
@@ -1050,7 +1051,7 @@ func TestSetSurfaceFloatingEscapesAndReturnsToAutoLayout(t *testing.T) {
 	if response.Decision != DecisionAccepted {
 		t.Fatalf("return-to-tiling response = %+v", response)
 	}
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600})
+	readPlaceAndAckNoWait(t, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600})
 	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600})
 	layout = bridge.GetLayout().Layout
 	if len(layout.Surfaces) != 2 || layout.Surfaces[1].SurfaceID != "view-b" || layout.Surfaces[1].Participation != SurfaceLayoutRoleTiled {
@@ -1069,6 +1070,12 @@ func readInitialPluginMessages(t *testing.T, decoder *json.Decoder) {
 }
 
 func readPlaceAndAck(t *testing.T, bridge *Bridge, decoder *json.Decoder, encoder *json.Encoder, surfaceID string, want SurfaceGeometry, ack SurfaceGeometry) {
+	t.Helper()
+	readPlaceAndAckNoWait(t, decoder, encoder, surfaceID, want, ack)
+	waitForLayoutGeometry(t, bridge, surfaceID, ack)
+}
+
+func readPlaceAndAckNoWait(t *testing.T, decoder *json.Decoder, encoder *json.Encoder, surfaceID string, want SurfaceGeometry, ack SurfaceGeometry) {
 	t.Helper()
 	commandCh := make(chan map[string]any, 1)
 	go func() {
@@ -1113,7 +1120,6 @@ func readPlaceAndAck(t *testing.T, bridge *Bridge, decoder *json.Decoder, encode
 	}); err != nil {
 		t.Fatalf("send place response: %v", err)
 	}
-	waitForLayoutGeometry(t, bridge, surfaceID, ack)
 }
 
 func waitForLayoutGeometry(t *testing.T, bridge *Bridge, surfaceID string, want SurfaceGeometry) {
