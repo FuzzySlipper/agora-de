@@ -515,6 +515,16 @@ exit 1
 	}
 }
 
+func TestParseCompositorctlErrorHandlesCliErrorPrefix(t *testing.T) {
+	errorClass, message := parseCompositorctlError("error: server[backend_unsupported]: surface.fullscreen requires compositor backend geometry authority")
+	if errorClass != "backend_unsupported" {
+		t.Fatalf("errorClass = %q, want backend_unsupported", errorClass)
+	}
+	if !strings.Contains(message, "surface.fullscreen") {
+		t.Fatalf("message = %q, want fullscreen detail", message)
+	}
+}
+
 func TestHandlerCanUseDesktopEntryCatalogProvider(t *testing.T) {
 	root := t.TempDir()
 	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
