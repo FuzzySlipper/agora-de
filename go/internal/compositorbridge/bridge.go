@@ -65,6 +65,8 @@ const (
 	ErrorFrameTimeout          = "frame_timeout"
 )
 
+const deadClientPruneAfter = 2 * time.Second
+
 type Config struct {
 	AllowedPluginUID   uint32
 	LayoutSettingsPath string
@@ -317,14 +319,43 @@ func (bridge *Bridge) Dispatch(request Request) (json.RawMessage, error) {
 }
 
 func (bridge *Bridge) ListSurfaces() []TrackedSurface {
-	bridge.mu.RLock()
-	defer bridge.mu.RUnlock()
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	bridge.pruneDeadClientSurfacesLocked(time.Now())
 	surfaces := make([]TrackedSurface, 0, len(bridge.surfaces))
 	for _, surface := range bridge.surfaces {
 		surfaces = append(surfaces, surface)
 	}
 	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i].Surface.ID < surfaces[j].Surface.ID })
 	return surfaces
+}
+
+func (bridge *Bridge) pruneDeadClientSurfacesLocked(now time.Time) {
+	for id, surface := range bridge.surfaces {
+		if surface.Surface.SurfaceKind != SurfaceKindLayer || surface.Client.PID <= 0 {
+			continue
+		}
+		if now.Sub(surface.UpdatedAt) < deadClientPruneAfter || processExists(int(surface.Client.PID)) {
+			continue
+		}
+		if bridge.promotedSurfaceID == id {
+			bridge.promotedSurfaceID = ""
+		}
+		bridge.stale[id] = now
+		delete(bridge.surfaces, id)
+	}
+}
+
+func processExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	if err := syscall.Kill(pid, 0); err == nil {
+		return true
+	} else if errors.Is(err, syscall.EPERM) {
+		return true
+	}
+	return false
 }
 
 func (bridge *Bridge) ListOutputs() []LogicalOutput {

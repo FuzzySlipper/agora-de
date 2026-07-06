@@ -1206,7 +1206,7 @@ func writeOverlayHTML(response http.ResponseWriter) {
       grid-template-columns: 1fr 1fr;
       height: calc(100vh - var(--agora-panel-height));
       inset: 0 0 var(--agora-panel-height) 0;
-      opacity: 0.22;
+      opacity: 0.14;
       position: absolute;
     }
     .zone-hint {
@@ -1235,16 +1235,17 @@ func writeOverlayHTML(response http.ResponseWriter) {
     }
     .label {
       align-items: center;
-      background: var(--agora-evidence-strong);
+      background: rgba(8, 13, 30, 0.72);
       border: 2px solid var(--agora-evidence-accent);
       color: var(--agora-fg);
       display: inline-flex;
       gap: 8px;
-      left: 8px;
+      left: auto;
       max-width: calc(100%% - 16px);
       min-height: 36px;
       padding: 0 10px;
       position: absolute;
+      right: 8px;
       top: 8px;
       white-space: nowrap;
     }
@@ -1269,7 +1270,7 @@ func writeOverlayHTML(response http.ResponseWriter) {
       text-overflow: ellipsis;
     }
     .bounds {
-      background: var(--agora-surface-strong);
+      background: rgba(8, 13, 30, 0.62);
       border: 2px solid var(--agora-border);
       bottom: 8px;
       color: var(--agora-text-muted);
@@ -1285,11 +1286,12 @@ func writeOverlayHTML(response http.ResponseWriter) {
       flex-wrap: wrap;
       gap: 6px;
       max-width: calc(100%% - 16px);
+      opacity: 0.62;
       position: absolute;
       right: 8px;
     }
     .chip {
-      background: var(--agora-surface-strong);
+      background: rgba(8, 13, 30, 0.62);
       border: 2px solid var(--agora-border);
       color: var(--agora-fg);
       font: var(--agora-font-code);
@@ -2395,6 +2397,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       feedback: {label: "", className: "", until: 0},
       surface: %q
     };
+    const unsupportedSurfaceActions = new Set(["fullscreen", "maximize"]);
 
     function text(value, fallback) {
       const trimmed = String(value || "").trim();
@@ -2591,6 +2594,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const element = document.getElementById(id);
       if (element) {
         element.disabled = disabled;
+        element.setAttribute("aria-disabled", String(disabled));
       }
     }
 
@@ -2607,6 +2611,17 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         "maximize-button",
         "close-focus-button"
       ].forEach((id) => setControlDisabled(id, !hasTarget));
+      [
+        ["fullscreen-button", "Fullscreen is unsupported by the current compositor backend"],
+        ["maximize-button", "Maximize is unsupported by the current compositor backend"]
+      ].forEach(([id, title]) => {
+        const element = document.getElementById(id);
+        if (element) {
+          element.disabled = true;
+          element.setAttribute("aria-disabled", "true");
+          element.title = title;
+        }
+      });
       const targetLabel = document.getElementById("target-label");
       if (targetLabel) {
         const targetName = target ? text(target.title, text(target.appId, target.surfaceId)) : "no target";
@@ -2931,6 +2946,12 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
 
     async function actOnTarget(action) {
+      if (unsupportedSurfaceActions.has(action)) {
+        const status = document.getElementById("status-label");
+        status.textContent = action + " unsupported";
+        status.className = "status warn";
+        return;
+      }
       const target = targetSurface();
       if (target) {
         await actOnSurface(target.surfaceId, action);

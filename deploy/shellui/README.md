@@ -55,7 +55,6 @@ systemctl --user daemon-reload
 systemctl --user enable --now agora-de-shellui.service
 systemctl --user enable --now agora-de-shell-background.service
 systemctl --user enable --now agora-de-shell-panel.service
-systemctl --user enable --now agora-de-shell-overlay.service
 ```
 
 The user-service example uses `127.0.0.1:17780` to avoid colliding with the
@@ -82,6 +81,17 @@ The overlay route is `?surface=overlay`. It is a transparent top layer-shell
 surface driven by `/api/layout` and `/api/surfaces`; it renders stable numbered
 labels, app/title badges, focus indication, zone hints, and geometry bounds over
 native work surfaces without wrapping those apps in a webview.
+
+The overlay service is intentionally not enabled by the default user-service
+install path. On the current den-k8 GTK4/WebKit layer-shell stack, the full
+screen overlay can mask native client pixels even when the page requests a
+transparent background. Keep it as an opt-in diagnostic surface until the
+overlay is implemented as a non-occluding compositor/client surface:
+
+```bash
+systemctl --user enable --now agora-de-shell-overlay.service
+systemctl --user disable --now agora-de-shell-overlay.service
+```
 
 The first workspace model is intentionally conservative. `/api/workspaces`
 reports one active `workspace-1`, and `POST /api/workspaces/action` with

@@ -119,6 +119,36 @@ func TestListOutputsIncludesPhysicalSurfaceReadback(t *testing.T) {
 	}
 }
 
+func TestListSurfacesPrunesOldLayerShellSurfaceWithDeadClient(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "layer-stale",
+			SurfaceKind: SurfaceKindLayer,
+			AppID:       "io.agorade.ShellPanel",
+			Visible:     &visible,
+			OutputID:    "HDMI-A-1",
+			Geometry:    &SurfaceGeometry{Width: 2560, Height: 720},
+		},
+		Client: ClientIdentity{PID: 99999999, UID: 1001, GID: 1002},
+	})
+	bridge.mu.Lock()
+	tracked := bridge.surfaces["layer-stale"]
+	tracked.UpdatedAt = time.Now().Add(-deadClientPruneAfter - time.Second)
+	bridge.surfaces["layer-stale"] = tracked
+	bridge.mu.Unlock()
+
+	if got := bridge.ListSurfaces(); len(got) != 0 {
+		t.Fatalf("surfaces = %+v, want stale layer-shell surface pruned", got)
+	}
+	if _, ok := bridge.stale["layer-stale"]; !ok {
+		t.Fatalf("stale marker missing after prune")
+	}
+}
+
 func TestGetLayoutDerivesStableWorkspaceState(t *testing.T) {
 	bridge := New(Config{})
 	visible := true

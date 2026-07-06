@@ -108,6 +108,15 @@ def main() -> int:
             checks.append(failed("focus", f"surface {launched_surface!r} did not become focused"))
             return finish(checks, evidence_packets, args.app_id, args.expected_app_id, launched_surface, checked_at)
 
+        presentation_check, presentation_packet = classify_native_surface_presentation(
+            focused,
+            checked_at,
+            launched_surface,
+            args.expected_app_id,
+        )
+        checks.append(presentation_check)
+        evidence_packets.append(presentation_packet)
+
         if args.output_name:
             if args.capture_delay_seconds > 0:
                 time.sleep(args.capture_delay_seconds)
@@ -236,6 +245,40 @@ def capture_visible_native_launch(
         capture_check["surfaceId"] = surface_id
         capture_check["appId"] = app_id
     return capture_check, packet
+
+
+def classify_native_surface_presentation(surface: dict, checked_at: int, surface_id: str, app_id: str) -> tuple[dict, dict]:
+    frame_count = int(surface.get("frameCount") or 0)
+    content_commit_count = int(surface.get("contentCommitCount") or 0)
+    classification = "insufficient_mapped_only"
+    detail = "native surface is mapped/focused but has no content or frame counter evidence"
+    status = "pass"
+    if content_commit_count > 0:
+        classification = "content_committed"
+        detail = "native surface has content commit evidence"
+    if frame_count > 0:
+        classification = "frame_presented"
+        detail = "native surface has frame-presented evidence"
+    packet = {
+        "scenario": "den-k8-native-launch-surface-readback",
+        "capturedAtUnixMillis": checked_at,
+        "surfaceId": surface_id,
+        "appId": app_id,
+        "visualStatus": "unknown",
+        "captureClassification": classification,
+        "frameCount": frame_count,
+        "contentCommitCount": content_commit_count,
+    }
+    return {
+        "name": "surface-presentation-readback",
+        "status": status,
+        "detail": detail,
+        "surfaceId": surface_id,
+        "appId": app_id,
+        "frameCount": frame_count,
+        "contentCommitCount": content_commit_count,
+        "captureClassification": classification,
+    }, packet
 
 
 def load_live_evidence_module():
