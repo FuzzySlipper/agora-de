@@ -50,6 +50,7 @@ uses the local compiler installed under `ts/node_modules`.
 - [Successor lesson packet](docs/successor-lesson-packet.md)
 - [Architecture](governance/architecture.md)
 - [Agora OS boundary](docs/agora-os-boundary.md)
+- [Deployed WM model](docs/deployed-wm-model.md)
 - [Compositor backend plan](docs/compositor-backend-plan.md)
 - [Compositor backend decision](docs/compositor-backend-decision.md)
 - [Chrome evidence implications](docs/chrome-evidence-implications.md)

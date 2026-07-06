@@ -8,6 +8,9 @@ agora-de does not create, boot, orchestrate, or test against VMs. VM harnesses
 belong in agora-os when fundamental OS/runtime behavior needs that level of
 coverage. This repo consumes the installed service behavior exposed on den-k8.
 
+For the deployed WM user/agent/backend model and non-agora-os install/update
+path, see `docs/deployed-wm-model.md`.
+
 ## Gate Contract
 
 The live evidence gate is an opt-in installed-service gate. It is not part of
