@@ -15,6 +15,11 @@ Agora-de layout authority is split deliberately:
 
 The Rust layout model owns:
 
+- backend-neutral planner inputs: output work area, reserved shell chrome,
+  workspace id, visible normal surfaces, surface order, focus order,
+  participation, selected layout rule, gaps, master count, and ratio settings;
+- backend-neutral planner output: desired rectangles, zone membership, surface
+  order, focus order, next revision, and command result classes;
 - layout mode and revision advancement;
 - workspace surface order and focus order;
 - surface participation: tiled, floating, transient;
@@ -27,6 +32,10 @@ The model treats geometry as a compositor fact. If an adapter cannot provide
 truthful post-layout geometry for a command, it must return
 `backend_unsupported` rather than fabricating placement from screenshots,
 shell state, or key bindings.
+
+Planner rectangles are desired placements, not final geometry truth. A backend
+adapter must apply the plan and then acknowledge post-placement geometry before
+the bridge exposes compositor state as authoritative.
 
 ## Adapter Boundary
 
@@ -49,3 +58,8 @@ The shared fixture
 `compositor/protocol-fixtures/layout-model/command-semantics.json` is the
 backend-neutral behavior target for command implementations. The fixture is
 checked by `./harness/ci/check-contracts.sh`.
+
+The planner fixture
+`compositor/protocol-fixtures/layout-model/planner-input-output.json` records
+which fields are planner input, planner output, and backend acknowledgement.
+It is also checked by `./harness/ci/check-contracts.sh`.

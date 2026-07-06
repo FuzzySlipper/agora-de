@@ -1,6 +1,12 @@
 use de_ids::SurfaceId;
 use protocol_compositor::{LayoutActionKind, LayoutMode, SurfaceLayoutParticipation};
 
+mod planner;
+pub use planner::{
+    LayoutGaps, LayoutPlan, LayoutPlanError, LayoutRule, PlannedSurface, PlannerInput,
+    PlannerSettings, PlannerSurface, ReservedChrome,
+};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ChromeSurfaceKind {
     Panel,
@@ -162,7 +168,10 @@ impl LayoutState {
             return LayoutCommandResult::unsupported(action);
         };
         if geometry.is_empty() {
-            return LayoutCommandResult::invalid(action, "geometry width and height must be positive");
+            return LayoutCommandResult::invalid(
+                action,
+                "geometry width and height must be positive",
+            );
         }
         self.update_surface(command.surface_id, action, |surface| {
             surface.zone_id = zone_id;
@@ -177,7 +186,10 @@ impl LayoutState {
             return LayoutCommandResult::invalid(action, "geometry is required");
         };
         if geometry.is_empty() {
-            return LayoutCommandResult::invalid(action, "geometry width and height must be positive");
+            return LayoutCommandResult::invalid(
+                action,
+                "geometry width and height must be positive",
+            );
         }
         self.update_surface(command.surface_id, action, |surface| {
             surface.geometry = geometry;
@@ -204,7 +216,11 @@ impl LayoutState {
         let Some(workspace_id) = command.workspace_id else {
             return LayoutCommandResult::invalid(command.kind, "workspace_id is required");
         };
-        if !self.workspaces.iter().any(|workspace| workspace.id == workspace_id) {
+        if !self
+            .workspaces
+            .iter()
+            .any(|workspace| workspace.id == workspace_id)
+        {
             return LayoutCommandResult::missing(command.kind);
         }
         for workspace in &mut self.workspaces {
@@ -263,7 +279,9 @@ impl LayoutState {
             surface_order: Vec::new(),
             focus_order: Vec::new(),
         });
-        self.workspaces.last_mut().expect("workspace was just pushed")
+        self.workspaces
+            .last_mut()
+            .expect("workspace was just pushed")
     }
 
     fn rebuild_orders(&mut self) {
@@ -305,7 +323,11 @@ pub struct LayoutCommand {
 }
 
 impl LayoutCommand {
-    pub fn assign_zone(surface_id: SurfaceId, zone_id: impl Into<String>, geometry: Geometry) -> Self {
+    pub fn assign_zone(
+        surface_id: SurfaceId,
+        zone_id: impl Into<String>,
+        geometry: Geometry,
+    ) -> Self {
         Self {
             kind: LayoutActionKind::AssignSurfaceZone,
             surface_id,
@@ -361,7 +383,11 @@ impl LayoutCommandResult {
     }
 
     pub fn invalid(action: LayoutActionKind, message: impl Into<String>) -> Self {
-        Self::rejected(action, LayoutErrorClass::InvalidRequest, Some(message.into()))
+        Self::rejected(
+            action,
+            LayoutErrorClass::InvalidRequest,
+            Some(message.into()),
+        )
     }
 
     fn rejected(
@@ -423,10 +449,101 @@ impl LayoutErrorClass {
 #[cfg(test)]
 mod tests {
     use super::{
-        Geometry, LayoutCommand, LayoutCommandStatus, LayoutErrorClass, LayoutState, LayoutSurface,
+        Geometry, LayoutCommand, LayoutCommandStatus, LayoutErrorClass, LayoutGaps, LayoutPlan,
+        LayoutPlanError, LayoutRule, LayoutState, LayoutSurface, PlannerInput, PlannerSettings,
+        PlannerSurface, ReservedChrome,
     };
     use de_ids::SurfaceId;
     use protocol_compositor::{LayoutActionKind, LayoutMode, SurfaceLayoutParticipation};
+
+    #[test]
+    fn zones_planner_produces_desired_rectangles_with_stable_order() {
+        let mut input = PlannerInput::new(Geometry::new(0, 0, 2560, 1440), "workspace-1");
+        input.revision = 41;
+        input.reserved_chrome = ReservedChrome {
+            top: 0,
+            right: 0,
+            bottom: 96,
+            left: 0,
+        };
+        input.settings = PlannerSettings {
+            gaps: LayoutGaps {
+                outer_horizontal: 0,
+                outer_vertical: 0,
+                inner_horizontal: 0,
+                inner_vertical: 0,
+            },
+            nmaster: 1,
+            mfact: 0.5,
+            smart_gaps: true,
+        };
+        input.surfaces = vec![
+            PlannerSurface::tiled(SurfaceId::new("view-b"), 1),
+            PlannerSurface::tiled(SurfaceId::new("view-a"), 0),
+        ];
+        input.focus_order = vec![SurfaceId::new("view-b"), SurfaceId::new("view-a")];
+
+        let plan = LayoutPlan::plan(&input).expect("zones plan should be supported");
+
+        assert_eq!(plan.rule, LayoutRule::Zones);
+        assert_eq!(plan.mode, LayoutMode::Zones);
+        assert_eq!(plan.revision, 42);
+        assert_eq!(
+            plan.surface_order,
+            vec![SurfaceId::new("view-a"), SurfaceId::new("view-b")]
+        );
+        assert_eq!(
+            plan.focus_order,
+            vec![SurfaceId::new("view-b"), SurfaceId::new("view-a")]
+        );
+        assert_eq!(plan.surfaces[0].surface_id, SurfaceId::new("view-a"));
+        assert_eq!(plan.surfaces[0].zone_id, "primary");
+        assert_eq!(
+            plan.surfaces[0].desired_geometry,
+            Geometry::new(0, 0, 1280, 1344)
+        );
+        assert_eq!(plan.surfaces[1].surface_id, SurfaceId::new("view-b"));
+        assert_eq!(plan.surfaces[1].zone_id, "secondary");
+        assert_eq!(
+            plan.surfaces[1].desired_geometry,
+            Geometry::new(1280, 0, 1280, 1344)
+        );
+    }
+
+    #[test]
+    fn zones_planner_keeps_focus_order_unique_and_appends_missing_surfaces() {
+        let mut input = PlannerInput::new(Geometry::new(0, 0, 1000, 800), "workspace-1");
+        input.surfaces = vec![
+            PlannerSurface::tiled(SurfaceId::new("view-a"), 0),
+            PlannerSurface::tiled(SurfaceId::new("view-b"), 1),
+        ];
+        input.focus_order = vec![
+            SurfaceId::new("view-missing"),
+            SurfaceId::new("view-b"),
+            SurfaceId::new("view-b"),
+        ];
+
+        let plan = LayoutPlan::plan(&input).expect("zones plan should be supported");
+
+        assert_eq!(
+            plan.focus_order,
+            vec![SurfaceId::new("view-b"), SurfaceId::new("view-a")]
+        );
+    }
+
+    #[test]
+    fn unsupported_planner_rules_are_explicit() {
+        let mut input = PlannerInput::new(Geometry::new(0, 0, 1000, 800), "workspace-1");
+        input.rule = LayoutRule::MasterStack;
+        input.surfaces = vec![PlannerSurface::tiled(SurfaceId::new("view-a"), 0)];
+
+        let error = LayoutPlan::plan(&input).expect_err("master-stack belongs to task 4320");
+
+        assert_eq!(
+            error,
+            LayoutPlanError::UnsupportedRule(LayoutRule::MasterStack)
+        );
+    }
 
     #[test]
     fn assign_zone_applies_backend_geometry_and_advances_revision() {
@@ -448,7 +565,10 @@ mod tests {
         assert_eq!(result.revision, Some(start_revision + 1));
         assert_eq!(state.mode, LayoutMode::Zones);
         assert_eq!(state.surfaces[0].zone_id, "secondary");
-        assert_eq!(state.surfaces[0].geometry, Geometry::new(1280, 0, 1280, 1248));
+        assert_eq!(
+            state.surfaces[0].geometry,
+            Geometry::new(1280, 0, 1280, 1248)
+        );
         assert_eq!(
             state.surfaces[0].participation,
             SurfaceLayoutParticipation::Tiled
