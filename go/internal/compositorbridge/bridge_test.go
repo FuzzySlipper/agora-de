@@ -784,6 +784,91 @@ func TestNormalizeLayoutStateRemovesStaleZoneMembership(t *testing.T) {
 	}
 }
 
+func TestAutoLayoutPlacementDoesNotOverrideNewerFloatingDecision(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+	decoder := json.NewDecoder(pluginClient)
+	encoder := json.NewEncoder(pluginClient)
+	readInitialPluginMessages(t, decoder)
+
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	bridge.mu.Lock()
+	bridge.autoLayoutSeq = 1
+	bridge.mu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		request := SurfaceLayoutActionRequest{SurfaceID: "view-a", WorkspaceID: "workspace-1", ZoneID: zoneMaster, WaitTimeoutMs: 1000}
+		_, err := bridge.placeSurfaceChecked(
+			request,
+			"layout.auto_tile",
+			SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600},
+			zoneMaster,
+			SurfaceLayoutRoleTiled,
+			func(tracked TrackedSurface) bool {
+				return bridge.autoLayoutSeq == 1 && isAutoTileSurface(tracked)
+			},
+		)
+		done <- err
+	}()
+
+	var command map[string]any
+	if err := decoder.Decode(&command); err != nil {
+		t.Fatalf("decode place command: %v", err)
+	}
+	if command["type"] != PluginPlaceSurface || command["surface_id"] != "view-a" {
+		t.Fatalf("place command = %+v", command)
+	}
+	bridge.mu.Lock()
+	tracked := bridge.surfaces["view-a"]
+	tracked.LayoutMode = string(LayoutModeFreeform)
+	tracked.Surface.LayoutMode = tracked.LayoutMode
+	tracked.LayoutRole = string(SurfaceLayoutRoleFloating)
+	tracked.Surface.LayoutRole = tracked.LayoutRole
+	tracked.ZoneID = zoneTransient
+	tracked.Surface.ZoneID = tracked.ZoneID
+	bridge.autoLayoutSeq = 2
+	bridge.surfaces["view-a"] = tracked
+	bridge.mu.Unlock()
+
+	if err := encoder.Encode(map[string]any{
+		"type":       PluginPlaceResponse,
+		"request_id": command["request_id"],
+		"surface_id": command["surface_id"],
+		"ok":         true,
+		"geometry":   SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600},
+	}); err != nil {
+		t.Fatalf("send place response: %v", err)
+	}
+	select {
+	case err := <-done:
+		if class, _ := classifyError(err); class != ErrorSurfaceStale {
+			t.Fatalf("placeSurfaceChecked err = %v, class = %s, want stale", err, class)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for placement result")
+	}
+
+	surfaces := bridge.ListSurfaces()
+	if len(surfaces) != 1 || surfaces[0].LayoutRole != string(SurfaceLayoutRoleFloating) || surfaces[0].ZoneID != zoneTransient {
+		t.Fatalf("surface state after stale placement = %+v", surfaces)
+	}
+}
+
 func TestSetLayoutModeUpdatesStateAndFreeformDisablesAutoLayout(t *testing.T) {
 	bridge := New(Config{})
 	response, err := bridge.SetLayoutMode(SetLayoutModeRequest{Mode: LayoutModeFreeform})

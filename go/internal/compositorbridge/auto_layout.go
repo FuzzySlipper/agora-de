@@ -34,7 +34,7 @@ func (bridge *Bridge) autoLayoutWorker(reason string) {
 		bridge.mu.RLock()
 		targetSeq := bridge.autoLayoutSeq
 		bridge.mu.RUnlock()
-		if err := bridge.applyAutoLayoutOnce(reason); err != nil {
+		if err := bridge.applyAutoLayoutOnce(reason, targetSeq); err != nil {
 			log.Printf("auto layout: %v", err)
 		}
 		bridge.mu.Lock()
@@ -47,10 +47,13 @@ func (bridge *Bridge) autoLayoutWorker(reason string) {
 	}
 }
 
-func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
+func (bridge *Bridge) applyAutoLayoutOnce(reason string, targetSeq uint64) error {
 	placements := bridge.autoLayoutPlan()
 	applied := make([]autoLayoutPlacement, 0, len(placements))
 	for _, placement := range placements {
+		if !bridge.shouldApplyAutoLayoutPlacement(placement.SurfaceID, targetSeq) {
+			continue
+		}
 		request := SurfaceLayoutActionRequest{
 			SurfaceID:     placement.SurfaceID,
 			WorkspaceID:   placement.WorkspaceID,
@@ -58,7 +61,10 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 			Geometry:      cloneGeometry(&placement.Geometry),
 			WaitTimeoutMs: 1000,
 		}
-		if _, err := bridge.placeSurface(request, "layout.auto_tile", placement.Geometry, placement.ZoneID, SurfaceLayoutRoleTiled); err != nil {
+		guard := func(tracked TrackedSurface) bool {
+			return bridge.autoLayoutSeq == targetSeq && isAutoTileSurface(tracked)
+		}
+		if _, err := bridge.placeSurfaceChecked(request, "layout.auto_tile", placement.Geometry, placement.ZoneID, SurfaceLayoutRoleTiled, guard); err != nil {
 			class, _ := classifyError(err)
 			switch class {
 			case ErrorSurfaceNotFound, ErrorSurfaceStale, ErrorCompositorUnavailable:
@@ -71,6 +77,16 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 	}
 	bridge.applyAutoLayoutOrder(applied)
 	return nil
+}
+
+func (bridge *Bridge) shouldApplyAutoLayoutPlacement(surfaceID string, targetSeq uint64) bool {
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+	if bridge.autoLayoutSeq != targetSeq {
+		return false
+	}
+	tracked, ok := bridge.surfaces[surfaceID]
+	return ok && isAutoTileSurface(tracked)
 }
 
 func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {

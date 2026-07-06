@@ -526,6 +526,10 @@ func (bridge *Bridge) unsupportedSurfaceLayoutAction(action string, surfaceID st
 }
 
 func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action string, geometry SurfaceGeometry, zoneID string, role SurfaceLayoutRole) (LayoutActionResponse, error) {
+	return bridge.placeSurfaceChecked(request, action, geometry, zoneID, role, nil)
+}
+
+func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, action string, geometry SurfaceGeometry, zoneID string, role SurfaceLayoutRole, guard func(TrackedSurface) bool) (LayoutActionResponse, error) {
 	surface, err := bridge.requireWorkSurface(request.SurfaceID, action)
 	if err != nil {
 		return LayoutActionResponse{}, err
@@ -570,6 +574,10 @@ func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action st
 
 	bridge.mu.Lock()
 	tracked := bridge.surfaces[request.SurfaceID]
+	if guard != nil && !guard(tracked) {
+		bridge.mu.Unlock()
+		return LayoutActionResponse{}, classifiedError{class: ErrorSurfaceStale, message: fmt.Sprintf("surface %s is no longer eligible for %s", request.SurfaceID, action)}
+	}
 	tracked.Geometry = cloneGeometry(&ackGeometry)
 	tracked.Surface.Geometry = cloneGeometry(&ackGeometry)
 	tracked.WorkspaceID = firstNonEmpty(request.WorkspaceID, tracked.WorkspaceID, "workspace-1")
