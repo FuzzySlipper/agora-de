@@ -2734,7 +2734,22 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const current = surfaces.findIndex((surface) => surface.surfaceId === target.surfaceId);
       const next = surfaces[(Math.max(current, 0) + delta + surfaces.length) %% surfaces.length];
       if (next) {
-        await actOnSurface(next.surfaceId, "focus");
+        await promoteSurface(next.surfaceId);
+      }
+    }
+
+    async function promoteSurface(surfaceId) {
+      const status = document.getElementById("status-label");
+      status.textContent = "promote";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {surfaceId, action: "promote"});
+        await refresh();
+        setFeedback("promote " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "promote failed";
+        status.className = "status warn";
       }
     }
 
@@ -2743,7 +2758,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       if (!target) {
         return;
       }
-      await actOnSurface(target.surfaceId, "focus");
+      await promoteSurface(target.surfaceId);
     }
 
     async function moveTargetToNextZone() {

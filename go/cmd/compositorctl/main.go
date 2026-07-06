@@ -30,6 +30,7 @@ const (
 	methodTileSurface        = "tile_surface"
 	methodSetSurfaceFloating = "set_surface_floating"
 	methodAssignSurfaceZone  = "assign_surface_zone"
+	methodPromoteSurface     = "promote_surface"
 	methodMaximizeSurface    = "maximize_surface"
 	methodMinimizeSurface    = "minimize_surface"
 	methodFullscreenSurface  = "fullscreen_surface"
@@ -421,6 +422,12 @@ func runSurface(args []string, stdout io.Writer, pretty bool) error {
 			return err
 		}
 		return callAndPrint(methodAssignSurfaceZone, req, stdout, pretty)
+	case "promote":
+		req, err := buildSurfaceRequest("surface promote", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodPromoteSurface, surfaceLayoutRequest{SurfaceID: req.SurfaceID, WaitTimeoutMs: req.WaitTimeoutMs}, stdout, pretty)
 	case "maximize":
 		req, err := buildEnabledSurfaceRequest("surface maximize", args[1:])
 		if err != nil {

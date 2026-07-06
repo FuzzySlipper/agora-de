@@ -391,6 +391,9 @@ case "$1 $2" in
   "surface assign-zone")
     printf '%s\n' '{"decision":"accepted"}'
     ;;
+  "surface promote")
+    printf '%s\n' '{"decision":"accepted"}'
+    ;;
   *)
     printf 'unexpected command %s %s\n' "$1" "$2" >&2
     exit 2
@@ -460,6 +463,12 @@ esac
 		t.Fatalf("layout assignZone status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
 	}
 
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LayoutActionPath, strings.NewReader(`{"action":"promote","surfaceId":"view-live"}`)))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("layout promote status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+
 	calls, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
@@ -470,6 +479,7 @@ esac
 		"surface assign-zone --surface view-live --zone secondary",
 		"--workspace workspace-1",
 		"--x 20 --y 40 --width 500 --height 360",
+		"surface promote --surface view-live",
 	} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("compositorctl calls missing %q: %s", want, calls)

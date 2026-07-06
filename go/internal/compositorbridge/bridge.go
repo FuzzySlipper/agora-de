@@ -30,6 +30,7 @@ const (
 	MethodTileSurface        = "tile_surface"
 	MethodSetSurfaceFloating = "set_surface_floating"
 	MethodAssignSurfaceZone  = "assign_surface_zone"
+	MethodPromoteSurface     = "promote_surface"
 	MethodMaximizeSurface    = "maximize_surface"
 	MethodMinimizeSurface    = "minimize_surface"
 	MethodFullscreenSurface  = "fullscreen_surface"
@@ -85,6 +86,7 @@ type Bridge struct {
 	layoutSettings     LayoutSettings
 	layoutSettingsPath string
 	backendLayout      *LayoutState
+	promotedSurfaceID  string
 
 	autoLayoutSeq     uint64
 	autoLayoutRunning bool
@@ -244,6 +246,16 @@ func (bridge *Bridge) Dispatch(request Request) (json.RawMessage, error) {
 			return nil, err
 		}
 		response, err := bridge.AssignSurfaceZone(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodPromoteSurface:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.PromoteSurface(body)
 		if err != nil {
 			return nil, err
 		}
@@ -461,6 +473,46 @@ func (bridge *Bridge) AssignSurfaceZone(request SurfaceLayoutActionRequest) (Lay
 		return LayoutActionResponse{}, err
 	}
 	return bridge.placeSurface(request, "surface.assign_zone", geometry, request.ZoneID, SurfaceLayoutRoleTiled)
+}
+
+func (bridge *Bridge) PromoteSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
+	surface, err := bridge.requireWorkSurface(request.SurfaceID, "surface.promote")
+	if err != nil {
+		return LayoutActionResponse{}, err
+	}
+	bridge.mu.Lock()
+	bridge.promotedSurfaceID = request.SurfaceID
+	for id, tracked := range bridge.surfaces {
+		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		tracked.Focused = id == request.SurfaceID
+		if id == request.SurfaceID {
+			tracked.LayoutMode = string(bridge.tiledLayoutModeLocked())
+			tracked.Surface.LayoutMode = tracked.LayoutMode
+			tracked.LayoutRole = string(SurfaceLayoutRoleTiled)
+			tracked.Surface.LayoutRole = tracked.LayoutRole
+			tracked.ZoneID = zoneMaster
+			tracked.Surface.ZoneID = tracked.ZoneID
+			tracked.LayoutRevision = bridge.layoutSeq + 1
+			tracked.UpdatedAt = time.Now()
+			surface = tracked
+		}
+		bridge.surfaces[id] = tracked
+	}
+	bridge.layoutSeq++
+	bridge.updateBackendLayoutFocusLocked(request.SurfaceID)
+	layout := bridge.layoutLocked()
+	bridge.mu.Unlock()
+	bridge.requestAutoLayout("surface_promote")
+	return LayoutActionResponse{
+		Action:    "surface.promote",
+		SurfaceID: request.SurfaceID,
+		Decision:  DecisionAccepted,
+		Reason:    "surface promoted by layout authority",
+		Layout:    &layout,
+		Surface:   &surface,
+	}, nil
 }
 
 func (bridge *Bridge) MaximizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
@@ -736,6 +788,35 @@ func (bridge *Bridge) updateBackendLayoutSurfaceLocked(tracked TrackedSurface) {
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
 }
 
+func (bridge *Bridge) updateBackendLayoutFocusLocked(surfaceID string) {
+	if bridge.backendLayout == nil {
+		return
+	}
+	layout := cloneLayoutState(*bridge.backendLayout)
+	for index := range layout.Surfaces {
+		layout.Surfaces[index].Focused = layout.Surfaces[index].SurfaceID == surfaceID
+	}
+	layout.Revision = bridge.layoutSeq
+	bridge.backendLayout = cloneLayoutStatePtr(layout)
+}
+
+func (bridge *Bridge) preserveTrackedFocusLocked(layout *LayoutState) {
+	for index := range layout.Surfaces {
+		tracked, ok := bridge.surfaces[layout.Surfaces[index].SurfaceID]
+		if !ok {
+			continue
+		}
+		layout.Surfaces[index].Focused = bridge.layoutFocusedLocked(tracked)
+	}
+}
+
+func (bridge *Bridge) layoutFocusedLocked(tracked TrackedSurface) bool {
+	if bridge.promotedSurfaceID != "" {
+		return tracked.Surface.ID == bridge.promotedSurfaceID
+	}
+	return tracked.Focused
+}
+
 func firstPositive(values ...int) int {
 	for _, value := range values {
 		if value > 0 {
@@ -839,7 +920,9 @@ func (bridge *Bridge) FocusSurface(request FocusSurfaceRequest) (SurfaceActionRe
 		}
 		bridge.surfaces[id] = tracked
 	}
+	bridge.promotedSurfaceID = request.SurfaceID
 	bridge.layoutSeq++
+	bridge.updateBackendLayoutFocusLocked(request.SurfaceID)
 	bridge.mu.Unlock()
 	bridge.requestAutoLayout("surface_focus_command")
 
@@ -926,12 +1009,14 @@ func (bridge *Bridge) handleLayoutState(layout LayoutState) {
 	defer bridge.mu.Unlock()
 	bridge.layoutMode = layout.Mode
 	layout.Settings = bridge.layoutSettings
+	bridge.preserveTrackedFocusLocked(&layout)
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
 	for _, layoutSurface := range layout.Surfaces {
 		if layoutSurface.SurfaceID == "" {
 			continue
 		}
 		tracked := bridge.surfaces[layoutSurface.SurfaceID]
+		previousFocused := tracked.Focused
 		visible := layoutSurface.Visible
 		tracked.Surface.ID = layoutSurface.SurfaceID
 		tracked.Surface.Label = layoutSurface.Label
@@ -953,7 +1038,7 @@ func (bridge *Bridge) handleLayoutState(layout LayoutState) {
 		tracked.LayoutMode = string(layoutSurface.Mode)
 		tracked.LayoutRole = string(layoutSurface.Participation)
 		tracked.LayoutRevision = layout.Revision
-		tracked.Focused = layoutSurface.Focused
+		tracked.Focused = previousFocused
 		tracked.Visible = layoutSurface.Visible
 		tracked.Capturable = tracked.Surface.SurfaceKind != SurfaceKindLayer
 		tracked.InputInjectable = tracked.Surface.SurfaceKind != SurfaceKindLayer
@@ -1014,6 +1099,9 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	shouldRelayout := false
 	bridge.mu.Lock()
 	if event.Event == EventUnmapped {
+		if bridge.promotedSurfaceID == event.Surface.ID {
+			bridge.promotedSurfaceID = ""
+		}
 		bridge.stale[event.Surface.ID] = now
 		delete(bridge.surfaces, event.Surface.ID)
 		bridge.removeSurfaceFromBackendLayoutLocked(event.Surface.ID)
@@ -1278,7 +1366,7 @@ func (bridge *Bridge) layoutLocked() LayoutState {
 			Mode:          mode,
 			Participation: role,
 			Floating:      role == SurfaceLayoutRoleFloating,
-			Focused:       surface.Focused,
+			Focused:       bridge.layoutFocusedLocked(surface),
 			Visible:       surface.Visible,
 			Geometry:      firstGeometry(surface),
 			Order:         index,

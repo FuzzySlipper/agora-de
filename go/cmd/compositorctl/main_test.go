@@ -252,6 +252,32 @@ func TestRunSurfaceFocusCallsCompositorControlSocket(t *testing.T) {
 	}
 }
 
+func TestRunSurfacePromoteCallsCompositorControlSocket(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}
+	})
+
+	var stdout bytes.Buffer
+	err := run([]string{"surface", "promote", "--surface", "view-promote", "--timeout-ms", "1234"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run surface promote error = %v", err)
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*requests))
+	}
+	request := (*requests)[0]
+	if request.Method != methodPromoteSurface {
+		t.Fatalf("method = %q, want %q", request.Method, methodPromoteSurface)
+	}
+	var body surfaceLayoutRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.SurfaceID != "view-promote" || body.WaitTimeoutMs != 1234 {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
 func TestRunLayoutGetCallsCompositorControlSocket(t *testing.T) {
 	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
 		return controlResponse{OK: true, Body: json.RawMessage(`{"layout":{"mode":"freeform","revision":1}}`)}

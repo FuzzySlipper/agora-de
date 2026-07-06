@@ -259,6 +259,70 @@ func TestGetLayoutUsesBackendLayoutStateWhenPluginProvidesIt(t *testing.T) {
 	}
 }
 
+func TestBackendLayoutStatePreservesTrackedFocus(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	for _, id := range []string{"view-a", "view-b"} {
+		bridge.handleSurfaceEvent(pluginEvent{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          id,
+				SurfaceKind: SurfaceKindXDG,
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+				OutputID:    "HDMI-A-1",
+			},
+		})
+	}
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventFocused,
+		Surface: CompositorSurface{ID: "view-b", Visible: &visible},
+	})
+
+	bridge.handlePluginEvent(pluginEvent{
+		Type: PluginLayoutState,
+		Layout: LayoutState{
+			Mode:     LayoutModeZones,
+			Revision: 9,
+			Surfaces: []LayoutSurface{
+				{
+					SurfaceID:     "view-a",
+					WorkspaceID:   "workspace-1",
+					ZoneID:        zoneMaster,
+					Mode:          LayoutModeZones,
+					Participation: SurfaceLayoutRoleTiled,
+					Focused:       true,
+					Visible:       true,
+					Geometry:      &SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 500},
+				},
+				{
+					SurfaceID:     "view-b",
+					WorkspaceID:   "workspace-1",
+					ZoneID:        zoneStack,
+					Mode:          LayoutModeZones,
+					Participation: SurfaceLayoutRoleTiled,
+					Visible:       true,
+					Geometry:      &SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 500},
+				},
+			},
+		},
+	})
+
+	layout := bridge.GetLayout().Layout
+	if len(layout.Surfaces) != 2 {
+		t.Fatalf("layout surfaces = %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[0].Focused || !layout.Surfaces[1].Focused {
+		t.Fatalf("layout readback overwrote tracked focus: %+v", layout.Surfaces)
+	}
+	surfaces := bridge.ListSurfaces()
+	if surfaces[0].Focused || !surfaces[1].Focused {
+		t.Fatalf("tracked focus was not preserved: %+v", surfaces)
+	}
+}
+
 func TestBackendLayoutStateDropsUnmappedSurface(t *testing.T) {
 	bridge := New(Config{})
 	bridge.handlePluginEvent(pluginEvent{
@@ -744,6 +808,88 @@ func TestFocusSurfaceAckUpdatesFocusStateAndRequestsAutoLayout(t *testing.T) {
 	}
 	if surfaces["view-a"].Focused || !surfaces["view-b"].Focused {
 		t.Fatalf("focus state = %+v", surfaces)
+	}
+}
+
+func TestPromoteSurfaceSetsBridgeOwnedFocusCandidate(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	for _, id := range []string{"view-a", "view-b"} {
+		bridge.surfaces[id] = TrackedSurface{
+			Surface: CompositorSurface{
+				ID:          id,
+				SurfaceKind: SurfaceKindXDG,
+				Visible:     &visible,
+				OutputID:    "HDMI-A-1",
+				WorkspaceID: "workspace-1",
+				ZoneID:      zoneStack,
+				LayoutMode:  string(LayoutModeZones),
+				LayoutRole:  string(SurfaceLayoutRoleTiled),
+			},
+			Visible:     true,
+			OutputID:    "HDMI-A-1",
+			WorkspaceID: "workspace-1",
+			ZoneID:      zoneStack,
+			LayoutMode:  string(LayoutModeZones),
+			LayoutRole:  string(SurfaceLayoutRoleTiled),
+		}
+	}
+	bridge.surfaces["view-a"] = func(surface TrackedSurface) TrackedSurface {
+		surface.Focused = true
+		return surface
+	}(bridge.surfaces["view-a"])
+
+	response, err := bridge.PromoteSurface(SurfaceLayoutActionRequest{SurfaceID: "view-b"})
+	if err != nil {
+		t.Fatalf("PromoteSurface: %v", err)
+	}
+	if response.Decision != DecisionAccepted || response.Action != "surface.promote" {
+		t.Fatalf("response = %+v", response)
+	}
+	surfaces := map[string]TrackedSurface{}
+	for _, surface := range bridge.ListSurfaces() {
+		surfaces[surface.Surface.ID] = surface
+	}
+	if surfaces["view-a"].Focused || !surfaces["view-b"].Focused {
+		t.Fatalf("focus state = %+v", surfaces)
+	}
+	if surfaces["view-b"].ZoneID != zoneMaster || surfaces["view-b"].LayoutRole != string(SurfaceLayoutRoleTiled) {
+		t.Fatalf("promoted layout state = %+v", surfaces["view-b"])
+	}
+}
+
+func TestPromoteSurfaceSurvivesCompositorFocusReadback(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	for _, id := range []string{"view-a", "view-b"} {
+		bridge.handleSurfaceEvent(pluginEvent{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          id,
+				SurfaceKind: SurfaceKindXDG,
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+				OutputID:    "HDMI-A-1",
+			},
+		})
+	}
+	if _, err := bridge.PromoteSurface(SurfaceLayoutActionRequest{SurfaceID: "view-b"}); err != nil {
+		t.Fatalf("PromoteSurface: %v", err)
+	}
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventFocused,
+		Surface: CompositorSurface{ID: "view-a", Visible: &visible},
+	})
+
+	layout := bridge.GetLayout().Layout
+	byID := map[string]LayoutSurface{}
+	for _, surface := range layout.Surfaces {
+		byID[surface.SurfaceID] = surface
+	}
+	if byID["view-a"].Focused || !byID["view-b"].Focused {
+		t.Fatalf("layout focus followed compositor readback instead of promote: %+v", layout.Surfaces)
 	}
 }
 

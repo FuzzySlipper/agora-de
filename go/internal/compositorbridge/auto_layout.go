@@ -149,7 +149,7 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 			Mode:          layoutMode,
 			Participation: SurfaceLayoutRoleTiled,
 			Floating:      false,
-			Focused:       tracked.Focused,
+			Focused:       bridge.layoutFocusedLocked(tracked),
 			Visible:       tracked.Visible,
 			Geometry:      firstGeometry(tracked),
 			Order:         index,
@@ -209,7 +209,7 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 			Mode:          mode,
 			Participation: role,
 			Floating:      role == SurfaceLayoutRoleFloating,
-			Focused:       tracked.Focused,
+			Focused:       bridge.layoutFocusedLocked(tracked),
 			Visible:       tracked.Visible,
 			Geometry:      firstGeometry(tracked),
 			Order:         len(layout.Surfaces),
@@ -240,6 +240,10 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 		return nil
 	}
 	sort.Slice(surfaces, func(i, j int) bool {
+		promoted := bridge.promotedSurfaceID
+		if promoted != "" && (surfaces[i].Surface.ID == promoted || surfaces[j].Surface.ID == promoted) {
+			return surfaces[i].Surface.ID == promoted
+		}
 		if surfaces[i].Focused != surfaces[j].Focused {
 			return surfaces[i].Focused
 		}

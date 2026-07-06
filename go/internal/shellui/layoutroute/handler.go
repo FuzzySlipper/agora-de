@@ -247,6 +247,12 @@ func actionArgs(action actionRequest) ([]string, error) {
 		return []string{"layout", "set-mode", "--mode", mode}, nil
 	case "assignZone":
 		return zoneActionArgs("assign-zone", action)
+	case "promote":
+		surfaceID := strings.TrimSpace(action.SurfaceID)
+		if surfaceID == "" {
+			return nil, fmt.Errorf("surfaceId is required")
+		}
+		return []string{"surface", "promote", "--surface", surfaceID, "--timeout-ms", "2000"}, nil
 	case "tile":
 		return zoneActionArgs("tile", action)
 	case "moveResize":

@@ -104,6 +104,24 @@ func TestLayoutZoneActionsForwardPlannerGeometry(t *testing.T) {
 	}
 }
 
+func TestLayoutPromoteActionForwardsSurface(t *testing.T) {
+	args, err := actionArgs(actionRequest{
+		Action:    "promote",
+		SurfaceID: " view-live ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"surface", "promote",
+		"--surface", "view-live",
+		"--timeout-ms", "2000",
+	}
+	if strings.Join(args, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}
+
 func TestLayoutZoneActionsRejectInvalidPlannerGeometry(t *testing.T) {
 	_, err := actionArgs(actionRequest{
 		Action:    "tile",
