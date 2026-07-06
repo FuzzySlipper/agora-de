@@ -665,6 +665,88 @@ func TestAutoLayoutPromotesFocusedSurfaceToMaster(t *testing.T) {
 	}
 }
 
+func TestFocusSurfaceAckUpdatesFocusStateAndRequestsAutoLayout(t *testing.T) {
+	bridge := New(Config{})
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+	decoder := json.NewDecoder(pluginClient)
+	encoder := json.NewEncoder(pluginClient)
+	readInitialPluginMessages(t, decoder)
+
+	visible := true
+	for _, id := range []string{"view-a", "view-b"} {
+		bridge.surfaces[id] = TrackedSurface{
+			Surface: CompositorSurface{
+				ID:          id,
+				SurfaceKind: SurfaceKindXDG,
+				Visible:     &visible,
+				OutputID:    "HDMI-A-1",
+				WorkspaceID: "workspace-1",
+				ZoneID:      zoneStack,
+				LayoutMode:  string(LayoutModeZones),
+				LayoutRole:  string(SurfaceLayoutRoleTiled),
+			},
+			Visible:     true,
+			OutputID:    "HDMI-A-1",
+			WorkspaceID: "workspace-1",
+			ZoneID:      zoneStack,
+			LayoutMode:  string(LayoutModeZones),
+			LayoutRole:  string(SurfaceLayoutRoleTiled),
+			Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+		}
+	}
+	bridge.surfaces["view-a"] = func(surface TrackedSurface) TrackedSurface {
+		surface.Focused = true
+		return surface
+	}(bridge.surfaces["view-a"])
+
+	done := make(chan SurfaceActionResponse, 1)
+	errs := make(chan error, 1)
+	go func() {
+		response, err := bridge.FocusSurface(FocusSurfaceRequest{SurfaceID: "view-b", WaitTimeoutMs: 1000})
+		if err != nil {
+			errs <- err
+			return
+		}
+		done <- response
+	}()
+
+	var command map[string]any
+	if err := decoder.Decode(&command); err != nil {
+		t.Fatalf("decode focus command: %v", err)
+	}
+	if command["type"] != PluginFocusSurface || command["surface_id"] != "view-b" {
+		t.Fatalf("focus command = %+v", command)
+	}
+	if err := encoder.Encode(map[string]any{
+		"type":       PluginFocusResponse,
+		"request_id": command["request_id"],
+		"surface_id": command["surface_id"],
+		"ok":         true,
+	}); err != nil {
+		t.Fatalf("send focus response: %v", err)
+	}
+
+	select {
+	case err := <-errs:
+		t.Fatalf("FocusSurface: %v", err)
+	case response := <-done:
+		if response.Decision != DecisionAccepted || response.Surface == nil || !response.Surface.Focused {
+			t.Fatalf("focus response = %+v", response)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for focus response")
+	}
+	surfaces := map[string]TrackedSurface{}
+	for _, surface := range bridge.ListSurfaces() {
+		surfaces[surface.Surface.ID] = surface
+	}
+	if surfaces["view-a"].Focused || !surfaces["view-b"].Focused {
+		t.Fatalf("focus state = %+v", surfaces)
+	}
+}
+
 func TestAutoLayoutOrderUsesPlacementZonesOverStaleTrackedZones(t *testing.T) {
 	bridge := New(Config{})
 	visible := true

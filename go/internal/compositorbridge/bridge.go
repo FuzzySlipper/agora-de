@@ -829,6 +829,20 @@ func (bridge *Bridge) FocusSurface(request FocusSurfaceRequest) (SurfaceActionRe
 		return SurfaceActionResponse{}, classifiedError{class: ErrorFrameTimeout, message: "focus request timed out"}
 	}
 
+	bridge.mu.Lock()
+	for id, tracked := range bridge.surfaces {
+		tracked.Focused = id == request.SurfaceID
+		if id == request.SurfaceID {
+			tracked.LayoutRevision = bridge.layoutSeq + 1
+			tracked.UpdatedAt = time.Now()
+			surface = tracked
+		}
+		bridge.surfaces[id] = tracked
+	}
+	bridge.layoutSeq++
+	bridge.mu.Unlock()
+	bridge.requestAutoLayout("surface_focus_command")
+
 	return SurfaceActionResponse{
 		Action:           "surface.focus",
 		SurfaceID:        request.SurfaceID,
