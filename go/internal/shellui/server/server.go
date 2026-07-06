@@ -2042,6 +2042,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     .brand,
     .control,
     .workspace,
+    .layout-status,
     .status,
     .clock {
       align-items: center;
@@ -2080,6 +2081,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       width: 124px;
     }
     .workspace,
+    .layout-status,
     .status,
     .clock {
       border: 2px solid var(--agora-border);
@@ -2088,6 +2090,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     button.workspace {
       background: var(--agora-surface-raised);
       font: inherit;
+    }
+    .layout-status {
+      background: var(--agora-surface-raised);
+      font: inherit;
+      min-width: 88px;
     }
     .dock-section {
       align-items: center;
@@ -2200,6 +2207,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 58px;
       padding: 0 10px;
     }
+    .surface-meta {
+      font-size: 12px;
+      min-width: 78px;
+      padding: 0 8px;
+    }
     .spacer {
       flex: 1 1 auto;
       min-width: 24px;
@@ -2228,6 +2240,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       <span class="dock-item muted">loading surfaces</span>
     </section>
     <button class="workspace" id="workspace-label" type="button">workspace 1</button>
+    <button class="layout-status" id="layout-mode-button" type="button">freeform</button>
     <span class="status" id="status-label">starting</span>
     <time class="clock" id="clock-label">--:--</time>
   </main>
@@ -2284,8 +2297,44 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return surfaces.find((surface) => surface.surfaceId === surfaceId);
     }
 
+    function activeLayoutWorkspace() {
+      const workspaces = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
+      return workspaces.find((workspace) => workspace.active) ||
+        workspaces.find((workspace) => workspace.id === state.workspace.id) ||
+        workspaces[0] ||
+        {zones: []};
+    }
+
+    function workspaceZones() {
+      const zones = Array.isArray(activeLayoutWorkspace().zones) ? activeLayoutWorkspace().zones : [];
+      const zoneIds = zones
+        .filter((zone) => text(zone.id, "") && zone.kind !== "chrome")
+        .map((zone) => zone.id);
+      return zoneIds.length ? zoneIds : ["primary", "secondary"];
+    }
+
+    function nextLayoutMode(mode) {
+      const modes = ["freeform", "zones", "columns"];
+      const current = modes.indexOf(mode);
+      return modes[(current + 1) %% modes.length];
+    }
+
     function nextZone(zoneId) {
-      return zoneId === "primary" ? "secondary" : "primary";
+      const zones = workspaceZones();
+      const index = zones.indexOf(zoneId);
+      return zones[(index + 1) %% zones.length];
+    }
+
+    function geometryLabel(geometry) {
+      if (!geometry || geometry.width <= 0 || geometry.height <= 0) {
+        return "";
+      }
+      return geometry.width + "x" + geometry.height + "@" + geometry.x + "," + geometry.y;
+    }
+
+    function surfaceAreaLabel(layout, zone) {
+      const area = geometryLabel(layout.geometry);
+      return area ? zone + " " + area : zone;
     }
 
     function render() {
@@ -2306,8 +2355,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         const label = text(layout.label, text(surface.title, text(surface.appId, surface.id)));
         const zone = text(layout.zoneId, text(surface.zoneId, "primary"));
         const focusButton = button(label, "dock-item" + (surface.focused || layout.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus"));
-        focusButton.title = text(surface.title, text(surface.appId, surface.id)) + " / " + zone;
+        const area = surfaceAreaLabel(layout, zone);
+        focusButton.title = text(surface.title, text(surface.appId, surface.id)) + " / " + area;
         group.appendChild(focusButton);
+        group.appendChild(item(area, "surface-meta muted"));
         group.appendChild(button("Zone", "surface-action", () => assignZone(surface.id, nextZone(zone))));
         group.appendChild(button("Close", "surface-action", () => actOnSurface(surface.id, "close")));
         return group;
@@ -2323,6 +2374,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const workspace = document.getElementById("workspace-label");
       workspace.textContent = text(state.workspace.name, "workspace 1");
       workspace.title = text(state.layout.mode, "freeform") + (state.workspace.surfaceCount ? " / " + state.workspace.surfaceCount + " work surfaces" : "");
+      const layoutMode = text(state.layout.mode, "freeform");
+      const layoutStatus = document.getElementById("layout-mode-button");
+      layoutStatus.textContent = layoutMode + (state.layout.revision ? " r" + state.layout.revision : "");
+      layoutStatus.title = "zones: " + workspaceZones().join(" / ");
     }
 
     async function loadJSON(path) {
@@ -2466,6 +2521,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     document.getElementById("refresh-button").addEventListener("click", refresh);
     document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
     document.getElementById("workspace-label").addEventListener("click", activateWorkspace);
+    document.getElementById("layout-mode-button").addEventListener("click", () => setLayoutMode(nextLayoutMode(text(state.layout.mode, "freeform"))));
     updateClock();
     refresh();
     setInterval(updateClock, 30000);

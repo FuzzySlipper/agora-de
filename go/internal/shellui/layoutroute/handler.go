@@ -266,10 +266,22 @@ func zoneActionArgs(command string, action actionRequest) ([]string, error) {
 	if zoneID == "" {
 		return nil, fmt.Errorf("zoneId is required")
 	}
-	args := []string{"surface", command, "--surface", surfaceID, "--zone", zoneID, "--timeout-ms", "2000"}
+	args := []string{"surface", command, "--surface", surfaceID, "--zone", zoneID}
 	if workspaceID := strings.TrimSpace(action.WorkspaceID); workspaceID != "" {
 		args = append(args, "--workspace", workspaceID)
 	}
+	if action.Geometry != nil {
+		if action.Geometry.Width <= 0 || action.Geometry.Height <= 0 {
+			return nil, fmt.Errorf("geometry width and height must be positive")
+		}
+		args = append(args,
+			"--x", fmt.Sprint(action.Geometry.X),
+			"--y", fmt.Sprint(action.Geometry.Y),
+			"--width", fmt.Sprint(action.Geometry.Width),
+			"--height", fmt.Sprint(action.Geometry.Height),
+		)
+	}
+	args = append(args, "--timeout-ms", "2000")
 	return args, nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"agora-de.local/go/internal/shellui/surfaces"
@@ -73,5 +74,44 @@ func TestLayoutFallsBackToSurfaceProjectionWhenBackendUnsupported(t *testing.T) 
 	}
 	if surface.Geometry.X != 24 || surface.Geometry.Width != 800 {
 		t.Fatalf("unexpected fallback geometry: %+v", surface.Geometry)
+	}
+}
+
+func TestLayoutZoneActionsForwardPlannerGeometry(t *testing.T) {
+	args, err := actionArgs(actionRequest{
+		Action:      "assignZone",
+		SurfaceID:   " view-live ",
+		WorkspaceID: " workspace-1 ",
+		ZoneID:      " stack ",
+		Geometry:    &surfaces.GeometryView{X: 320, Y: 64, Width: 960, Height: 720},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"surface", "assign-zone",
+		"--surface", "view-live",
+		"--zone", "stack",
+		"--workspace", "workspace-1",
+		"--x", "320",
+		"--y", "64",
+		"--width", "960",
+		"--height", "720",
+		"--timeout-ms", "2000",
+	}
+	if strings.Join(args, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}
+
+func TestLayoutZoneActionsRejectInvalidPlannerGeometry(t *testing.T) {
+	_, err := actionArgs(actionRequest{
+		Action:    "tile",
+		SurfaceID: "view-live",
+		ZoneID:    "master",
+		Geometry:  &surfaces.GeometryView{Width: 0, Height: 720},
+	})
+	if err == nil || !strings.Contains(err.Error(), "geometry width and height must be positive") {
+		t.Fatalf("err = %v, want positive geometry error", err)
 	}
 }

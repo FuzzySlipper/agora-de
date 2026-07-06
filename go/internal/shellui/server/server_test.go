@@ -37,6 +37,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`id="operator-button"`,
 		`id="running-list"`,
 		`id="workspace-label"`,
+		`id="layout-mode-button"`,
 		`id="status-label"`,
 		`id="clock-label"`,
 		`Hide Apps`,
@@ -52,6 +53,11 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`/api/workspaces/action`,
 		`Zone`,
 		`setMode`,
+		`workspaceZones`,
+		`nextLayoutMode`,
+		`surfaceAreaLabel`,
+		`className = "dock-item" + (className ? " " + className : "")`,
+		`surface-meta`,
 		`shell-status`,
 		`workspace 1`,
 	} {
@@ -411,7 +417,7 @@ esac
 	}
 
 	recorder = httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LayoutActionPath, strings.NewReader(`{"action":"assignZone","surfaceId":"view-live","workspaceId":"workspace-1","zoneId":"secondary"}`)))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, LayoutActionPath, strings.NewReader(`{"action":"assignZone","surfaceId":"view-live","workspaceId":"workspace-1","zoneId":"secondary","geometry":{"x":20,"y":40,"width":500,"height":360}}`)))
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("layout assignZone status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
 	}
@@ -425,6 +431,7 @@ esac
 		"layout set-mode --mode zones",
 		"surface assign-zone --surface view-live --zone secondary",
 		"--workspace workspace-1",
+		"--x 20 --y 40 --width 500 --height 360",
 	} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("compositorctl calls missing %q: %s", want, calls)
