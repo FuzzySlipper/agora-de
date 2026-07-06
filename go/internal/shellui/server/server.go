@@ -237,9 +237,14 @@ func fixtureCatalog() *appcatalog.Catalog {
 }
 
 type launchTarget struct {
-	URL   string
-	Title string
-	AppID string
+	URL           string
+	Title         string
+	AppID         string
+	LayerShell    bool
+	LayerRole     string
+	Width         int
+	Height        int
+	ExclusiveZone int
 }
 
 func launchTargets() map[string]launchTarget {
@@ -255,9 +260,14 @@ func launchTargets() map[string]launchTarget {
 			AppID: "io.agorade.ShellStatus",
 		},
 		"shell-launcher": {
-			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=launcher",
-			Title: "Agora DE App Launcher",
-			AppID: "io.agorade.ShellLauncher",
+			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=launcher",
+			Title:         "Agora DE App Launcher",
+			AppID:         "io.agorade.ShellLauncher",
+			LayerShell:    true,
+			LayerRole:     "overlay",
+			Width:         2560,
+			Height:        1440,
+			ExclusiveZone: 0,
 		},
 	}
 }
@@ -293,6 +303,9 @@ func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.
 func launchWebviewTarget(request *http.Request, path string, appID string, target launchTarget) (catalogroute.LaunchResult, error) {
 	ctx, cancel := context.WithTimeout(request.Context(), 8*time.Second)
 	defer cancel()
+	if target.LayerShell {
+		return launchLayerShellWebviewTarget(ctx, path, request.Host, appID, target)
+	}
 	output, err := exec.CommandContext(ctx, path,
 		"launch",
 		"--url", target.URL,
@@ -301,6 +314,54 @@ func launchWebviewTarget(request *http.Request, path string, appID string, targe
 		"--expected-app-id", target.AppID,
 		"--wait-surface",
 		"--wait-timeout-ms", "5000",
+	).Output()
+	if err != nil {
+		return catalogroute.LaunchResult{}, fmt.Errorf("compositorctl launch: %w", err)
+	}
+	result, err := decodeCompositorctlLaunch(output)
+	if err != nil {
+		return catalogroute.LaunchResult{}, err
+	}
+	result.AppID = appID
+	if result.Status == "" {
+		result.Status = "launched"
+	}
+	return result, nil
+}
+
+func launchLayerShellWebviewTarget(ctx context.Context, path string, host string, appID string, target launchTarget) (catalogroute.LaunchResult, error) {
+	url := target.URL
+	if strings.Contains(url, "127.0.0.1:17780") && host != "" {
+		url = strings.Replace(url, "127.0.0.1:17780", host, 1)
+	}
+	width := target.Width
+	if width <= 0 {
+		width = 1280
+	}
+	height := target.Height
+	if height <= 0 {
+		height = 800
+	}
+	exclusiveZone := target.ExclusiveZone
+	output, err := exec.CommandContext(ctx, path,
+		"launch",
+		"--arg", "/usr/bin/env",
+		"--arg", "GDK_BACKEND=wayland",
+		"--arg", "LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so",
+		"--arg", "/usr/bin/python3",
+		"--arg", "/home/agent/.local/bin/agora-de-gtk4-layer-shell-webview",
+		"--arg", "--url", "--arg", url,
+		"--arg", "--role", "--arg", firstNonEmpty(target.LayerRole, "overlay"),
+		"--arg", "--width", "--arg", fmt.Sprint(width),
+		"--arg", "--height", "--arg", fmt.Sprint(height),
+		"--arg", "--exclusive-zone", "--arg", fmt.Sprint(exclusiveZone),
+		"--arg", "--title", "--arg", target.Title,
+		"--arg", "--app-id", "--arg", target.AppID,
+		"--expected-app-id", target.AppID,
+		"--wait-surface",
+		"--wait-timeout-ms", "5000",
+		"--session-token", "shellui-webview",
+		"--audit-correlation-id", "shellui:"+appID,
 	).Output()
 	if err != nil {
 		return catalogroute.LaunchResult{}, fmt.Errorf("compositorctl launch: %w", err)
@@ -1707,21 +1768,25 @@ func writeLauncherHTML(response http.ResponseWriter) {
     }
     body {
       box-sizing: border-box;
-      display: grid;
+      display: block;
       height: 100vh;
       min-height: 0;
-      padding: 16px;
     }
     .launcher {
       background: var(--agora-surface);
-      border: 1px solid var(--agora-border);
+      border: 2px solid var(--agora-border);
+      border-bottom-color: var(--agora-accent);
       border-radius: var(--agora-radius-control);
       box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+      bottom: calc(var(--agora-panel-height) + 10px);
       display: grid;
       grid-template-rows: auto 1fr auto;
-      height: calc(100vh - 32px);
+      height: min(600px, calc(100vh - var(--agora-panel-height) - 24px));
+      left: var(--agora-panel-padding-x);
       min-height: 0;
       overflow: hidden;
+      position: fixed;
+      width: min(760px, calc(100vw - 44px));
     }
     .launcher-header {
       align-items: center;
@@ -2008,7 +2073,16 @@ func writeLauncherHTML(response http.ResponseWriter) {
         body: JSON.stringify(body)
       });
       if (!response.ok) {
-        throw new Error(path + " returned " + response.status);
+        let errorBody = {};
+        try {
+          errorBody = await response.json();
+        } catch (_error) {
+          errorBody = {};
+        }
+        const error = new Error(text(errorBody.error, path + " returned " + response.status));
+        error.status = response.status;
+        error.errorClass = text(errorBody.errorClass, "");
+        throw error;
       }
       return response.json();
     }
@@ -2081,7 +2155,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
 %s
     html,
     body {
-      background: var(--agora-bg) !important;
+      background: transparent !important;
       color: var(--agora-fg);
       height: 100%%;
       margin: 0;
@@ -2090,20 +2164,27 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
     body {
       align-items: stretch;
+      background: transparent;
       box-sizing: border-box;
       display: flex;
       font: var(--agora-font-panel);
+      overflow: hidden;
     }
     .panel {
       align-items: center;
       background: var(--agora-surface);
       border-top: 4px solid var(--agora-evidence-accent);
+      bottom: 0;
       box-shadow: inset 0 1px 0 var(--agora-border-subtle);
       box-sizing: border-box;
       display: flex;
       gap: var(--agora-panel-gap);
+      height: var(--agora-panel-height);
+      left: 0;
       min-height: var(--agora-panel-height);
       padding: 0 var(--agora-panel-padding-x);
+      position: fixed;
+      right: 0;
       width: 100vw;
     }
     button {
@@ -2175,36 +2256,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       gap: 10px;
       min-width: 0;
     }
-    .apps {
-      display: none;
-      flex: 0 1 680px;
-      overflow: hidden;
-    }
-    .apps.expanded {
-      flex: 1 1 860px;
-    }
-    .panel.apps-open .apps {
-      display: flex;
-      flex: 1 1 auto;
-    }
-    .app-list {
-      align-items: center;
-      display: flex;
-      gap: 10px;
-      min-width: 0;
-      overflow: hidden;
-    }
-    .apps.expanded .app-list,
-    .panel.apps-open .app-list {
-      overflow-x: auto;
-      padding-bottom: 2px;
-    }
     .running {
       flex: 1 1 auto;
       overflow: hidden;
-    }
-    .panel.apps-open .running {
-      display: none;
     }
     .dock-item {
       align-items: center;
@@ -2223,46 +2277,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
     button.dock-item {
       cursor: pointer;
-    }
-    .dock-item.app-item {
-      align-items: center;
-      gap: 8px;
-      justify-content: center;
-      line-height: 1.05;
-      max-width: 220px;
-    }
-    .app-icon {
-      align-items: center;
-      background: var(--agora-evidence-strong);
-      border-radius: var(--agora-radius-control);
-      color: var(--agora-bg);
-      display: inline-flex;
-      flex: 0 0 auto;
-      font-size: 13px;
-      height: 26px;
-      justify-content: center;
-      width: 26px;
-    }
-    .app-copy {
-      display: block;
-      min-width: 0;
-    }
-    .app-name,
-    .app-meta,
-    .app-reason {
-      display: block;
-      max-width: 100%%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .app-meta,
-    .app-reason {
-      color: var(--agora-text-muted);
-      font-size: 12px;
-      margin-top: 3px;
-    }
-    .dock-item.disabled {
-      border-color: var(--agora-border);
     }
     .dock-item.focused {
       border-color: var(--agora-accent);
@@ -2346,11 +2360,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     <button class="control" id="apps-button" type="button" aria-pressed="false">Apps</button>
     <button class="control secondary" id="refresh-button" type="button">Refresh</button>
     <button class="control secondary" id="operator-button" type="button">Status</button>
-    <section class="dock-section apps" id="panel-apps-section" aria-label="Applications">
-      <div class="app-list" id="panel-app-list">
-        <span class="dock-item muted">loading apps</span>
-      </div>
-    </section>
     <section class="dock-section running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
     </section>
@@ -2384,7 +2393,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
       feedback: {label: "", className: "", until: 0},
-      appsOpen: false,
       surface: %q
     };
 
@@ -2419,41 +2427,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         return;
       }
       values.slice(0, limit || 4).forEach((value) => target.appendChild(mapper(value)));
-    }
-
-    function renderPanelApps() {
-      const target = document.getElementById("panel-app-list");
-      target.replaceChildren();
-      if (!state.apps.length) {
-        target.appendChild(item("no apps", "muted"));
-        return;
-      }
-      state.apps.forEach((app) => {
-        const label = text(app.name, app.id);
-        const reason = text(app.disabledReason, app.launchable ? "" : "not launchable");
-        const element = document.createElement("button");
-        element.type = "button";
-        element.className = "dock-item app-item" + (app.launchable ? "" : " disabled");
-        element.disabled = !app.launchable;
-        element.title = reason ? label + " / " + reason : label;
-        element.addEventListener("click", () => launchApp(app.id));
-        const icon = document.createElement("span");
-        icon.className = "app-icon";
-        icon.textContent = text(app.iconLabel, label.slice(0, 1).toUpperCase());
-        const copy = document.createElement("span");
-        copy.className = "app-copy";
-        const name = document.createElement("span");
-        name.className = "app-name";
-        name.textContent = label;
-        const meta = document.createElement("span");
-        meta.className = reason ? "app-reason" : "app-meta";
-        meta.textContent = reason || text(app.category, "Other");
-        copy.appendChild(name);
-        copy.appendChild(meta);
-        element.appendChild(icon);
-        element.appendChild(copy);
-        target.appendChild(element);
-      });
     }
 
     function launcherSurface() {
@@ -2677,13 +2650,12 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
 
     function render() {
       const launcher = launcherSurface();
-      const showingApps = Boolean(launcher) || state.appsOpen;
+      const showingApps = Boolean(launcher);
       document.querySelector(".panel").classList.toggle("apps-open", showingApps);
       const appsButton = document.getElementById("apps-button");
       appsButton.textContent = showingApps ? "Hide Apps" : "Apps";
       appsButton.title = showingApps ? "Close applications" : state.apps.length + " apps";
       appsButton.setAttribute("aria-pressed", showingApps ? "true" : "false");
-      renderPanelApps();
       const workSurfaces = state.surfaces.filter((surface) =>
         surface.mapped &&
         surface.surfaceKind !== "layer_shell" &&
@@ -2711,9 +2683,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         status.className = "status " + feedback.className;
       } else if (launcher) {
         status.textContent = "apps open";
-        status.className = "status ready";
-      } else if (state.appsOpen) {
-        status.textContent = state.apps.length + " apps";
         status.className = "status ready";
       } else {
         status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
@@ -2796,7 +2765,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         setFeedback(action + " " + actionStatus(result), "ready");
         render();
       } catch (error) {
-        status.textContent = action + " failed";
+        status.textContent = error.errorClass === "backend_unsupported" ? action + " unsupported" : action + " failed";
         status.className = "status warn";
       }
     }
@@ -2981,7 +2950,6 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         status.className = "status ready";
         try {
           await postJSON("/api/surfaces/action", {surfaceId: launcher.id, action: "close"});
-          state.appsOpen = true;
           await refresh();
         } catch (error) {
           status.textContent = "close failed";
@@ -2989,8 +2957,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         }
         return;
       }
-      state.appsOpen = !state.appsOpen;
-      render();
+      await launchApp("shell-launcher");
     }
 
     function updateClock() {

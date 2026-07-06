@@ -16,6 +16,7 @@ def main() -> int:
     parser.add_argument("--role", choices=("background", "panel", "overlay"), required=True)
     parser.add_argument("--width", type=int, required=True)
     parser.add_argument("--height", type=int, required=True)
+    parser.add_argument("--exclusive-zone", type=int, default=96)
     parser.add_argument("--title", required=True)
     parser.add_argument("--app-id", required=True)
     args = parser.parse_args()
@@ -46,10 +47,10 @@ def main() -> int:
             self.window = Gtk.ApplicationWindow(application=self)
             self.window.set_title(args.title)
             self.window.set_default_size(args.width, args.height)
-            configure_layer_shell(Gtk4LayerShell, self.window, args.role, args.app_id)
+            configure_layer_shell(Gtk4LayerShell, self.window, args.role, args.app_id, args.exclusive_zone)
 
             webview = WebKit.WebView()
-            if args.role == "overlay":
+            if args.role in ("overlay", "panel"):
                 rgba = Gdk.RGBA()
                 rgba.red = 0.0
                 rgba.green = 0.0
@@ -78,7 +79,7 @@ def main() -> int:
     return ShellSurfaceApp().run([])
 
 
-def configure_layer_shell(Gtk4LayerShell, window, role: str, namespace: str) -> None:
+def configure_layer_shell(Gtk4LayerShell, window, role: str, namespace: str, exclusive_zone: int) -> None:
     if not Gtk4LayerShell.is_supported():
         raise RuntimeError("Gtk4LayerShell is not supported on this Wayland display")
 
@@ -110,7 +111,7 @@ def configure_layer_shell(Gtk4LayerShell, window, role: str, namespace: str) -> 
 
     Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.TOP)
     Gtk4LayerShell.set_anchor(window, Gtk4LayerShell.Edge.BOTTOM, True)
-    Gtk4LayerShell.auto_exclusive_zone_enable(window)
+    Gtk4LayerShell.set_exclusive_zone(window, exclusive_zone)
 
 
 if __name__ == "__main__":

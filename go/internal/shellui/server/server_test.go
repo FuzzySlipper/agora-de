@@ -35,8 +35,6 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`aria-pressed="false"`,
 		`id="refresh-button"`,
 		`id="operator-button"`,
-		`id="panel-apps-section"`,
-		`id="panel-app-list"`,
 		`id="running-list"`,
 		`id="wm-controls"`,
 		`id="target-label"`,
@@ -62,9 +60,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`Hide Apps`,
 		`setAttribute("aria-pressed"`,
 		`io.agorade.ShellLauncher`,
-		`appsOpen`,
-		`renderPanelApps`,
-		`className = "dock-item app-item"`,
+		`backend_unsupported`,
 		`/api/catalog/apps`,
 		`/api/catalog/launch`,
 		`/api/surfaces`,
@@ -119,7 +115,8 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`className = "app-detail"`,
 		`id="policy-status"`,
 		`dataset.disabledCode`,
-		`height: calc(100vh - 32px)`,
+		`bottom: calc(var(--agora-panel-height) + 10px)`,
+		`width: min(760px`,
 		`overflow-y: auto`,
 		`launchable / " + disabled + " disabled`,
 		`/api/catalog/launch`,
@@ -728,7 +725,7 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"surface=launcher", "--expected-app-id io.agorade.ShellLauncher"} {
+	for _, want := range []string{"surface=launcher", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg overlay", "--expected-app-id io.agorade.ShellLauncher"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("launcher compositorctl calls missing %q: %s", want, calls)
 		}
@@ -1020,7 +1017,7 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"surface=launcher", "--expected-app-id io.agorade.ShellLauncher"} {
+	for _, want := range []string{"surface=launcher", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg overlay", "--expected-app-id io.agorade.ShellLauncher"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("launcher compositorctl calls missing %q: %s", want, calls)
 		}
