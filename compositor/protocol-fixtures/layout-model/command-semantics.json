@@ -1,0 +1,110 @@
+{
+  "schema": "agora-de.layout-model.command-semantics.v1",
+  "description": "Backend-neutral layout command behavior target. Adapters may supply geometry, but Rust layout-model owns command result semantics.",
+  "initial": {
+    "mode": "freeform",
+    "revision": 1,
+    "surfaces": [
+      {
+        "surface_id": "view-a",
+        "workspace_id": "workspace-1",
+        "zone_id": "primary",
+        "participation": "floating",
+        "visible": true,
+        "stale": false,
+        "geometry": {
+          "x": 96,
+          "y": 66,
+          "width": 804,
+          "height": 634
+        }
+      },
+      {
+        "surface_id": "view-b",
+        "workspace_id": "workspace-1",
+        "zone_id": "primary",
+        "participation": "floating",
+        "visible": true,
+        "stale": false,
+        "geometry": {
+          "x": 96,
+          "y": 66,
+          "width": 700,
+          "height": 530
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "action": "surface.assign_zone",
+      "surface_id": "view-a",
+      "zone_id": "primary",
+      "backend_geometry": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 1248
+      },
+      "expect": {
+        "status": "accepted",
+        "zone_id": "primary",
+        "participation": "tiled"
+      }
+    },
+    {
+      "action": "surface.assign_zone",
+      "surface_id": "view-b",
+      "zone_id": "secondary",
+      "backend_geometry": {
+        "x": 1280,
+        "y": 0,
+        "width": 1280,
+        "height": 1248
+      },
+      "expect": {
+        "status": "accepted",
+        "zone_id": "secondary",
+        "participation": "tiled"
+      }
+    },
+    {
+      "action": "surface.assign_zone",
+      "surface_id": "view-missing",
+      "zone_id": "secondary",
+      "backend_geometry": {
+        "x": 1280,
+        "y": 0,
+        "width": 1280,
+        "height": 1248
+      },
+      "expect": {
+        "status": "rejected",
+        "error_class": "surface_not_found"
+      }
+    },
+    {
+      "action": "surface.maximize",
+      "surface_id": "view-a",
+      "expect": {
+        "status": "rejected",
+        "error_class": "backend_unsupported"
+      }
+    }
+  ],
+  "final": {
+    "mode": "zones",
+    "surface_order": [
+      "view-a",
+      "view-b"
+    ],
+    "focus_order": [
+      "view-a",
+      "view-b"
+    ],
+    "zones": {
+      "view-a": "primary",
+      "view-b": "secondary"
+    }
+  }
+}

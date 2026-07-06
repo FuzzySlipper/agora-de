@@ -172,7 +172,7 @@ may_not_depend_on = ["compositor-backend-api"]
 
 [crate."de-rs/crates/state/layout-model"]
 lane = "rust-state"
-may_depend_on = ["de-ids", "de-error", "protocol-shell"]
+may_depend_on = ["de-ids", "de-error", "protocol-compositor", "protocol-shell"]
 may_not_depend_on = ["compositor-backend-api"]
 
 [crate."de-rs/crates/state/grant-model"]

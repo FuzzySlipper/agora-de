@@ -13,3 +13,4 @@ cargo run \
   --check "$GENERATED_TS"
 
 python3 "$ROOT/harness/depgraph/check-live-evidence.py" "$ROOT"
+python3 "$ROOT/harness/depgraph/check-layout-model-fixtures.py" "$ROOT"
