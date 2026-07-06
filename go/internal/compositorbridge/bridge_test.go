@@ -794,9 +794,7 @@ func TestAutoLayoutPlacementDoesNotOverrideNewerFloatingDecision(t *testing.T) {
 	readInitialPluginMessages(t, decoder)
 
 	visible := true
-	bridge.handleSurfaceEvent(pluginEvent{
-		Type:  PluginSurfaceEvent,
-		Event: EventMapped,
+	bridge.surfaces["view-a"] = TrackedSurface{
 		Surface: CompositorSurface{
 			ID:          "view-a",
 			SurfaceKind: SurfaceKindXDG,
@@ -804,8 +802,19 @@ func TestAutoLayoutPlacementDoesNotOverrideNewerFloatingDecision(t *testing.T) {
 			Visible:     &visible,
 			Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
 			OutputID:    "HDMI-A-1",
+			WorkspaceID: "workspace-1",
+			ZoneID:      zoneMaster,
+			LayoutMode:  string(LayoutModeZones),
+			LayoutRole:  string(SurfaceLayoutRoleTiled),
 		},
-	})
+		Visible:     true,
+		OutputID:    "HDMI-A-1",
+		WorkspaceID: "workspace-1",
+		ZoneID:      zoneMaster,
+		LayoutMode:  string(LayoutModeZones),
+		LayoutRole:  string(SurfaceLayoutRoleTiled),
+		Geometry:    &SurfaceGeometry{Width: 500, Height: 500},
+	}
 	done := make(chan error, 1)
 	go func() {
 		request := SurfaceLayoutActionRequest{SurfaceID: "view-a", WorkspaceID: "workspace-1", ZoneID: zoneMaster, WaitTimeoutMs: 1000}
