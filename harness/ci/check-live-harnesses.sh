@@ -9,6 +9,7 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-shell-loop.py" \
   "$ROOT/harness/live/check-native-launch.py" \
   "$ROOT/harness/live/check-structured-layout.py" \
+  "$ROOT/harness/live/check-layout-commands.py" \
   "$ROOT/harness/live/check-overlay-labels.py"
 
 python3 - "$ROOT" <<'PY'
@@ -21,6 +22,7 @@ expectations = {
     "harness/live/check-shell-loop.py": "agora-de.shell-loop-live.v1",
     "harness/live/check-native-launch.py": "agora-de.native-launch-live.v1",
     "harness/live/check-structured-layout.py": "agora-de.structured-layout-live.v1",
+    "harness/live/check-layout-commands.py": "agora-de.layout-commands-live.v1",
     "harness/live/check-overlay-labels.py": "agora-de.overlay-labels-live.v1",
 }
 for relative, schema in expectations.items():
@@ -52,6 +54,20 @@ for required in [
 ]:
     if required not in structured:
         raise SystemExit(f"check-structured-layout.py missing required evidence hook {required!r}")
+
+commands = (root / "harness/live/check-layout-commands.py").read_text(encoding="utf-8")
+for required in [
+    "/usr/local/bin/compositorctl",
+    "den-k8-layout-commands-visible",
+    "/api/catalog/launch",
+    "surface\", \"assign-zone",
+    "layout\", \"get",
+    "layout\", \"set-mode",
+    "server[backend_unsupported]",
+    "close-command",
+]:
+    if required not in commands:
+        raise SystemExit(f"check-layout-commands.py missing required evidence hook {required!r}")
 
 overlay = (root / "harness/live/check-overlay-labels.py").read_text(encoding="utf-8")
 for required in [

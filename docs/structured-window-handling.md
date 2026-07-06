@@ -221,6 +221,13 @@ Alacritty in `primary` at `x=0,width=1280` and foot in `secondary` at
 `x=1280,width=1280`, with output capture evidence under
 `/run/agent-os/artifacts/den-k8-structured-layout-4268/`.
 
+Den task 4269 adds `harness/live/check-layout-commands.py` for the command-side
+proof. The harness launches native surfaces through shellui, then uses
+`agora-de-compositorctl` for focus, `assign-zone`, `layout get`, unsupported
+command classification, output capture, and close. On den-k8 it passed with
+Alacritty and foot assigned to distinct primary/secondary zones and capture
+evidence under `/run/agent-os/artifacts/den-k8-layout-commands-4269/`.
+
 ## Follow-Up Tasks
 
 - Den 4247: bridge structured layout action contract.
