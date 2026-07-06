@@ -2337,6 +2337,17 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return area ? zone + " " + area : zone;
     }
 
+    function layoutSettingsLabel() {
+      const settings = state.layout.settings || {};
+      const gaps = settings.gaps || {};
+      const gapLabel = [gaps.outerHorizontal, gaps.outerVertical, gaps.innerHorizontal, gaps.innerVertical]
+        .filter((value) => Number(value || 0) > 0)
+        .length ? " gaps" : "";
+      const master = settings.masterCount ? " n" + settings.masterCount : "";
+      const ratio = settings.masterRatio ? " " + Math.round(settings.masterRatio * 100) + "%%" : "";
+      return text(settings.rule, "master_stack") + master + ratio + gapLabel;
+    }
+
     function render() {
       const launcher = launcherSurface();
       const appsButton = document.getElementById("apps-button");
@@ -2377,7 +2388,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const layoutMode = text(state.layout.mode, "freeform");
       const layoutStatus = document.getElementById("layout-mode-button");
       layoutStatus.textContent = layoutMode + (state.layout.revision ? " r" + state.layout.revision : "");
-      layoutStatus.title = "zones: " + workspaceZones().join(" / ");
+      layoutStatus.title = layoutSettingsLabel() + " / zones: " + workspaceZones().join(" / ");
     }
 
     async function loadJSON(path) {

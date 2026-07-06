@@ -140,9 +140,26 @@ type LayoutWorkspace struct {
 	SurfaceOrder []string     `json:"surface_order"`
 }
 
+type LayoutSettings struct {
+	Rule        string     `json:"rule"`
+	Mode        LayoutMode `json:"mode"`
+	Gaps        LayoutGaps `json:"gaps"`
+	MasterCount int        `json:"master_count"`
+	MasterRatio float64    `json:"master_ratio"`
+	SmartGaps   bool       `json:"smart_gaps"`
+}
+
+type LayoutGaps struct {
+	OuterHorizontal int `json:"outer_horizontal"`
+	OuterVertical   int `json:"outer_vertical"`
+	InnerHorizontal int `json:"inner_horizontal"`
+	InnerVertical   int `json:"inner_vertical"`
+}
+
 type LayoutState struct {
 	Mode       LayoutMode        `json:"mode"`
 	Revision   uint64            `json:"revision"`
+	Settings   LayoutSettings    `json:"settings"`
 	Surfaces   []LayoutSurface   `json:"surfaces,omitempty"`
 	Workspaces []LayoutWorkspace `json:"workspaces,omitempty"`
 }

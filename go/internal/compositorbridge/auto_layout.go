@@ -79,6 +79,7 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 	defer bridge.mu.Unlock()
 	layout := LayoutState{
 		Mode:       bridge.tiledLayoutModeLocked(),
+		Settings:   bridge.layoutSettings,
 		Surfaces:   make([]LayoutSurface, 0, len(placements)),
 		Workspaces: []LayoutWorkspace{{ID: "workspace-1", Name: "workspace 1", Active: true}},
 	}
@@ -231,6 +232,7 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 	if output.Name == "" {
 		return nil
 	}
+	settings := bridge.layoutSettings
 	width := firstPositive(output.PhysicalWidth, output.Width)
 	height := firstPositive(output.PhysicalHeight, output.Height)
 	if width <= 0 || height <= 0 {
@@ -240,9 +242,17 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 	if height <= 0 {
 		return nil
 	}
+	outerH := settings.Gaps.OuterHorizontal
+	outerV := settings.Gaps.OuterVertical
+	if settings.SmartGaps && len(surfaces) == 1 {
+		outerH = 0
+		outerV = 0
+	}
+	width = maxInt(1, width-outerH*2)
+	height = maxInt(1, height-outerV*2)
 
 	placements := make([]autoLayoutPlacement, 0, len(surfaces))
-	area := SurfaceGeometry{X: output.PhysicalX, Y: output.PhysicalY, Width: width, Height: height}
+	area := SurfaceGeometry{X: output.PhysicalX + outerH, Y: output.PhysicalY + outerV, Width: width, Height: height}
 	if len(surfaces) == 1 {
 		surface := surfaces[0]
 		placements = append(placements, autoLayoutPlacement{
@@ -254,57 +264,76 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 		return placements
 	}
 
-	masterWidth := area.Width / 2
+	nmaster := settings.MasterCount
+	if nmaster <= 0 {
+		nmaster = 1
+	}
+	if nmaster > len(surfaces) {
+		nmaster = len(surfaces)
+	}
+	stackCount := len(surfaces) - nmaster
+	innerH := 0
+	if stackCount > 0 {
+		innerH = minInt(settings.Gaps.InnerHorizontal, area.Width-1)
+	}
+	masterWidth := area.Width
+	if stackCount > 0 {
+		masterWidth = int(float64(area.Width-innerH) * settings.MasterRatio)
+	}
 	if masterWidth <= 0 {
 		masterWidth = 1
 	}
-	stackWidth := area.Width - masterWidth
+	stackWidth := area.Width - masterWidth - innerH
 	if stackWidth <= 0 {
 		stackWidth = 1
 	}
-	stackCount := len(surfaces) - 1
-	stackHeight := area.Height / stackCount
-	if stackHeight <= 0 {
-		stackHeight = 1
-	}
+	masterRects := verticalSlices(SurfaceGeometry{X: area.X, Y: area.Y, Width: masterWidth, Height: area.Height}, nmaster, settings.Gaps.InnerVertical)
+	stackRects := verticalSlices(SurfaceGeometry{X: area.X + masterWidth + innerH, Y: area.Y, Width: stackWidth, Height: area.Height}, stackCount, settings.Gaps.InnerVertical)
 	for index, surface := range surfaces {
 		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, "workspace-1")
-		if index == 0 {
+		if index < nmaster {
 			placements = append(placements, autoLayoutPlacement{
 				SurfaceID:   surface.Surface.ID,
 				WorkspaceID: workspaceID,
 				ZoneID:      zoneMaster,
-				Geometry: SurfaceGeometry{
-					X:      area.X,
-					Y:      area.Y,
-					Width:  masterWidth,
-					Height: area.Height,
-				},
+				Geometry:    masterRects[index],
 			})
 			continue
 		}
-		stackIndex := index - 1
-		y := area.Y + stackIndex*stackHeight
-		height := stackHeight
-		if stackIndex == stackCount-1 {
-			height = area.Y + area.Height - y
-		}
-		if height <= 0 {
-			height = 1
-		}
+		stackIndex := index - nmaster
 		placements = append(placements, autoLayoutPlacement{
 			SurfaceID:   surface.Surface.ID,
 			WorkspaceID: workspaceID,
 			ZoneID:      zoneStack,
-			Geometry: SurfaceGeometry{
-				X:      area.X + masterWidth,
-				Y:      y,
-				Width:  stackWidth,
-				Height: height,
-			},
+			Geometry:    stackRects[stackIndex],
 		})
 	}
 	return placements
+}
+
+func verticalSlices(area SurfaceGeometry, count int, gap int) []SurfaceGeometry {
+	if count <= 0 {
+		return nil
+	}
+	gap = minInt(gap, maxInt(0, area.Height-1))
+	totalGap := gap * (count - 1)
+	if totalGap >= area.Height {
+		totalGap = 0
+		gap = 0
+	}
+	availableHeight := area.Height - totalGap
+	sliceHeight := maxInt(1, availableHeight/count)
+	rects := make([]SurfaceGeometry, 0, count)
+	y := area.Y
+	for index := 0; index < count; index++ {
+		height := sliceHeight
+		if index == count-1 {
+			height = area.Y + area.Height - y
+		}
+		rects = append(rects, SurfaceGeometry{X: area.X, Y: y, Width: area.Width, Height: maxInt(1, height)})
+		y += height + gap
+	}
+	return rects
 }
 
 func (bridge *Bridge) outputForAutoLayoutLocked(surfaces []TrackedSurface) LogicalOutput {

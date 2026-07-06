@@ -574,6 +574,9 @@ func TestAutoLayoutPlacesMappedSurfacesAndRelayoutsAfterUnmap(t *testing.T) {
 	if layout.Mode != LayoutModeZones || len(layout.Surfaces) != 2 {
 		t.Fatalf("layout after auto map = %+v", layout)
 	}
+	if layout.Settings.Rule != LayoutRuleMasterStack || layout.Settings.MasterCount != 1 || layout.Settings.MasterRatio != 0.5 {
+		t.Fatalf("layout settings = %+v", layout.Settings)
+	}
 	if layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[0].ZoneID != "master" || layout.Surfaces[0].Geometry.Width != 600 {
 		t.Fatalf("master surface = %+v", layout.Surfaces[0])
 	}

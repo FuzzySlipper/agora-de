@@ -55,6 +55,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`setMode`,
 		`workspaceZones`,
 		`nextLayoutMode`,
+		`layoutSettingsLabel`,
 		`surfaceAreaLabel`,
 		`className = "dock-item" + (className ? " " + className : "")`,
 		`surface-meta`,
@@ -356,7 +357,7 @@ func TestHandlerExposesLayoutViaCompositorctl(t *testing.T) {
 printf '%s\n' "$*" >> "$CALL_LOG"
 case "$1 $2" in
   "layout get")
-    printf '%s\n' '{"layout":{"mode":"zones","revision":7,"surfaces":[{"surface_id":"view-live","label":"1","app_id":"foot","title":"foot","output_id":"HDMI-A-1","workspace_id":"workspace-1","zone_id":"primary","mode":"zones","participation":"tiled","focused":true,"visible":true,"geometry":{"x":1,"y":2,"width":300,"height":200},"order":0}],"workspaces":[{"id":"workspace-1","name":"workspace 1","output_id":"HDMI-A-1","active":true,"zones":[{"id":"primary","name":"Primary","kind":"work","surface_ids":["view-live"]}],"surface_order":["view-live"]}]}}'
+    printf '%s\n' '{"layout":{"mode":"zones","revision":7,"settings":{"rule":"master_stack","mode":"zones","gaps":{"outer_horizontal":4,"outer_vertical":2,"inner_horizontal":8,"inner_vertical":6},"master_count":2,"master_ratio":0.6,"smart_gaps":true},"surfaces":[{"surface_id":"view-live","label":"1","app_id":"foot","title":"foot","output_id":"HDMI-A-1","workspace_id":"workspace-1","zone_id":"primary","mode":"zones","participation":"tiled","focused":true,"visible":true,"geometry":{"x":1,"y":2,"width":300,"height":200},"order":0}],"workspaces":[{"id":"workspace-1","name":"workspace 1","output_id":"HDMI-A-1","active":true,"zones":[{"id":"primary","name":"Primary","kind":"work","surface_ids":["view-live"]}],"surface_order":["view-live"]}]}}'
     ;;
   "layout set-mode")
     printf '%s\n' '{"decision":"accepted"}'
@@ -396,6 +397,14 @@ esac
 					Width int `json:"width"`
 				} `json:"geometry"`
 			} `json:"surfaces"`
+			Settings struct {
+				Rule        string  `json:"rule"`
+				MasterCount int     `json:"masterCount"`
+				MasterRatio float64 `json:"masterRatio"`
+				Gaps        struct {
+					InnerHorizontal int `json:"innerHorizontal"`
+				} `json:"gaps"`
+			} `json:"settings"`
 			Workspaces []struct {
 				ID           string   `json:"id"`
 				SurfaceOrder []string `json:"surfaceOrder"`
@@ -408,6 +417,9 @@ esac
 	}
 	if layoutResponse.Layout.Surfaces[0].SurfaceID != "view-live" || layoutResponse.Layout.Surfaces[0].AppID != "foot" || layoutResponse.Layout.Surfaces[0].ZoneID != "primary" || layoutResponse.Layout.Surfaces[0].Geometry.Width != 300 {
 		t.Fatalf("unexpected layout surface projection: %+v", layoutResponse.Layout.Surfaces[0])
+	}
+	if layoutResponse.Layout.Settings.Rule != "master_stack" || layoutResponse.Layout.Settings.MasterCount != 2 || layoutResponse.Layout.Settings.MasterRatio != 0.6 || layoutResponse.Layout.Settings.Gaps.InnerHorizontal != 8 {
+		t.Fatalf("unexpected layout settings projection: %+v", layoutResponse.Layout.Settings)
 	}
 
 	recorder := httptest.NewRecorder()

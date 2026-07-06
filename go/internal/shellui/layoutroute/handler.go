@@ -29,8 +29,25 @@ type layoutResponse struct {
 type layoutState struct {
 	Mode       string            `json:"mode"`
 	Revision   uint64            `json:"revision"`
+	Settings   layoutSettings    `json:"settings"`
 	Surfaces   []layoutSurface   `json:"surfaces"`
 	Workspaces []layoutWorkspace `json:"workspaces"`
+}
+
+type layoutSettings struct {
+	Rule        string     `json:"rule"`
+	Mode        string     `json:"mode"`
+	Gaps        layoutGaps `json:"gaps"`
+	MasterCount int        `json:"masterCount"`
+	MasterRatio float64    `json:"masterRatio"`
+	SmartGaps   bool       `json:"smartGaps"`
+}
+
+type layoutGaps struct {
+	OuterHorizontal int `json:"outerHorizontal"`
+	OuterVertical   int `json:"outerVertical"`
+	InnerHorizontal int `json:"innerHorizontal"`
+	InnerVertical   int `json:"innerVertical"`
 }
 
 type layoutSurface struct {
@@ -69,8 +86,9 @@ type layoutWorkspace struct {
 
 type compositorctlLayoutResponse struct {
 	Layout struct {
-		Mode     string `json:"mode"`
-		Revision uint64 `json:"revision"`
+		Mode     string                      `json:"mode"`
+		Revision uint64                      `json:"revision"`
+		Settings compositorctlLayoutSettings `json:"settings"`
 		Surfaces []struct {
 			SurfaceID     string                 `json:"surface_id"`
 			Label         string                 `json:"label"`
@@ -102,6 +120,20 @@ type compositorctlLayoutResponse struct {
 			SurfaceOrder []string `json:"surface_order"`
 		} `json:"workspaces"`
 	} `json:"layout"`
+}
+
+type compositorctlLayoutSettings struct {
+	Rule string `json:"rule"`
+	Mode string `json:"mode"`
+	Gaps struct {
+		OuterHorizontal int `json:"outer_horizontal"`
+		OuterVertical   int `json:"outer_vertical"`
+		InnerHorizontal int `json:"inner_horizontal"`
+		InnerVertical   int `json:"inner_vertical"`
+	} `json:"gaps"`
+	MasterCount int     `json:"master_count"`
+	MasterRatio float64 `json:"master_ratio"`
+	SmartGaps   bool    `json:"smart_gaps"`
 }
 
 type actionRequest struct {
@@ -293,6 +325,7 @@ func decodeCompositorctlLayout(payload []byte) (layoutState, error) {
 	state := layoutState{
 		Mode:       firstNonEmpty(response.Layout.Mode, "freeform"),
 		Revision:   response.Layout.Revision,
+		Settings:   layoutSettingsFromCompositorctl(response.Layout.Settings, response.Layout.Mode),
 		Surfaces:   make([]layoutSurface, 0, len(response.Layout.Surfaces)),
 		Workspaces: make([]layoutWorkspace, 0, len(response.Layout.Workspaces)),
 	}
@@ -340,6 +373,29 @@ func decodeCompositorctlLayout(payload []byte) (layoutState, error) {
 	return state, nil
 }
 
+func layoutSettingsFromCompositorctl(settings compositorctlLayoutSettings, fallbackMode string) layoutSettings {
+	result := layoutSettings{
+		Rule:        firstNonEmpty(settings.Rule, "master_stack"),
+		Mode:        firstNonEmpty(settings.Mode, fallbackMode, "zones"),
+		MasterCount: settings.MasterCount,
+		MasterRatio: settings.MasterRatio,
+		SmartGaps:   settings.SmartGaps,
+		Gaps: layoutGaps{
+			OuterHorizontal: settings.Gaps.OuterHorizontal,
+			OuterVertical:   settings.Gaps.OuterVertical,
+			InnerHorizontal: settings.Gaps.InnerHorizontal,
+			InnerVertical:   settings.Gaps.InnerVertical,
+		},
+	}
+	if result.MasterCount <= 0 {
+		result.MasterCount = 1
+	}
+	if result.MasterRatio <= 0 {
+		result.MasterRatio = 0.5
+	}
+	return result
+}
+
 func collectLayoutState(request *http.Request, surfaceProvider surfaceroute.Provider) layoutState {
 	var views []surfaces.SurfaceView
 	if surfaceProvider != nil {
@@ -377,8 +433,20 @@ func collectLayoutState(request *http.Request, surfaceProvider surfaceroute.Prov
 	return layoutState{
 		Mode:       "freeform",
 		Revision:   0,
+		Settings:   defaultLayoutSettings("freeform"),
 		Surfaces:   layoutSurfaces,
 		Workspaces: []layoutWorkspace{workspaceFromSurfaces(layoutSurfaces)},
+	}
+}
+
+func defaultLayoutSettings(mode string) layoutSettings {
+	return layoutSettings{
+		Rule:        "master_stack",
+		Mode:        firstNonEmpty(mode, "zones"),
+		Gaps:        layoutGaps{},
+		MasterCount: 1,
+		MasterRatio: 0.5,
+		SmartGaps:   true,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
@@ -21,6 +22,7 @@ func main() {
 	socketDir := envString("AGORA_DE_COMPOSITOR_SOCKET_DIR", defaultSocketDir)
 	pluginSocket := envString("AGORA_DE_COMPOSITOR_PLUGIN_SOCKET", defaultPluginSocket)
 	controlSocket := envString("AGORA_DE_COMPOSITOR_CONTROL_SOCKET", defaultControlSocket)
+	layoutSettingsPath := envString("AGORA_DE_LAYOUT_SETTINGS", defaultLayoutSettingsPath())
 	compositorUID := envUint32("AGORA_COMPOSITOR_UID", 0)
 	compositorGID := envInt("AGORA_COMPOSITOR_GID", int(compositorUID))
 
@@ -46,7 +48,8 @@ func main() {
 	configureSocket(controlSocket, 0o660, 0, compositorGID)
 
 	bridge := compositorbridge.New(compositorbridge.Config{
-		AllowedPluginUID: compositorUID,
+		AllowedPluginUID:   compositorUID,
+		LayoutSettingsPath: layoutSettingsPath,
 	})
 
 	log.Printf("agora-de compositor bridge plugin socket: %s", pluginSocket)
@@ -77,6 +80,14 @@ func shutdownOnSignal(listeners ...net.Listener) {
 		_ = listener.Close()
 	}
 	os.Exit(0)
+}
+
+func defaultLayoutSettingsPath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		return ""
+	}
+	return filepath.Join(configDir, "agora-de", "layout-settings.json")
 }
 
 func configureSocket(path string, mode os.FileMode, uid int, gid int) {

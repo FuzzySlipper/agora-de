@@ -64,37 +64,47 @@ const (
 )
 
 type Config struct {
-	AllowedPluginUID uint32
+	AllowedPluginUID   uint32
+	LayoutSettingsPath string
 }
 
 type Bridge struct {
 	allowedPluginUID uint32
 
-	mu            sync.RWMutex
-	plugin        *pluginSession
-	surfaces      map[string]TrackedSurface
-	stale         map[string]time.Time
-	focusSeq      uint64
-	focusWaiters  map[string]chan pluginResponse
-	placeSeq      uint64
-	placeWaiters  map[string]chan pluginResponse
-	captureSeq    uint64
-	layoutSeq     uint64
-	layoutMode    LayoutMode
-	backendLayout *LayoutState
+	mu                 sync.RWMutex
+	plugin             *pluginSession
+	surfaces           map[string]TrackedSurface
+	stale              map[string]time.Time
+	focusSeq           uint64
+	focusWaiters       map[string]chan pluginResponse
+	placeSeq           uint64
+	placeWaiters       map[string]chan pluginResponse
+	captureSeq         uint64
+	layoutSeq          uint64
+	layoutMode         LayoutMode
+	layoutSettings     LayoutSettings
+	layoutSettingsPath string
+	backendLayout      *LayoutState
 
 	autoLayoutSeq     uint64
 	autoLayoutRunning bool
 }
 
 func New(config Config) *Bridge {
+	settings, err := LoadLayoutSettings(config.LayoutSettingsPath)
+	if err != nil {
+		log.Printf("load layout settings: %v", err)
+		settings = DefaultLayoutSettings()
+	}
 	return &Bridge{
-		allowedPluginUID: config.AllowedPluginUID,
-		surfaces:         map[string]TrackedSurface{},
-		stale:            map[string]time.Time{},
-		focusWaiters:     map[string]chan pluginResponse{},
-		placeWaiters:     map[string]chan pluginResponse{},
-		layoutMode:       LayoutModeZones,
+		allowedPluginUID:   config.AllowedPluginUID,
+		surfaces:           map[string]TrackedSurface{},
+		stale:              map[string]time.Time{},
+		focusWaiters:       map[string]chan pluginResponse{},
+		placeWaiters:       map[string]chan pluginResponse{},
+		layoutMode:         settings.Mode,
+		layoutSettings:     settings,
+		layoutSettingsPath: config.LayoutSettingsPath,
 	}
 }
 
@@ -322,6 +332,7 @@ func (bridge *Bridge) SetLayoutMode(request SetLayoutModeRequest) (LayoutActionR
 	}
 	bridge.mu.Lock()
 	bridge.layoutMode = request.Mode
+	bridge.layoutSettings.Mode = request.Mode
 	bridge.layoutSeq++
 	for id, tracked := range bridge.surfaces {
 		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
@@ -342,7 +353,12 @@ func (bridge *Bridge) SetLayoutMode(request SetLayoutModeRequest) (LayoutActionR
 		bridge.backendLayout = cloneLayoutStatePtr(layout)
 	}
 	layout := bridge.layoutLocked()
+	settings := bridge.layoutSettings
+	settingsPath := bridge.layoutSettingsPath
 	bridge.mu.Unlock()
+	if err := SaveLayoutSettings(settingsPath, settings); err != nil {
+		return LayoutActionResponse{}, err
+	}
 	if request.Mode != LayoutModeFreeform {
 		bridge.requestAutoLayout("set_layout_mode")
 	}
@@ -719,6 +735,20 @@ func firstPositive(values ...int) int {
 	return 0
 }
 
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maxInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
 func (bridge *Bridge) requireWorkSurface(surfaceID string, action string) (TrackedSurface, error) {
 	if surfaceID == "" {
 		return TrackedSurface{}, fmt.Errorf("surface_id is required")
@@ -871,6 +901,7 @@ func (bridge *Bridge) handleLayoutState(layout LayoutState) {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
 	bridge.layoutMode = layout.Mode
+	layout.Settings = bridge.layoutSettings
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
 	for _, layoutSurface := range layout.Surfaces {
 		if layoutSurface.SurfaceID == "" {
@@ -1246,6 +1277,7 @@ func (bridge *Bridge) layoutLocked() LayoutState {
 	return LayoutState{
 		Mode:       mode,
 		Revision:   bridge.layoutSeq,
+		Settings:   bridge.layoutSettings,
 		Surfaces:   layoutSurfaces,
 		Workspaces: []LayoutWorkspace{workspace},
 	}
@@ -1288,6 +1320,10 @@ func filterString(values []string, remove string) []string {
 func normalizeLayoutState(layout *LayoutState) {
 	if layout.Mode == "" {
 		layout.Mode = LayoutModeZones
+	}
+	if layout.Settings.Rule == "" {
+		layout.Settings = DefaultLayoutSettings()
+		layout.Settings.Mode = layout.Mode
 	}
 	for index := range layout.Workspaces {
 		workspace := &layout.Workspaces[index]
@@ -1383,6 +1419,7 @@ func cloneLayoutState(layout LayoutState) LayoutState {
 	cloned := LayoutState{
 		Mode:       layout.Mode,
 		Revision:   layout.Revision,
+		Settings:   layout.Settings,
 		Surfaces:   make([]LayoutSurface, len(layout.Surfaces)),
 		Workspaces: make([]LayoutWorkspace, len(layout.Workspaces)),
 	}
