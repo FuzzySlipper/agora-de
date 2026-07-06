@@ -902,7 +902,11 @@ func (bridge *Bridge) updateBackendLayoutFocusLocked(surfaceID string) {
 	}
 	layout := cloneLayoutState(*bridge.backendLayout)
 	for index := range layout.Surfaces {
-		layout.Surfaces[index].Focused = layout.Surfaces[index].SurfaceID == surfaceID
+		if tracked, ok := bridge.surfaces[layout.Surfaces[index].SurfaceID]; ok {
+			layout.Surfaces[index].Focused = bridge.layoutFocusedLocked(tracked)
+			continue
+		}
+		layout.Surfaces[index].Focused = bridge.promotedSurfaceID == "" && layout.Surfaces[index].SurfaceID == surfaceID
 	}
 	layout.Revision = bridge.layoutSeq
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
@@ -1243,8 +1247,11 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	tracked.LayoutRevision = bridge.layoutSeq
 	delete(bridge.stale, event.Surface.ID)
 	bridge.surfaces[event.Surface.ID] = tracked
+	if event.Event == EventFocused {
+		bridge.updateBackendLayoutFocusLocked(event.Surface.ID)
+	}
 	switch event.Event {
-	case EventMapped, EventUnmapped, EventFocused:
+	case EventMapped:
 		shouldRelayout = true
 	}
 	bridge.mu.Unlock()

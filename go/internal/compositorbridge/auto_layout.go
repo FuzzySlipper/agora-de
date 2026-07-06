@@ -244,9 +244,6 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 		if promoted != "" && (surfaces[i].Surface.ID == promoted || surfaces[j].Surface.ID == promoted) {
 			return surfaces[i].Surface.ID == promoted
 		}
-		if surfaces[i].Focused != surfaces[j].Focused {
-			return surfaces[i].Focused
-		}
 		left := firstNonEmpty(surfaces[i].Surface.Label, surfaces[i].Surface.ID)
 		right := firstNonEmpty(surfaces[j].Surface.Label, surfaces[j].Surface.ID)
 		if left == right {

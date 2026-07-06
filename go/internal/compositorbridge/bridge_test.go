@@ -725,7 +725,7 @@ func TestAutoLayoutPlacesMappedSurfacesAndRelayoutsAfterUnmap(t *testing.T) {
 	}
 }
 
-func TestAutoLayoutPromotesFocusedSurfaceToMaster(t *testing.T) {
+func TestAutoLayoutKeepsStableOrderOnCompositorFocus(t *testing.T) {
 	bridge := New(Config{})
 	pluginClient, pluginServer := net.Pipe()
 	defer pluginClient.Close()
@@ -781,15 +781,14 @@ func TestAutoLayoutPromotesFocusedSurfaceToMaster(t *testing.T) {
 		Event:   EventFocused,
 		Surface: CompositorSurface{ID: "view-b", Visible: &visible},
 	})
-	readPlaceAndAckNoWait(t, decoder, encoder, "view-b", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 700})
-	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 700})
+	assertNoPluginCommand(t, decoder)
 
 	layout := bridge.GetLayout().Layout
-	if layout.Surfaces[0].SurfaceID != "view-b" || !layout.Surfaces[0].Focused || layout.Surfaces[0].ZoneID != "master" {
-		t.Fatalf("focused surface was not promoted to master: %+v", layout.Surfaces)
+	if layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[0].Focused || layout.Surfaces[0].ZoneID != "master" {
+		t.Fatalf("master surface moved after compositor focus: %+v", layout.Surfaces)
 	}
-	if layout.Surfaces[1].SurfaceID != "view-a" || layout.Surfaces[1].ZoneID != "stack" {
-		t.Fatalf("previous master was not moved to stack: %+v", layout.Surfaces)
+	if layout.Surfaces[1].SurfaceID != "view-b" || !layout.Surfaces[1].Focused || layout.Surfaces[1].ZoneID != "stack" {
+		t.Fatalf("stack focus state was not updated in place: %+v", layout.Surfaces)
 	}
 }
 
