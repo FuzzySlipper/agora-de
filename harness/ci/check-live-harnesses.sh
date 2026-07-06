@@ -11,7 +11,8 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-structured-layout.py" \
   "$ROOT/harness/live/check-layout-commands.py" \
   "$ROOT/harness/live/check-planner-layout.py" \
-  "$ROOT/harness/live/check-overlay-labels.py"
+  "$ROOT/harness/live/check-overlay-labels.py" \
+  "$ROOT/harness/live/check-auto-tiling-wm.py"
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -26,6 +27,7 @@ expectations = {
     "harness/live/check-layout-commands.py": "agora-de.layout-commands-live.v1",
     "harness/live/check-planner-layout.py": "agora-de.planner-layout-live.v1",
     "harness/live/check-overlay-labels.py": "agora-de.overlay-labels-live.v1",
+    "harness/live/check-auto-tiling-wm.py": "agora-de.auto-tiling-wm-live.v1",
 }
 for relative, schema in expectations.items():
     text = (root / relative).read_text(encoding="utf-8")
@@ -104,6 +106,30 @@ for required in [
 ]:
     if required not in overlay:
         raise SystemExit(f"check-overlay-labels.py missing required evidence hook {required!r}")
+
+auto_tiling = (root / "harness/live/check-auto-tiling-wm.py").read_text(encoding="utf-8")
+for required in [
+    "/usr/local/bin/compositorctl",
+    "den-k8-auto-tiling-wm-visible",
+    "/api/catalog/launch",
+    "/api/surfaces/action",
+    "/api/layout",
+    "/api/layout/action",
+    "wm-controls",
+    "planner-mismatch",
+    "backend-placement",
+    "occlusion",
+    "focus-order",
+    "shell-action",
+    "agent-action",
+    "overlay",
+    "capture",
+    "restart",
+    "cleanup",
+    "master_stack",
+]:
+    if required not in auto_tiling:
+        raise SystemExit(f"check-auto-tiling-wm.py missing required evidence hook {required!r}")
 PY
 
 echo "live harness static checks: OK"

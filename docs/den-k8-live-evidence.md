@@ -346,6 +346,35 @@ each target, captures after focus changes, and closes launched surfaces.
 Failures are split into `overlay-route`, `overlay-surface`, `layout-labels`,
 `focus`, `capture`, and `cleanup`.
 
+Run the deployed auto-tiling WM loop with capture evidence:
+
+```bash
+./harness/live/check-auto-tiling-wm.py \
+  --base-url http://127.0.0.1:17780 \
+  --app-id Alacritty.desktop \
+  --app-id foot.desktop \
+  --app-id firefox.desktop \
+  --expected-app-id Alacritty \
+  --expected-app-id foot \
+  --expected-app-id firefox \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-auto-tiling-wm \
+  --require-capture
+```
+
+The auto-tiling WM runner emits `agora-de.auto-tiling-wm-live.v1`. It launches
+three or more native work surfaces through the installed shell catalog path,
+uses `/api/layout/action` to select zones mode, waits for continuous
+`master_stack` auto-placement, checks backend-acknowledged geometry and
+non-overlap, verifies focus promotion/order, exercises shell controls for
+floating/tiling/fullscreen classification, exercises compositorctl agent
+controls, closes and relaunches a surface to prove recovery, verifies overlay
+label state, optionally captures the physical output, and cleans up all launched
+surfaces. Capture packets use `scenario: den-k8-auto-tiling-wm-visible`.
+Failures are split into `launch`, `visibility`, `planner-mismatch`,
+`backend-placement`, `occlusion`, `focus-order`, `shell-action`,
+`agent-action`, `overlay`, `capture`, `restart`, and `cleanup`.
+
 Validate desktop-entry catalog import separately from the visible fixture launch
 service by running a temporary shellui with `--catalog-provider desktop_entries`
 and checking it with:
