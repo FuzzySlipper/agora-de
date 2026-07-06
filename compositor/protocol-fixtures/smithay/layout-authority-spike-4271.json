@@ -1,0 +1,116 @@
+{
+  "schema": "agora-de.smithay-layout-authority-spike.v1",
+  "taskId": 4271,
+  "status": "parked",
+  "parkReason": "Wayfire layout state and command proofs passed within the Den 4251 churn budget; Smithay implementation should not start until a stop/go condition changes.",
+  "primarySources": [
+    {
+      "name": "Smithay README",
+      "url": "https://github.com/Smithay/smithay",
+      "finding": "Smithay provides building blocks for Wayland compositors rather than a full compositor framework."
+    },
+    {
+      "name": "Smithay docs.rs",
+      "url": "https://docs.rs/smithay",
+      "finding": "Smithay handles low-level compositor/protocol interactions; window management and drawing logic remain compositor-owned."
+    },
+    {
+      "name": "Smithay GETTING_STARTED",
+      "url": "https://github.com/Smithay/smithay/blob/master/GETTING_STARTED.md",
+      "finding": "smallvil is the smallest usable learning compositor; anvil is the fuller Smithay testing compositor."
+    },
+    {
+      "name": "Smithay Anvil README",
+      "url": "https://github.com/Smithay/smithay/blob/master/anvil/README.md",
+      "finding": "Anvil is a testing ground for Smithay features; smallvil is the simpler starting point."
+    }
+  ],
+  "implementationTrigger": {
+    "startOnlyIf": [
+      "Wayfire layout authority proof requires synthetic keyboard shortcuts",
+      "Wayfire layout authority proof infers geometry from shell state or screenshots",
+      "Wayfire plugin depends on unexported simple-tile internals",
+      "Wayfire plugin grows into shell UI, launcher, governance, or theme policy",
+      "Wayfire path exceeds the Den 4251 churn budget"
+    ],
+    "currentEvidence": [
+      "Den 4268 live structured-layout proof passed",
+      "Den 4269 CLI layout-command proof passed",
+      "Den 4270 Rust layout-model command semantics are checked"
+    ]
+  },
+  "minimalDeliverables": [
+    {
+      "id": "host-native-clients",
+      "description": "Start a Smithay compositor on den-k8 and host at least two real xdg-shell native client surfaces."
+    },
+    {
+      "id": "layout-contract",
+      "description": "Apply the Rust layout-model command semantics to tiled primary/secondary zones with backend-owned geometry."
+    },
+    {
+      "id": "focus-order-cleanup",
+      "description": "Report focus order, surface order, unmap cleanup, and stale/missing classifications through the generated layout contract."
+    },
+    {
+      "id": "capture-visible-evidence",
+      "description": "Produce capture-visible evidence that the two native clients are non-overlapping and annotated or otherwise agent-identifiable."
+    }
+  ],
+  "nonGoals": [
+    "shell UI",
+    "launcher",
+    "dock or panel",
+    "theme development",
+    "governance or audit log integration",
+    "webview wrapping of native clients",
+    "Niri-like column history product design"
+  ],
+  "den4251Criteria": [
+    {
+      "criterion": "authoritative post-layout geometry",
+      "smithayProofAction": "Own xdg-shell placement in the compositor state and emit geometry directly after configure/commit."
+    },
+    {
+      "criterion": "commandable layout actions",
+      "smithayProofAction": "Implement assign-zone or tile plus move-resize against the Rust layout-model command fixture."
+    },
+    {
+      "criterion": "stable workspace and focus order",
+      "smithayProofAction": "Maintain explicit workspace surface_order and focus_order in compositor state."
+    },
+    {
+      "criterion": "cleanup and stale classification",
+      "smithayProofAction": "Remove or mark unmapped surfaces and return surface_stale or surface_not_found as defined by layout-model."
+    },
+    {
+      "criterion": "capture-visible annotations",
+      "smithayProofAction": "Provide a minimal compositor-owned overlay or deterministic bounds evidence visible in output capture."
+    }
+  ],
+  "validation": {
+    "local": [
+      "cargo test --manifest-path de-rs/Cargo.toml -p smithay-spike",
+      "cargo test --manifest-path de-rs/Cargo.toml -p layout-model",
+      "./harness/ci/check-compositor.sh"
+    ],
+    "live": [
+      "launch Smithay spike in a non-default nested backend first",
+      "launch Alacritty and foot against the spike Wayland socket",
+      "run a layout command fixture equivalent against the spike control path",
+      "capture den-k8 output and prove non-overlap"
+    ]
+  },
+  "stopGoCriteria": {
+    "go": [
+      "Wayfire hits any implementationTrigger startOnlyIf condition",
+      "Smithay hosts two native clients and passes the layout command fixture with less code/churn than the Wayfire path"
+    ],
+    "stop": [
+      "requires a full shell rewrite",
+      "requires replacing launcher/theme/governance concerns",
+      "cannot host real native clients on den-k8",
+      "cannot provide capture-visible evidence"
+    ]
+  }
+}
