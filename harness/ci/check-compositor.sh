@@ -13,6 +13,7 @@ test -d "$ROOT/chrome/panel-supervisor"
 python3 "$ROOT/harness/depgraph/check-compositor-fixtures.py" "$ROOT"
 python3 "$ROOT/harness/depgraph/check-wayfire-fixtures.py" "$ROOT"
 python3 "$ROOT/harness/depgraph/check-smithay-spike.py" "$ROOT"
+python3 "$ROOT/harness/depgraph/check-layout-authority-closeout.py" "$ROOT"
 python3 "$ROOT/harness/depgraph/check-chrome-spikes.py" "$ROOT"
 
 echo "compositor/chrome scaffold: OK"

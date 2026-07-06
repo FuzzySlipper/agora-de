@@ -27,7 +27,9 @@ random stack.
 Niri-style scrollable columns remain an attractive later model because they
 bound horizontal chaos while preserving history, but agora-de should first own
 the contract above the compositor backend. A Niri-like backend or Smithay/Rust
-compositor is a backend decision, not the domain model.
+compositor is a backend decision, not the domain model. After Den 4272, the
+near-term domain model is a backend-neutral Rust layout planner that can compute
+tiling rules before Wayfire, Smithay, or another backend applies the result.
 
 ## Mode Comparison
 
@@ -227,6 +229,15 @@ proof. The harness launches native surfaces through shellui, then uses
 command classification, output capture, and close. On den-k8 it passed with
 Alacritty and foot assigned to distinct primary/secondary zones and capture
 evidence under `/run/agent-os/artifacts/den-k8-layout-commands-4269/`.
+
+Den task 4272 closes the backend proof series. Wayfire remains the current
+backend because the proof passed within the Den 4251 churn budget, while the
+next layout behavior work moves into a backend-neutral Rust layout planner. The
+planner should learn from `/home/research/mango`: keep selectable layout rules
+separate from backend surface application, keep master-stack ratios and gap
+policy as planner inputs, and represent recursive split layouts such as dwindle
+as explicit state before assigning rectangles. See
+`docs/backend-agnostic-layout-planner.md`.
 
 ## Follow-Up Tasks
 

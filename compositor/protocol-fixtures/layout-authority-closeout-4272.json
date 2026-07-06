@@ -1,0 +1,107 @@
+{
+  "schema": "agora-de.layout-authority-closeout.v1",
+  "taskId": 4272,
+  "parentTaskId": 4266,
+  "decision": "wayfire-current-backend-rust-layout-planner-authority",
+  "summary": "Wayfire remains the installed backend after the layout authority proof, but layout rules and placement policy move into backend-neutral Rust layout model work. The Wayfire bridge/plugin should apply rectangles and report acknowledgements, not own product layout policy.",
+  "evidence": [
+    {
+      "taskId": 4267,
+      "kind": "fixture",
+      "path": "compositor/protocol-fixtures/wayfire/layout-authority-probe-4267.json",
+      "finding": "Wayfire exposes enough direct lifecycle, geometry, focus, workspace, stacking, and primitive placement API to attempt a bounded custom plugin proof. Stock simple-tile remains evidence only."
+    },
+    {
+      "taskId": 4268,
+      "kind": "live-den-k8",
+      "path": "/run/agent-os/artifacts/den-k8-structured-layout-4268/",
+      "finding": "The installed service reported compositor-owned primary and secondary geometry for two native surfaces and capture-visible non-overlap."
+    },
+    {
+      "taskId": 4269,
+      "kind": "live-den-k8",
+      "path": "/run/agent-os/artifacts/den-k8-layout-commands-4269/",
+      "finding": "compositorctl and /api layout actions assigned real native surfaces to distinct zones, reported layout state, classified unsupported actions, captured output evidence, and cleaned up surfaces."
+    },
+    {
+      "taskId": 4270,
+      "kind": "fixture",
+      "path": "compositor/protocol-fixtures/layout-model/command-semantics.json",
+      "finding": "Rust layout-model owns backend-neutral command result semantics, revisions, stale/missing/backend-unsupported classes, focus/order, zones, and geometry updates."
+    },
+    {
+      "taskId": 4271,
+      "kind": "fixture",
+      "path": "compositor/protocol-fixtures/smithay/layout-authority-spike-4271.json",
+      "finding": "Smithay remains parked because the Wayfire proof passed inside the churn budget. It can start if future evidence trips the documented stop criteria."
+    }
+  ],
+  "churnBudget": {
+    "status": "within-budget",
+    "result": "The proof completed as a bounded Wayfire plugin and bridge adapter series without synthetic keyboard shortcuts, screenshot-derived geometry, shell inference, governance coupling, shell UI coupling, or Smithay promotion.",
+    "followUpShape": "Further work should be feature implementation on a backend-neutral Rust layout planner, not additional Wayfire proof churn."
+  },
+  "mangoLessons": [
+    "Treat layouts as selectable planner algorithms separate from backend application.",
+    "Keep monitor/output work areas, tag/workspace state, client order, per-client ratios, and gap policy as planner inputs.",
+    "Represent recursive split layouts such as dwindle as explicit tree state, then assign rectangles from that tree.",
+    "Keep window rules and layout selection outside backend protocol code."
+  ],
+  "nextImplementationParent": {
+    "taskId": 4318,
+    "title": "Backend-agnostic tiling layout planner implementation series",
+    "intent": "Implement layout rules in Rust so Wayfire, Smithay, or another future backend only needs an adapter that applies planned rectangles and reports truthful acknowledgement state.",
+    "subtasks": [
+      {
+        "taskId": 4319,
+        "title": "Define backend-neutral layout planner inputs and plan output"
+      },
+      {
+        "taskId": 4320,
+        "title": "Implement zone and master-stack planner rules"
+      },
+      {
+        "taskId": 4321,
+        "title": "Prototype backend-neutral dwindle split tree planner"
+      },
+      {
+        "taskId": 4322,
+        "title": "Wire Wayfire adapter to apply Rust planner rectangles"
+      },
+      {
+        "taskId": 4323,
+        "title": "Expand live layout harness for planner-backed tiling"
+      },
+      {
+        "taskId": 4324,
+        "title": "Expose shell layout rule controls as planner actions"
+      }
+    ]
+  },
+  "backendBoundary": {
+    "rustOwns": [
+      "layout rule selection and state transitions",
+      "zone, master-stack, and future tree/column planner semantics",
+      "surface ordering, focus ordering, revisions, stale cleanup, and classified command results",
+      "fixture-backed expected rectangles for backend adapters"
+    ],
+    "wayfireOwns": [
+      "native surface placement execution",
+      "post-placement geometry acknowledgement",
+      "surface lifecycle and focus events from the running compositor",
+      "capture-visible installed-service evidence"
+    ],
+    "shellOwns": [
+      "projection and controls",
+      "operator-visible labels and status",
+      "no layout placement policy"
+    ]
+  },
+  "closeoutCriteria": {
+    "wayfireProofSatisfied": true,
+    "rustContractHardened": true,
+    "smithaySpikeScopedAndParked": true,
+    "docsUpdated": true,
+    "followUpTasksCreated": true
+  }
+}

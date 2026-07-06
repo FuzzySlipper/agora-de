@@ -37,10 +37,11 @@ missing for the standard-protocol probe until a spike proves otherwise.
 
 The structured layout decision in `docs/compositor-backend-decision.md` narrows
 that reading: Wayfire remains the near-term installed backend, but stock
-Wayfire layout behavior is not layout authority. Structured layout stays in the
-Rust-owned generated backend contract unless a bounded Wayfire plugin proof can
-emit truthful post-layout geometry, workspace/zone state, focus/order, and
-command results without shell inference.
+Wayfire layout behavior is not layout authority. The Den 4268/4269 proof showed
+that a bounded Wayfire adapter can emit truthful post-layout geometry,
+workspace/zone state, focus/order, and command results without shell inference.
+The next implementation step is a backend-neutral Rust layout planner whose
+rectangles can be applied by Wayfire now and by another backend later.
 
 The standard-protocol observation artifact currently maps:
 
@@ -60,8 +61,15 @@ This keeps the strategic posture concrete:
 - keep synchronous deny visible as the likely irreducible enforcement core;
 - do not start a Smithay product build until the probe explains how small the
   in-compositor core really is;
-- promote the Rust/Smithay layout spike if the Wayfire layout-authority proof
-  exceeds the documented churn budget.
+- keep Smithay parked while the Wayfire adapter remains small and truthful;
+- promote the Rust/Smithay layout spike only if future layout behavior cannot be
+  represented as backend-neutral Rust planner output plus backend acknowledgement.
+
+The planner series is recorded in
+`docs/backend-agnostic-layout-planner.md`. The useful lesson from Mango is
+architectural rather than literal: layout algorithms should be selectable
+planner functions over output/workspace/surface state, with backend code limited
+to applying and acknowledging rectangles.
 
 ## Updating The Matrix
 

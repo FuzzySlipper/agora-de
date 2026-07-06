@@ -60,12 +60,12 @@ service:
   and zone hints, but it is an evidence layer until compositor-owned geometry
   and annotation state are available.
 
-Decision: keep Wayfire as the near-term installed compositor and evidence
-backend, but treat structured layout authority as unproven in the Wayfire path.
-The next Wayfire work must be a bounded layout-authority plugin proof, not more
-shell inference. If that proof cannot satisfy the criteria below, layout
-ownership moves to a Rust compositor or Smithay spike scoped to layout authority
-rather than to a full desktop rewrite.
+Decision after Den 4268, Den 4269, Den 4270, and Den 4271: keep Wayfire as the
+near-term installed compositor and evidence backend, and move layout policy into
+a backend-neutral Rust layout planner. The Wayfire proof satisfied the current
+criteria inside the Den 4251 churn budget, so the Smithay spike remains parked.
+Wayfire is an adapter that applies rectangles and reports acknowledgement
+geometry; it is not the owner of product layout rules.
 
 The Wayfire proof must provide:
 
@@ -84,10 +84,23 @@ commands. It did not find a public simple-tile state or command API suitable
 for agora-de zones. The Wayfire proof may proceed only as an agora-de custom
 plugin using direct Wayfire APIs and small backend-owned zone/revision state.
 
-The proof fails, and the Rust/Smithay path becomes primary, if any required
-layout action depends on synthetic keyboard shortcuts, if the bridge must infer
-post-layout geometry from shell state or screenshots, or if Wayfire internals
-force the custom plugin beyond the scope below.
+Den task 4268 added a Wayfire layout-state bridge and placement adapter. Den
+task 4269 proved command execution through `agora-de-compositorctl` and
+`/api/layout/action` against the installed den-k8 session. The proof did not
+depend on synthetic keyboard shortcuts, screenshot-derived geometry, or shell
+inference. Den task 4270 hardened Rust layout command semantics, and Den task
+4271 parked the Smithay comparison spike behind explicit trigger criteria.
+
+The proof fails in the future, and the Rust/Smithay compositor path becomes
+primary, if any required layout action starts depending on synthetic keyboard
+shortcuts, if the bridge must infer post-layout geometry from shell state or
+screenshots, if Wayfire internals force the custom plugin beyond the scope
+below, or if future layout rules cannot be expressed as backend-neutral Rust
+planner output plus backend acknowledgement.
+
+See `docs/backend-agnostic-layout-planner.md` for the next implementation
+series. The important successor boundary is now: Rust owns layout rule behavior,
+Wayfire applies and reports native surface geometry, and shellui projects state.
 
 ## Wayfire Plugin Scope
 
@@ -110,11 +123,12 @@ Explicitly out of scope:
 - governance log reads or OS governance policy;
 - Niri-like column history as an accidental Wayfire plugin product.
 
-Churn budget: one narrow Wayfire layout-authority spike may touch the Wayfire
-plugin and bridge adapter layers. Stop and promote the Rust/Smithay layout
-spike if the proof requires more than three follow-up implementation tasks, more
-than five working days, synthetic input actions, screenshot-derived geometry, or
-a broad plugin object that combines shell policy with compositor authority.
+Churn budget result: the Den 4267-4271 proof stayed within budget. It touched a
+bounded Wayfire plugin and bridge adapter path, passed live installed-service
+checks, and kept shell UI, launcher, governance, and theme policy out of the
+backend. Future work is no longer proof churn; it is implementation of a
+backend-neutral Rust layout planner and a Wayfire adapter that applies its
+rectangles.
 
 ## Closeout Rule
 
