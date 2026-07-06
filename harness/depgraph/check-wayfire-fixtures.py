@@ -6,12 +6,15 @@ import sys
 
 KNOWN_TYPES = {
     "surface_event",
+    "layout_state",
     "policy_replace",
     "policy_upsert",
     "policy_remove",
     "input_context",
     "close_surface",
     "close_surfaces_by_uid",
+    "place_surface",
+    "place_response",
 }
 
 PROBE_SCHEMA = "agora-de.wayfire-layout-authority-probe.v1"
@@ -39,7 +42,7 @@ def main() -> int:
         if line_count == 0:
             failures.append(f"{path.relative_to(root)} must not be empty")
 
-    required = {"plugin-events.jsonl", "bridge-commands.jsonl"}
+    required = {"plugin-events.jsonl", "bridge-commands.jsonl", "layout-state-events.jsonl"}
     present = {path.name for path in fixture_dir.glob("*.jsonl")}
     missing = required - present
     for name in sorted(missing):

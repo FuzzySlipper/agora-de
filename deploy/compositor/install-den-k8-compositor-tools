@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Install den-k8 compositor bridge root helper and sudoers entry.
+set -euo pipefail
+IFS=$'\n\t'
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+
+install -D -o root -g root -m 0755 \
+  "$repo_root/deploy/compositor/agora-de-compositor-bridge-admin" \
+  /usr/local/sbin/agora-de-compositor-bridge-admin
+
+cat >/etc/sudoers.d/agora-de-compositor <<'SUDOERS'
+agent ALL=(root) NOPASSWD: /usr/local/sbin/agora-de-compositor-bridge-admin
+SUDOERS
+
+chmod 0440 /etc/sudoers.d/agora-de-compositor
+visudo -cf /etc/sudoers.d/agora-de-compositor
+
+printf 'installed /usr/local/sbin/agora-de-compositor-bridge-admin and sudoers entry\n'

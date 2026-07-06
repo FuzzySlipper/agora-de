@@ -38,8 +38,11 @@ const (
 
 const (
 	PluginSurfaceEvent         = "surface_event"
+	PluginLayoutState          = "layout_state"
 	PluginFocusSurface         = "focus_surface"
 	PluginFocusResponse        = "focus_response"
+	PluginPlaceSurface         = "place_surface"
+	PluginPlaceResponse        = "place_response"
 	PluginCloseSurface         = "close_surface"
 	PluginPolicyReplace        = "policy_replace"
 	PluginInputContext         = "input_context"
@@ -67,14 +70,17 @@ type Config struct {
 type Bridge struct {
 	allowedPluginUID uint32
 
-	mu           sync.RWMutex
-	plugin       *pluginSession
-	surfaces     map[string]TrackedSurface
-	stale        map[string]time.Time
-	focusSeq     uint64
-	focusWaiters map[string]chan pluginResponse
-	captureSeq   uint64
-	layoutSeq    uint64
+	mu            sync.RWMutex
+	plugin        *pluginSession
+	surfaces      map[string]TrackedSurface
+	stale         map[string]time.Time
+	focusSeq      uint64
+	focusWaiters  map[string]chan pluginResponse
+	placeSeq      uint64
+	placeWaiters  map[string]chan pluginResponse
+	captureSeq    uint64
+	layoutSeq     uint64
+	backendLayout *LayoutState
 }
 
 func New(config Config) *Bridge {
@@ -83,6 +89,7 @@ func New(config Config) *Bridge {
 		surfaces:         map[string]TrackedSurface{},
 		stale:            map[string]time.Time{},
 		focusWaiters:     map[string]chan pluginResponse{},
+		placeWaiters:     map[string]chan pluginResponse{},
 	}
 }
 
@@ -318,14 +325,21 @@ func (bridge *Bridge) MoveResizeSurface(request SurfaceLayoutActionRequest) (Lay
 	if request.Geometry.Width <= 0 || request.Geometry.Height <= 0 {
 		return LayoutActionResponse{}, fmt.Errorf("geometry width and height must be positive")
 	}
-	return bridge.unsupportedSurfaceLayoutAction("surface.move_resize", request.SurfaceID)
+	return bridge.placeSurface(request, "surface.move_resize", *request.Geometry, request.ZoneID, SurfaceLayoutRoleFloating)
 }
 
 func (bridge *Bridge) TileSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
 	if strings.TrimSpace(request.ZoneID) == "" {
 		return LayoutActionResponse{}, fmt.Errorf("zone_id is required")
 	}
-	return bridge.unsupportedSurfaceLayoutAction("surface.tile", request.SurfaceID)
+	geometry, err := bridge.geometryForZone(request.SurfaceID, request.ZoneID)
+	if err != nil {
+		if class, _ := classifyError(err); class == ErrorBackendUnsupported {
+			return bridge.unsupportedSurfaceLayoutAction("surface.tile", request.SurfaceID)
+		}
+		return LayoutActionResponse{}, err
+	}
+	return bridge.placeSurface(request, "surface.tile", geometry, request.ZoneID, SurfaceLayoutRoleTiled)
 }
 
 func (bridge *Bridge) SetSurfaceFloating(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
@@ -339,7 +353,14 @@ func (bridge *Bridge) AssignSurfaceZone(request SurfaceLayoutActionRequest) (Lay
 	if strings.TrimSpace(request.ZoneID) == "" {
 		return LayoutActionResponse{}, fmt.Errorf("zone_id is required")
 	}
-	return bridge.unsupportedSurfaceLayoutAction("surface.assign_zone", request.SurfaceID)
+	geometry, err := bridge.geometryForZone(request.SurfaceID, request.ZoneID)
+	if err != nil {
+		if class, _ := classifyError(err); class == ErrorBackendUnsupported {
+			return bridge.unsupportedSurfaceLayoutAction("surface.assign_zone", request.SurfaceID)
+		}
+		return LayoutActionResponse{}, err
+	}
+	return bridge.placeSurface(request, "surface.assign_zone", geometry, request.ZoneID, SurfaceLayoutRoleTiled)
 }
 
 func (bridge *Bridge) MaximizeSurface(request SurfaceLayoutActionRequest) (LayoutActionResponse, error) {
@@ -402,6 +423,198 @@ func (bridge *Bridge) unsupportedSurfaceLayoutAction(action string, surfaceID st
 		Decision:  "unsupported",
 		Surface:   &surface,
 	}, classifiedError{class: ErrorBackendUnsupported, message: fmt.Sprintf("%s requires compositor backend geometry authority", action)}
+}
+
+func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action string, geometry SurfaceGeometry, zoneID string, role SurfaceLayoutRole) (LayoutActionResponse, error) {
+	surface, err := bridge.requireWorkSurface(request.SurfaceID, action)
+	if err != nil {
+		return LayoutActionResponse{}, err
+	}
+	session, requestID, waiter, err := bridge.startPlaceWaiter(request.SurfaceID)
+	if err != nil {
+		return LayoutActionResponse{}, err
+	}
+	defer bridge.clearPlaceWaiter(requestID)
+
+	if err := session.Send(map[string]any{
+		"type":       PluginPlaceSurface,
+		"request_id": requestID,
+		"surface_id": request.SurfaceID,
+		"geometry":   geometry,
+	}); err != nil {
+		return LayoutActionResponse{}, err
+	}
+	timeout := time.Duration(request.WaitTimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	select {
+	case response := <-waiter:
+		if !response.OK {
+			message := response.Error
+			if message == "" {
+				message = "placement rejected by compositor plugin"
+			}
+			return LayoutActionResponse{}, classifiedError{class: ErrorProtocol, message: message}
+		}
+	case <-time.After(timeout):
+		return LayoutActionResponse{}, classifiedError{class: ErrorFrameTimeout, message: "placement request timed out"}
+	}
+
+	bridge.mu.Lock()
+	tracked := bridge.surfaces[request.SurfaceID]
+	tracked.Geometry = cloneGeometry(&geometry)
+	tracked.Surface.Geometry = cloneGeometry(&geometry)
+	tracked.WorkspaceID = firstNonEmpty(request.WorkspaceID, tracked.WorkspaceID, "workspace-1")
+	tracked.Surface.WorkspaceID = tracked.WorkspaceID
+	tracked.ZoneID = firstNonEmpty(zoneID, tracked.ZoneID, "primary")
+	tracked.Surface.ZoneID = tracked.ZoneID
+	if role == SurfaceLayoutRoleTiled {
+		tracked.LayoutMode = string(LayoutModeZones)
+		tracked.Surface.LayoutMode = string(LayoutModeZones)
+		tracked.LayoutRole = string(SurfaceLayoutRoleTiled)
+		tracked.Surface.LayoutRole = string(SurfaceLayoutRoleTiled)
+	} else {
+		tracked.LayoutMode = firstNonEmpty(tracked.LayoutMode, string(LayoutModeFreeform))
+		tracked.Surface.LayoutMode = tracked.LayoutMode
+		tracked.LayoutRole = firstNonEmpty(tracked.LayoutRole, string(role), string(SurfaceLayoutRoleFloating))
+		tracked.Surface.LayoutRole = tracked.LayoutRole
+	}
+	bridge.layoutSeq++
+	tracked.LayoutRevision = bridge.layoutSeq
+	tracked.UpdatedAt = time.Now()
+	bridge.surfaces[request.SurfaceID] = tracked
+	bridge.updateBackendLayoutSurfaceLocked(tracked)
+	layout := bridge.layoutLocked()
+	bridge.mu.Unlock()
+
+	surface = tracked
+	return LayoutActionResponse{
+		Action:    action,
+		SurfaceID: request.SurfaceID,
+		Decision:  DecisionAccepted,
+		Reason:    "placed via compositor plugin",
+		Layout:    &layout,
+		Surface:   &surface,
+	}, nil
+}
+
+func (bridge *Bridge) geometryForZone(surfaceID string, zoneID string) (SurfaceGeometry, error) {
+	surface, err := bridge.requireWorkSurface(surfaceID, "surface.assign_zone")
+	if err != nil {
+		return SurfaceGeometry{}, err
+	}
+	zoneID = strings.TrimSpace(zoneID)
+	if zoneID != "primary" && zoneID != "secondary" {
+		return SurfaceGeometry{}, classifiedError{class: ErrorBackendUnsupported, message: fmt.Sprintf("zone %s is not supported by the minimal Wayfire layout adapter", zoneID)}
+	}
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+	outputName := firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+	outputs := bridge.outputsLocked()
+	var output LogicalOutput
+	if outputName != "" {
+		output = outputs[outputName]
+	}
+	if output.Name == "" {
+		for _, candidate := range outputs {
+			output = candidate
+			break
+		}
+	}
+	if output.Name == "" {
+		return SurfaceGeometry{}, classifiedError{class: ErrorBackendUnsupported, message: "no output is available for zone placement"}
+	}
+	width := firstPositive(output.PhysicalWidth, output.Width)
+	height := firstPositive(output.PhysicalHeight, output.Height)
+	if width <= 0 || height <= 0 {
+		return SurfaceGeometry{}, classifiedError{class: ErrorBackendUnsupported, message: "output geometry is not available for zone placement"}
+	}
+	height -= bridge.reservedBottomHeightLocked(output.Name, width)
+	if height <= 0 {
+		return SurfaceGeometry{}, classifiedError{class: ErrorBackendUnsupported, message: "output work area is empty after chrome reservation"}
+	}
+	leftWidth := width / 2
+	if zoneID == "primary" {
+		return SurfaceGeometry{X: output.PhysicalX, Y: output.PhysicalY, Width: leftWidth, Height: height}, nil
+	}
+	return SurfaceGeometry{X: output.PhysicalX + leftWidth, Y: output.PhysicalY, Width: width - leftWidth, Height: height}, nil
+}
+
+func (bridge *Bridge) reservedBottomHeightLocked(outputName string, outputWidth int) int {
+	reserved := 0
+	for _, surface := range bridge.surfaces {
+		if surface.Surface.SurfaceKind != SurfaceKindLayer || firstNonEmpty(surface.OutputID, surface.Surface.OutputID) != outputName {
+			continue
+		}
+		if firstNonEmpty(surface.Surface.Role, surface.LayoutRole) != "panel" {
+			continue
+		}
+		geometry := firstGeometry(surface)
+		if geometry == nil || geometry.Height <= 0 {
+			continue
+		}
+		if outputWidth > 0 && geometry.Width > 0 && geometry.Width < outputWidth/2 {
+			continue
+		}
+		if geometry.Height > reserved {
+			reserved = geometry.Height
+		}
+	}
+	return reserved
+}
+
+func (bridge *Bridge) updateBackendLayoutSurfaceLocked(tracked TrackedSurface) {
+	if bridge.backendLayout == nil {
+		return
+	}
+	layout := cloneLayoutState(*bridge.backendLayout)
+	found := false
+	for index := range layout.Surfaces {
+		if layout.Surfaces[index].SurfaceID != tracked.Surface.ID {
+			continue
+		}
+		layout.Surfaces[index].Geometry = cloneGeometry(tracked.Geometry)
+		layout.Surfaces[index].WorkspaceID = tracked.WorkspaceID
+		layout.Surfaces[index].ZoneID = tracked.ZoneID
+		layout.Surfaces[index].Mode = LayoutMode(tracked.LayoutMode)
+		layout.Surfaces[index].Participation = SurfaceLayoutRole(tracked.LayoutRole)
+		layout.Surfaces[index].Floating = tracked.LayoutRole == string(SurfaceLayoutRoleFloating)
+		found = true
+		break
+	}
+	if !found {
+		layout.Surfaces = append(layout.Surfaces, LayoutSurface{
+			SurfaceID:     tracked.Surface.ID,
+			Label:         tracked.Surface.Label,
+			AppID:         tracked.Surface.AppID,
+			Title:         tracked.Surface.Title,
+			Role:          tracked.Surface.Role,
+			OutputID:      tracked.OutputID,
+			WorkspaceID:   tracked.WorkspaceID,
+			ZoneID:        tracked.ZoneID,
+			Mode:          LayoutMode(tracked.LayoutMode),
+			Participation: SurfaceLayoutRole(tracked.LayoutRole),
+			Floating:      tracked.LayoutRole == string(SurfaceLayoutRoleFloating),
+			Focused:       tracked.Focused,
+			Visible:       tracked.Visible,
+			Geometry:      cloneGeometry(tracked.Geometry),
+			Order:         len(layout.Surfaces),
+		})
+	}
+	layout.Revision = bridge.layoutSeq
+	normalizeLayoutState(&layout)
+	bridge.backendLayout = cloneLayoutStatePtr(layout)
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func (bridge *Bridge) requireWorkSurface(surfaceID string, action string) (TrackedSurface, error) {
@@ -526,8 +739,76 @@ func (bridge *Bridge) handlePluginEvent(event pluginEvent) {
 	switch event.Type {
 	case PluginSurfaceEvent:
 		bridge.handleSurfaceEvent(event)
+	case PluginLayoutState:
+		bridge.handleLayoutState(event.Layout)
 	case PluginFocusResponse:
 		bridge.handleFocusResponse(event)
+	case PluginPlaceResponse:
+		bridge.handlePlaceResponse(event)
+	}
+}
+
+func (bridge *Bridge) handleLayoutState(layout LayoutState) {
+	if !validLayoutMode(layout.Mode) {
+		layout.Mode = LayoutModeZones
+	}
+	if layout.Revision == 0 {
+		bridge.mu.Lock()
+		bridge.layoutSeq++
+		layout.Revision = bridge.layoutSeq
+		bridge.mu.Unlock()
+	} else {
+		bridge.mu.Lock()
+		if layout.Revision > bridge.layoutSeq {
+			bridge.layoutSeq = layout.Revision
+		}
+		bridge.mu.Unlock()
+	}
+	normalizeLayoutState(&layout)
+
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	bridge.backendLayout = cloneLayoutStatePtr(layout)
+	for _, layoutSurface := range layout.Surfaces {
+		if layoutSurface.SurfaceID == "" {
+			continue
+		}
+		tracked := bridge.surfaces[layoutSurface.SurfaceID]
+		visible := layoutSurface.Visible
+		tracked.Surface.ID = layoutSurface.SurfaceID
+		tracked.Surface.Label = layoutSurface.Label
+		tracked.Surface.AppID = firstNonEmpty(layoutSurface.AppID, tracked.Surface.AppID)
+		tracked.Surface.Title = firstNonEmpty(layoutSurface.Title, tracked.Surface.Title)
+		tracked.Surface.Role = firstNonEmpty(layoutSurface.Role, tracked.Surface.Role, "toplevel")
+		tracked.Surface.SurfaceKind = firstNonEmpty(tracked.Surface.SurfaceKind, SurfaceKindXDG)
+		tracked.Surface.OutputID = layoutSurface.OutputID
+		tracked.Surface.WorkspaceID = layoutSurface.WorkspaceID
+		tracked.Surface.ZoneID = layoutSurface.ZoneID
+		tracked.Surface.LayoutMode = string(layoutSurface.Mode)
+		tracked.Surface.LayoutRole = string(layoutSurface.Participation)
+		tracked.Surface.Geometry = cloneGeometry(layoutSurface.Geometry)
+		tracked.Surface.Visible = &visible
+		tracked.Geometry = cloneGeometry(layoutSurface.Geometry)
+		tracked.OutputID = layoutSurface.OutputID
+		tracked.WorkspaceID = layoutSurface.WorkspaceID
+		tracked.ZoneID = layoutSurface.ZoneID
+		tracked.LayoutMode = string(layoutSurface.Mode)
+		tracked.LayoutRole = string(layoutSurface.Participation)
+		tracked.LayoutRevision = layout.Revision
+		tracked.Focused = layoutSurface.Focused
+		tracked.Visible = layoutSurface.Visible
+		tracked.Capturable = tracked.Surface.SurfaceKind != SurfaceKindLayer
+		tracked.InputInjectable = tracked.Surface.SurfaceKind != SurfaceKindLayer
+		tracked.LastEvent = firstNonEmpty(tracked.LastEvent, EventMapped)
+		tracked.UpdatedAt = time.Now()
+		if tracked.ScaleFactor == 0 {
+			tracked.ScaleFactor = 1
+		}
+		if tracked.Surface.ScaleFactor == 0 {
+			tracked.Surface.ScaleFactor = tracked.ScaleFactor
+		}
+		bridge.surfaces[layoutSurface.SurfaceID] = tracked
+		delete(bridge.stale, layoutSurface.SurfaceID)
 	}
 }
 
@@ -577,6 +858,7 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	if event.Event == EventUnmapped {
 		bridge.stale[event.Surface.ID] = now
 		delete(bridge.surfaces, event.Surface.ID)
+		bridge.removeSurfaceFromBackendLayoutLocked(event.Surface.ID)
 		return
 	}
 	if event.Event == EventFocused {
@@ -695,6 +977,19 @@ func (bridge *Bridge) handleFocusResponse(event pluginEvent) {
 	}
 }
 
+func (bridge *Bridge) handlePlaceResponse(event pluginEvent) {
+	bridge.mu.RLock()
+	waiter := bridge.placeWaiters[event.RequestID]
+	bridge.mu.RUnlock()
+	if waiter == nil {
+		return
+	}
+	select {
+	case waiter <- pluginResponse{OK: event.OK, Error: event.Error}:
+	default:
+	}
+}
+
 func (bridge *Bridge) outputsLocked() map[string]LogicalOutput {
 	outputs := map[string]LogicalOutput{}
 	for _, surface := range bridge.surfaces {
@@ -753,6 +1048,9 @@ func (bridge *Bridge) outputsLocked() map[string]LogicalOutput {
 }
 
 func (bridge *Bridge) layoutLocked() LayoutState {
+	if bridge.backendLayout != nil {
+		return cloneLayoutState(*bridge.backendLayout)
+	}
 	surfaces := make([]TrackedSurface, 0, len(bridge.surfaces))
 	for _, surface := range bridge.surfaces {
 		if surface.Surface.SurfaceKind == SurfaceKindLayer {
@@ -835,6 +1133,174 @@ func (bridge *Bridge) layoutLocked() LayoutState {
 	}
 }
 
+func (bridge *Bridge) removeSurfaceFromBackendLayoutLocked(surfaceID string) {
+	if bridge.backendLayout == nil {
+		return
+	}
+	layout := cloneLayoutState(*bridge.backendLayout)
+	filtered := layout.Surfaces[:0]
+	for _, surface := range layout.Surfaces {
+		if surface.SurfaceID != surfaceID {
+			filtered = append(filtered, surface)
+		}
+	}
+	layout.Surfaces = filtered
+	for index := range layout.Workspaces {
+		workspace := &layout.Workspaces[index]
+		workspace.SurfaceOrder = filterString(workspace.SurfaceOrder, surfaceID)
+		for zoneIndex := range workspace.Zones {
+			workspace.Zones[zoneIndex].SurfaceIDs = filterString(workspace.Zones[zoneIndex].SurfaceIDs, surfaceID)
+		}
+	}
+	bridge.layoutSeq++
+	layout.Revision = bridge.layoutSeq
+	bridge.backendLayout = cloneLayoutStatePtr(layout)
+}
+
+func filterString(values []string, remove string) []string {
+	filtered := values[:0]
+	for _, value := range values {
+		if value != remove {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
+}
+
+func normalizeLayoutState(layout *LayoutState) {
+	if layout.Mode == "" {
+		layout.Mode = LayoutModeZones
+	}
+	for index := range layout.Workspaces {
+		workspace := &layout.Workspaces[index]
+		if workspace.ID == "" {
+			workspace.ID = "workspace-1"
+		}
+		if workspace.Name == "" {
+			workspace.Name = workspace.ID
+		}
+	}
+	if len(layout.Workspaces) == 0 {
+		layout.Workspaces = []LayoutWorkspace{{ID: "workspace-1", Name: "workspace 1", Active: true}}
+	}
+	for index := range layout.Surfaces {
+		surface := &layout.Surfaces[index]
+		if surface.SurfaceID == "" {
+			continue
+		}
+		if surface.Label == "" {
+			surface.Label = fmt.Sprintf("%d", index+1)
+		}
+		if surface.WorkspaceID == "" {
+			surface.WorkspaceID = "workspace-1"
+		}
+		if surface.ZoneID == "" {
+			surface.ZoneID = "primary"
+		}
+		if surface.Mode == "" || !validLayoutMode(surface.Mode) {
+			surface.Mode = layout.Mode
+		}
+		if surface.Participation == "" {
+			surface.Participation = SurfaceLayoutRoleTiled
+		}
+		surface.Floating = surface.Participation == SurfaceLayoutRoleFloating
+		surface.Order = index
+		workspace := ensureWorkspace(layout, surface.WorkspaceID)
+		if workspace.OutputID == "" {
+			workspace.OutputID = surface.OutputID
+		}
+		if !containsString(workspace.SurfaceOrder, surface.SurfaceID) {
+			workspace.SurfaceOrder = append(workspace.SurfaceOrder, surface.SurfaceID)
+		}
+		ensureZoneContains(workspace, surface.ZoneID, surface.SurfaceID)
+	}
+}
+
+func ensureWorkspace(layout *LayoutState, workspaceID string) *LayoutWorkspace {
+	for index := range layout.Workspaces {
+		if layout.Workspaces[index].ID == workspaceID {
+			return &layout.Workspaces[index]
+		}
+	}
+	layout.Workspaces = append(layout.Workspaces, LayoutWorkspace{
+		ID:     workspaceID,
+		Name:   workspaceID,
+		Active: len(layout.Workspaces) == 0,
+	})
+	return &layout.Workspaces[len(layout.Workspaces)-1]
+}
+
+func ensureZoneContains(workspace *LayoutWorkspace, zoneID string, surfaceID string) {
+	for index := range workspace.Zones {
+		if workspace.Zones[index].ID == zoneID {
+			if !containsString(workspace.Zones[index].SurfaceIDs, surfaceID) {
+				workspace.Zones[index].SurfaceIDs = append(workspace.Zones[index].SurfaceIDs, surfaceID)
+			}
+			return
+		}
+	}
+	workspace.Zones = append(workspace.Zones, LayoutZone{
+		ID:         zoneID,
+		Name:       zoneID,
+		Kind:       "work",
+		SurfaceIDs: []string{surfaceID},
+	})
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneLayoutStatePtr(layout LayoutState) *LayoutState {
+	cloned := cloneLayoutState(layout)
+	return &cloned
+}
+
+func cloneLayoutState(layout LayoutState) LayoutState {
+	cloned := LayoutState{
+		Mode:       layout.Mode,
+		Revision:   layout.Revision,
+		Surfaces:   make([]LayoutSurface, len(layout.Surfaces)),
+		Workspaces: make([]LayoutWorkspace, len(layout.Workspaces)),
+	}
+	for index, surface := range layout.Surfaces {
+		cloned.Surfaces[index] = surface
+		cloned.Surfaces[index].Geometry = cloneGeometry(surface.Geometry)
+	}
+	for index, workspace := range layout.Workspaces {
+		cloned.Workspaces[index] = LayoutWorkspace{
+			ID:           workspace.ID,
+			Name:         workspace.Name,
+			OutputID:     workspace.OutputID,
+			Active:       workspace.Active,
+			Zones:        make([]LayoutZone, len(workspace.Zones)),
+			SurfaceOrder: append([]string(nil), workspace.SurfaceOrder...),
+		}
+		for zoneIndex, zone := range workspace.Zones {
+			cloned.Workspaces[index].Zones[zoneIndex] = LayoutZone{
+				ID:         zone.ID,
+				Name:       zone.Name,
+				Kind:       zone.Kind,
+				SurfaceIDs: append([]string(nil), zone.SurfaceIDs...),
+			}
+		}
+	}
+	return cloned
+}
+
+func cloneGeometry(geometry *SurfaceGeometry) *SurfaceGeometry {
+	if geometry == nil {
+		return nil
+	}
+	cloned := *geometry
+	return &cloned
+}
+
 func firstGeometry(surface TrackedSurface) *SurfaceGeometry {
 	if surface.Geometry != nil {
 		return surface.Geometry
@@ -868,6 +1334,25 @@ func (bridge *Bridge) clearFocusWaiter(requestID string) {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
 	delete(bridge.focusWaiters, requestID)
+}
+
+func (bridge *Bridge) startPlaceWaiter(surfaceID string) (*pluginSession, string, chan pluginResponse, error) {
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	if bridge.plugin == nil {
+		return nil, "", nil, classifiedError{class: ErrorCompositorUnavailable, message: "no plugin connected"}
+	}
+	bridge.placeSeq++
+	requestID := fmt.Sprintf("place-%d-%d", time.Now().UnixNano(), bridge.placeSeq)
+	waiter := make(chan pluginResponse, 1)
+	bridge.placeWaiters[requestID] = waiter
+	return bridge.plugin, requestID, waiter, nil
+}
+
+func (bridge *Bridge) clearPlaceWaiter(requestID string) {
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	delete(bridge.placeWaiters, requestID)
 }
 
 func (bridge *Bridge) installPlugin(session *pluginSession) *pluginSession {

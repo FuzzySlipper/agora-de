@@ -13,9 +13,34 @@ Install or update on den-k8 with:
 sudo /home/dev/agora-de/deploy/compositor/install-compositor-bridge-service.sh
 ```
 
-The installed unit runs `/usr/local/bin/agora-de-compositor-bridge`. The Wayfire
-plugin remains the active compositor runtime dependency until the backend plugin
-itself is replaced or regenerated under agora-de ownership.
+The installer builds and installs:
+
+- `/usr/local/bin/agora-de-compositor-bridge`
+- `/usr/local/bin/agora-de-compositorctl`
+- `/home/agent/.local/bin/agora-de-compositorctl` when the `agent` user exists
+
+The installed unit runs `/usr/local/bin/agora-de-compositor-bridge`. The
+Wayfire plugin remains the active compositor runtime dependency until the
+backend plugin itself is replaced or regenerated under agora-de ownership.
+
+## Root Helper
+
+Install the den-k8 compositor helper once:
+
+```bash
+sudo /home/dev/agora-de/deploy/compositor/install-den-k8-compositor-tools
+```
+
+That installs `/usr/local/sbin/agora-de-compositor-bridge-admin` and a sudoers
+entry allowing the `agent` user to run the helper without a password. The
+helper accepts only a small command set:
+
+```bash
+sudo /usr/local/sbin/agora-de-compositor-bridge-admin install-bridge
+sudo /usr/local/sbin/agora-de-compositor-bridge-admin restart-bridge
+sudo /usr/local/sbin/agora-de-compositor-bridge-admin stop-bridge
+sudo /usr/local/sbin/agora-de-compositor-bridge-admin status
+```
 
 ## Native Window Visibility
 

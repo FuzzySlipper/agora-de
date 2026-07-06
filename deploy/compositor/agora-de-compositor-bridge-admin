@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Root helper for den-k8 compositor bridge maintenance.
+set -euo pipefail
+IFS=$'\n\t'
+
+repo_root=/home/dev/agora-de
+service_name=compositor-bridge.service
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: agora-de-compositor-bridge-admin <command>
+
+Commands:
+  install-bridge   Build, install, restart, and enable the compositor bridge.
+  restart-bridge   Restart the installed compositor bridge service.
+  stop-bridge      Stop the installed compositor bridge service.
+  status           Show compositor bridge service status.
+USAGE
+}
+
+if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  echo "agora-de-compositor-bridge-admin must run as root" >&2
+  exit 1
+fi
+
+command=${1:-}
+case "$command" in
+  install-bridge)
+    "$repo_root/deploy/compositor/install-compositor-bridge-service.sh"
+    ;;
+  restart-bridge)
+    systemctl restart "$service_name"
+    systemctl status "$service_name" --no-pager
+    ;;
+  stop-bridge)
+    systemctl stop "$service_name"
+    systemctl status "$service_name" --no-pager || true
+    ;;
+  status)
+    systemctl status "$service_name" --no-pager
+    ;;
+  "" | -h | --help | help)
+    usage
+    ;;
+  *)
+    usage
+    echo "unknown command: $command" >&2
+    exit 2
+    ;;
+esac

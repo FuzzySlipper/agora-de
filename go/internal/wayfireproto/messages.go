@@ -11,12 +11,15 @@ type MessageType string
 
 const (
 	MessageTypeSurfaceEvent       MessageType = "surface_event"
+	MessageTypeLayoutState        MessageType = "layout_state"
 	MessageTypePolicyReplace      MessageType = "policy_replace"
 	MessageTypePolicyUpsert       MessageType = "policy_upsert"
 	MessageTypePolicyRemove       MessageType = "policy_remove"
 	MessageTypeInputContext       MessageType = "input_context"
 	MessageTypeCloseSurface       MessageType = "close_surface"
 	MessageTypeCloseSurfacesByUID MessageType = "close_surfaces_by_uid"
+	MessageTypePlaceSurface       MessageType = "place_surface"
+	MessageTypePlaceResponse      MessageType = "place_response"
 )
 
 type SurfaceEventKind string
@@ -130,15 +133,17 @@ func DecodeStream(reader io.Reader) ([]MessageType, error) {
 func knownType(messageType MessageType) bool {
 	switch messageType {
 	case MessageTypeSurfaceEvent,
+		MessageTypeLayoutState,
 		MessageTypePolicyReplace,
 		MessageTypePolicyUpsert,
 		MessageTypePolicyRemove,
 		MessageTypeInputContext,
 		MessageTypeCloseSurface,
-		MessageTypeCloseSurfacesByUID:
+		MessageTypeCloseSurfacesByUID,
+		MessageTypePlaceSurface,
+		MessageTypePlaceResponse:
 		return true
 	default:
 		return false
 	}
 }
-

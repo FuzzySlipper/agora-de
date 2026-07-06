@@ -151,6 +151,11 @@ type GetLayoutResponse struct {
 	Layout LayoutState `json:"layout"`
 }
 
+type LayoutStateEvent struct {
+	Type   string      `json:"type"`
+	Layout LayoutState `json:"layout"`
+}
+
 type FocusSurfaceRequest struct {
 	SurfaceID     string `json:"surface_id"`
 	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
@@ -287,6 +292,7 @@ type pluginEvent struct {
 	Device    string            `json:"device,omitempty"`
 	Surface   CompositorSurface `json:"surface"`
 	Client    ClientIdentity    `json:"client"`
+	Layout    LayoutState       `json:"layout,omitempty"`
 	RequestID string            `json:"request_id,omitempty"`
 	SurfaceID string            `json:"surface_id,omitempty"`
 	OK        bool              `json:"ok,omitempty"`

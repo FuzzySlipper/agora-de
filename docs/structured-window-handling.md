@@ -209,6 +209,18 @@ probe concludes that direct Wayfire APIs are sufficient to attempt the next
 state bridge proof, while simple-tile remains evidence only and not the
 authority API.
 
+Den task 4268 adds the backend `layout_state` plugin event consumed by the Go
+bridge. When present, `get_layout` returns this compositor-provided state
+instead of the surface-derived fallback projection.
+
+The same task also adds the minimal Wayfire placement adapter used by the live
+proof. `assignZone` and `tile` send a compositor plugin `place_surface` command,
+wait for `place_response`, and then expose the post-placement geometry through
+`get_layout`. On den-k8, `harness/live/check-structured-layout.py` passed with
+Alacritty in `primary` at `x=0,width=1280` and foot in `secondary` at
+`x=1280,width=1280`, with output capture evidence under
+`/run/agent-os/artifacts/den-k8-structured-layout-4268/`.
+
 ## Follow-Up Tasks
 
 - Den 4247: bridge structured layout action contract.

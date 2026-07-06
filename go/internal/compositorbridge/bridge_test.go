@@ -171,6 +171,244 @@ func TestGetLayoutDerivesStableWorkspaceState(t *testing.T) {
 	}
 }
 
+func TestGetLayoutUsesBackendLayoutStateWhenPluginProvidesIt(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Title:       "Alacritty",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{X: 96, Y: 66, Width: 804, Height: 634},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	bridge.handlePluginEvent(pluginEvent{
+		Type: PluginLayoutState,
+		Layout: LayoutState{
+			Mode:     LayoutModeZones,
+			Revision: 7,
+			Surfaces: []LayoutSurface{
+				{
+					SurfaceID:     "view-a",
+					Label:         "1",
+					AppID:         "Alacritty",
+					Title:         "Alacritty",
+					OutputID:      "HDMI-A-1",
+					WorkspaceID:   "workspace-1",
+					ZoneID:        "primary",
+					Mode:          LayoutModeZones,
+					Participation: SurfaceLayoutRoleTiled,
+					Focused:       true,
+					Visible:       true,
+					Geometry:      &SurfaceGeometry{X: 0, Y: 0, Width: 1280, Height: 1248},
+				},
+				{
+					SurfaceID:     "view-b",
+					Label:         "2",
+					AppID:         "foot",
+					Title:         "foot",
+					OutputID:      "HDMI-A-1",
+					WorkspaceID:   "workspace-1",
+					ZoneID:        "secondary",
+					Mode:          LayoutModeZones,
+					Participation: SurfaceLayoutRoleTiled,
+					Visible:       true,
+					Geometry:      &SurfaceGeometry{X: 1280, Y: 0, Width: 1280, Height: 1248},
+				},
+			},
+			Workspaces: []LayoutWorkspace{
+				{
+					ID:       "workspace-1",
+					Name:     "workspace 1",
+					OutputID: "HDMI-A-1",
+					Active:   true,
+					Zones: []LayoutZone{
+						{ID: "primary", Name: "Primary", Kind: "work", SurfaceIDs: []string{"view-a"}},
+						{ID: "secondary", Name: "Secondary", Kind: "work", SurfaceIDs: []string{"view-b"}},
+					},
+					SurfaceOrder: []string{"view-a", "view-b"},
+				},
+			},
+		},
+	})
+
+	layout := bridge.GetLayout().Layout
+	if layout.Mode != LayoutModeZones || layout.Revision != 7 {
+		t.Fatalf("layout header = %+v", layout)
+	}
+	if len(layout.Surfaces) != 2 {
+		t.Fatalf("surfaces = %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[0].Geometry.X != 0 || layout.Surfaces[1].Geometry.X != 1280 {
+		t.Fatalf("backend geometry was not preserved: %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[0].Participation != SurfaceLayoutRoleTiled || layout.Surfaces[0].Floating {
+		t.Fatalf("layout participation = %+v", layout.Surfaces[0])
+	}
+	surfaces := bridge.ListSurfaces()
+	if len(surfaces) != 2 {
+		t.Fatalf("tracked surfaces = %+v", surfaces)
+	}
+	if surfaces[0].LayoutRevision != 7 || surfaces[0].Geometry.X != 0 {
+		t.Fatalf("tracked surface did not receive backend layout readback: %+v", surfaces[0])
+	}
+}
+
+func TestBackendLayoutStateDropsUnmappedSurface(t *testing.T) {
+	bridge := New(Config{})
+	bridge.handlePluginEvent(pluginEvent{
+		Type: PluginLayoutState,
+		Layout: LayoutState{
+			Mode:     LayoutModeZones,
+			Revision: 3,
+			Surfaces: []LayoutSurface{
+				{SurfaceID: "view-a", Visible: true, Geometry: &SurfaceGeometry{Width: 10, Height: 10}},
+				{SurfaceID: "view-b", Visible: true, Geometry: &SurfaceGeometry{X: 10, Width: 10, Height: 10}},
+			},
+		},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventUnmapped,
+		Surface: CompositorSurface{ID: "view-a"},
+	})
+
+	layout := bridge.GetLayout().Layout
+	if len(layout.Surfaces) != 1 || layout.Surfaces[0].SurfaceID != "view-b" {
+		t.Fatalf("layout surfaces after unmap = %+v", layout.Surfaces)
+	}
+	if layout.Revision <= 3 {
+		t.Fatalf("layout revision did not advance after unmap: %+v", layout)
+	}
+	if got := layout.Workspaces[0].SurfaceOrder; len(got) != 1 || got[0] != "view-b" {
+		t.Fatalf("surface order after unmap = %+v", got)
+	}
+}
+
+func TestAssignSurfaceZonePlacesSurfaceThroughPlugin(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "layer-background",
+			SurfaceKind: SurfaceKindLayer,
+			AppID:       "io.agorade.ShellBackground",
+			Role:        "background",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 2560, Height: 1344},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "layer-panel",
+			SurfaceKind: SurfaceKindLayer,
+			AppID:       "io.agorade.ShellPanel",
+			Role:        "panel",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 2560, Height: 96},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Title:       "Alacritty",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{X: 96, Y: 66, Width: 804, Height: 634},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+
+	decoder := json.NewDecoder(pluginClient)
+	for range 2 {
+		var initial map[string]any
+		if err := decoder.Decode(&initial); err != nil {
+			t.Fatalf("decode initial plugin message: %v", err)
+		}
+	}
+	commandSeen := make(chan map[string]any, 1)
+	go func() {
+		var command map[string]any
+		if err := decoder.Decode(&command); err == nil {
+			commandSeen <- command
+		}
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		response, err := bridge.AssignSurfaceZone(SurfaceLayoutActionRequest{
+			SurfaceID:     "view-a",
+			ZoneID:        "secondary",
+			WaitTimeoutMs: 1000,
+		})
+		if err != nil {
+			t.Errorf("AssignSurfaceZone: %v", err)
+			return
+		}
+		if response.Decision != DecisionAccepted || response.Layout == nil {
+			t.Errorf("response = %+v", response)
+		}
+	}()
+
+	var command map[string]any
+	select {
+	case command = <-commandSeen:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for place command")
+	}
+	if command["type"] != PluginPlaceSurface || command["surface_id"] != "view-a" {
+		t.Fatalf("place command = %+v", command)
+	}
+	geometry, ok := command["geometry"].(map[string]any)
+	if !ok || int(geometry["x"].(float64)) != 1280 || int(geometry["width"].(float64)) != 1280 || int(geometry["height"].(float64)) != 1248 {
+		t.Fatalf("place geometry = %+v", command["geometry"])
+	}
+	if err := json.NewEncoder(pluginClient).Encode(map[string]any{
+		"type":       PluginPlaceResponse,
+		"request_id": command["request_id"],
+		"surface_id": command["surface_id"],
+		"ok":         true,
+	}); err != nil {
+		t.Fatalf("send place response: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for assign-zone response")
+	}
+
+	layout := bridge.GetLayout().Layout
+	var placed LayoutSurface
+	for _, surface := range layout.Surfaces {
+		if surface.SurfaceID == "view-a" {
+			placed = surface
+			break
+		}
+	}
+	if placed.ZoneID != "secondary" || placed.Geometry == nil || placed.Geometry.X != 1280 || placed.Participation != SurfaceLayoutRoleTiled {
+		t.Fatalf("placed layout surface = %+v", placed)
+	}
+}
+
 func TestLayoutSurfaceActionsValidateStaleBeforeUnsupportedBackend(t *testing.T) {
 	bridge := New(Config{})
 	visible := true

@@ -54,6 +54,7 @@ func TestDecodeBridgeCommandFixture(t *testing.T) {
 		MessageTypeInputContext,
 		MessageTypeCloseSurface,
 		MessageTypeCloseSurfacesByUID,
+		MessageTypePlaceSurface,
 	}
 	if len(types) != len(want) {
 		t.Fatalf("decoded %d messages, want %d", len(types), len(want))
@@ -62,6 +63,40 @@ func TestDecodeBridgeCommandFixture(t *testing.T) {
 		if got != want[index] {
 			t.Fatalf("message %d type = %q, want %q", index, got, want[index])
 		}
+	}
+}
+
+func TestDecodeBackendLayoutStateFixture(t *testing.T) {
+	file, err := os.Open(fixturePath(t, "layout-state-events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	types, err := DecodeStream(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(types) != 1 || types[0] != MessageTypeLayoutState {
+		t.Fatalf("decoded message types = %+v, want [%s]", types, MessageTypeLayoutState)
+	}
+}
+
+func TestDecodeLayoutActionEventFixture(t *testing.T) {
+	file, err := os.Open(fixturePath(t, "layout-action-events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	types, err := DecodeStream(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(types) != 1 || types[0] != MessageTypePlaceResponse {
+		t.Fatalf("decoded message types = %+v, want [%s]", types, MessageTypePlaceResponse)
 	}
 }
 

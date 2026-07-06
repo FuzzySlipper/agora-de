@@ -80,8 +80,10 @@ func shutdownOnSignal(listeners ...net.Listener) {
 }
 
 func configureSocket(path string, mode os.FileMode, uid int, gid int) {
-	if err := os.Chown(path, uid, gid); err != nil {
-		log.Fatalf("chown %s: %v", path, err)
+	if os.Geteuid() == 0 {
+		if err := os.Chown(path, uid, gid); err != nil {
+			log.Fatalf("chown %s: %v", path, err)
+		}
 	}
 	if err := os.Chmod(path, mode); err != nil {
 		log.Fatalf("chmod %s: %v", path, err)
