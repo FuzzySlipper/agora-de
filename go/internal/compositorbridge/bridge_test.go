@@ -665,6 +665,73 @@ func TestAutoLayoutPromotesFocusedSurfaceToMaster(t *testing.T) {
 	}
 }
 
+func TestAutoLayoutOrderUsesPlacementZonesOverStaleTrackedZones(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.surfaces["view-a"] = TrackedSurface{
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Visible:     &visible,
+			WorkspaceID: "workspace-1",
+			ZoneID:      zoneMaster,
+			LayoutMode:  string(LayoutModeZones),
+			LayoutRole:  string(SurfaceLayoutRoleTiled),
+		},
+		Visible:     true,
+		WorkspaceID: "workspace-1",
+		ZoneID:      zoneMaster,
+		LayoutMode:  string(LayoutModeZones),
+		LayoutRole:  string(SurfaceLayoutRoleTiled),
+		Geometry:    &SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 700},
+	}
+	bridge.surfaces["view-b"] = TrackedSurface{
+		Surface: CompositorSurface{
+			ID:          "view-b",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "foot",
+			Visible:     &visible,
+			WorkspaceID: "workspace-1",
+			ZoneID:      zoneMaster,
+			LayoutMode:  string(LayoutModeZones),
+			LayoutRole:  string(SurfaceLayoutRoleTiled),
+		},
+		Visible:     true,
+		WorkspaceID: "workspace-1",
+		ZoneID:      zoneMaster,
+		LayoutMode:  string(LayoutModeZones),
+		LayoutRole:  string(SurfaceLayoutRoleTiled),
+		Geometry:    &SurfaceGeometry{X: 600, Y: 0, Width: 600, Height: 700},
+	}
+
+	bridge.applyAutoLayoutOrder([]autoLayoutPlacement{
+		{SurfaceID: "view-a", WorkspaceID: "workspace-1", ZoneID: zoneStack, Geometry: SurfaceGeometry{X: 600, Y: 0, Width: 600, Height: 700}},
+		{SurfaceID: "view-b", WorkspaceID: "workspace-1", ZoneID: zoneMaster, Geometry: SurfaceGeometry{X: 0, Y: 0, Width: 600, Height: 700}},
+	})
+
+	layout := bridge.GetLayout().Layout
+	if len(layout.Surfaces) != 2 {
+		t.Fatalf("layout surfaces = %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[0].ZoneID != zoneStack {
+		t.Fatalf("first surface should use placement stack zone despite stale tracked zone: %+v", layout.Surfaces[0])
+	}
+	if layout.Surfaces[1].SurfaceID != "view-b" || layout.Surfaces[1].ZoneID != zoneMaster {
+		t.Fatalf("second surface should use placement master zone: %+v", layout.Surfaces[1])
+	}
+	zones := map[string][]string{}
+	for _, zone := range layout.Workspaces[0].Zones {
+		zones[zone.ID] = zone.SurfaceIDs
+	}
+	if got := zones[zoneMaster]; len(got) != 1 || got[0] != "view-b" {
+		t.Fatalf("master zone membership = %+v, want only view-b", zones[zoneMaster])
+	}
+	if got := zones[zoneStack]; len(got) != 1 || got[0] != "view-a" {
+		t.Fatalf("stack zone membership = %+v, want only view-a", zones[zoneStack])
+	}
+}
+
 func TestSetLayoutModeUpdatesStateAndFreeformDisablesAutoLayout(t *testing.T) {
 	bridge := New(Config{})
 	response, err := bridge.SetLayoutMode(SetLayoutModeRequest{Mode: LayoutModeFreeform})

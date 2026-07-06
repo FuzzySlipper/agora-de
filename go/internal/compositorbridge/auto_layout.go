@@ -49,6 +49,7 @@ func (bridge *Bridge) autoLayoutWorker(reason string) {
 
 func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 	placements := bridge.autoLayoutPlan()
+	applied := make([]autoLayoutPlacement, 0, len(placements))
 	for _, placement := range placements {
 		request := SurfaceLayoutActionRequest{
 			SurfaceID:     placement.SurfaceID,
@@ -66,8 +67,9 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 				return err
 			}
 		}
+		applied = append(applied, placement)
 	}
-	bridge.applyAutoLayoutOrder(placements)
+	bridge.applyAutoLayoutOrder(applied)
 	return nil
 }
 
@@ -93,7 +95,7 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 			continue
 		}
 		placed[tracked.Surface.ID] = true
-		workspaceID := firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, placement.WorkspaceID, "workspace-1")
+		workspaceID := firstNonEmpty(placement.WorkspaceID, tracked.WorkspaceID, tracked.Surface.WorkspaceID, "workspace-1")
 		if workspace.ID == "workspace-1" && workspaceID != "workspace-1" {
 			workspace.ID = workspaceID
 			workspace.Name = workspaceID
@@ -102,7 +104,7 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 		if workspace.OutputID == "" {
 			workspace.OutputID = outputID
 		}
-		zoneID := firstNonEmpty(tracked.ZoneID, tracked.Surface.ZoneID, placement.ZoneID, zoneMaster)
+		zoneID := firstNonEmpty(placement.ZoneID, tracked.ZoneID, tracked.Surface.ZoneID, zoneMaster)
 		if _, ok := zonesByID[zoneID]; !ok {
 			zonesByID[zoneID] = &LayoutZone{ID: zoneID, Name: zoneID, Kind: "work"}
 			zoneOrder = append(zoneOrder, zoneID)
