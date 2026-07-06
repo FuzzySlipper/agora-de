@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""Transparent native layer-shell diagnostics overlay for Agora DE."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+import urllib.parse
+import urllib.request
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Launch an agora-de native transparent diagnostics overlay."
+    )
+    parser.add_argument("--url", required=True)
+    parser.add_argument("--role", choices=("overlay",), required=True)
+    parser.add_argument("--width", type=int, required=True)
+    parser.add_argument("--height", type=int, required=True)
+    parser.add_argument("--exclusive-zone", type=int, default=96)
+    parser.add_argument("--title", required=True)
+    parser.add_argument("--app-id", required=True)
+    parser.add_argument("--refresh-ms", type=int, default=500)
+    args = parser.parse_args()
+
+    try:
+        import cairo
+        import gi
+
+        gi.require_version("Gdk", "4.0")
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Gtk4LayerShell", "1.0")
+        from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell
+    except Exception as exc:
+        print(f"DEPENDENCY_MISSING GTK4 native overlay stack: {exc}", flush=True)
+        return 2
+
+    base_url = base_url_from(args.url)
+
+    class OverlayApp(Gtk.Application):
+        def __init__(self) -> None:
+            GLib.set_prgname(args.app_id)
+            GLib.set_application_name(args.title)
+            super().__init__(
+                application_id=args.app_id,
+                flags=Gio.ApplicationFlags.FLAGS_NONE,
+            )
+            self.window = None
+            self.area = None
+            self.layout = {"mode": "freeform", "revision": 0, "surfaces": [], "workspaces": []}
+            self.surfaces = []
+            self.last_error = ""
+
+        def do_activate(self) -> None:
+            install_transparent_css(Gdk, Gtk)
+            self.window = Gtk.ApplicationWindow(application=self)
+            self.window.set_title(args.title)
+            self.window.set_default_size(args.width, args.height)
+            if hasattr(self.window, "set_decorated"):
+                self.window.set_decorated(False)
+            if hasattr(self.window, "set_focusable"):
+                self.window.set_focusable(False)
+            if hasattr(self.window, "set_can_target"):
+                self.window.set_can_target(False)
+
+            configure_overlay_layer(Gtk4LayerShell, self.window, args.app_id)
+
+            self.area = Gtk.DrawingArea()
+            self.area.set_draw_func(self.draw)
+            if hasattr(self.area, "set_focusable"):
+                self.area.set_focusable(False)
+            if hasattr(self.area, "set_can_target"):
+                self.area.set_can_target(False)
+            self.window.set_child(self.area)
+            self.window.connect("destroy", lambda *_args: self.quit())
+            self.window.present()
+
+            self.refresh()
+            GLib.timeout_add(max(100, args.refresh_ms), self.refresh)
+
+            print(
+                json.dumps(
+                    {
+                        "event": "shown",
+                        "toolkit": "gtk4-cairo",
+                        "role": args.role,
+                        "appId": args.app_id,
+                        "url": args.url,
+                        "baseUrl": base_url,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+        def refresh(self) -> bool:
+            try:
+                layout_payload = get_json(base_url + "/api/layout")
+                surfaces_payload = get_json(base_url + "/api/surfaces")
+                self.layout = layout_payload.get("layout") or self.layout
+                self.surfaces = surfaces_payload.get("surfaces") or []
+                self.last_error = ""
+            except Exception as exc:
+                self.last_error = str(exc)
+            if self.area is not None:
+                self.area.queue_draw()
+            return True
+
+        def draw(self, _area, ctx, width: int, height: int) -> None:
+            clear(ctx, cairo)
+            draw_zone_hints(ctx, width, height, self.layout, args.exclusive_zone)
+            surfaces = [
+                surface
+                for surface in self.layout.get("surfaces", [])
+                if isinstance(surface, dict) and surface.get("visible") is not False
+            ]
+            drawn = 0
+            for surface in surfaces:
+                if draw_surface(ctx, surface, width, height):
+                    drawn += 1
+            if drawn == 0:
+                draw_mapped_only(ctx, self.surfaces, self.last_error)
+
+    return OverlayApp().run([])
+
+
+def base_url_from(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return "http://127.0.0.1:17780"
+
+
+def get_json(url: str) -> dict:
+    request = urllib.request.Request(url, headers={"User-Agent": "agora-de-native-overlay/1"})
+    with urllib.request.urlopen(request, timeout=2) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def configure_overlay_layer(Gtk4LayerShell, window, namespace: str) -> None:
+    if not Gtk4LayerShell.is_supported():
+        raise RuntimeError("Gtk4LayerShell is not supported on this Wayland display")
+    Gtk4LayerShell.init_for_window(window)
+    Gtk4LayerShell.set_namespace(window, namespace)
+    Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.OVERLAY)
+    for edge in (
+        Gtk4LayerShell.Edge.TOP,
+        Gtk4LayerShell.Edge.BOTTOM,
+        Gtk4LayerShell.Edge.LEFT,
+        Gtk4LayerShell.Edge.RIGHT,
+    ):
+        Gtk4LayerShell.set_anchor(window, edge, True)
+    if hasattr(Gtk4LayerShell, "KeyboardMode") and hasattr(Gtk4LayerShell, "set_keyboard_mode"):
+        Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.NONE)
+
+
+def install_transparent_css(Gdk, Gtk) -> None:
+    provider = Gtk.CssProvider()
+    provider.load_from_data(b"window, drawingarea { background: transparent; }")
+    Gtk.StyleContext.add_provider_for_display(
+        Gdk.Display.get_default(),
+        provider,
+        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+    )
+
+
+def clear(ctx, cairo) -> None:
+    clear_operator = getattr(cairo, "OPERATOR_CLEAR", getattr(getattr(cairo, "Operator", object), "CLEAR", None))
+    over_operator = getattr(cairo, "OPERATOR_OVER", getattr(getattr(cairo, "Operator", object), "OVER", None))
+    if clear_operator is not None and over_operator is not None:
+        ctx.save()
+        ctx.set_operator(clear_operator)
+        ctx.paint()
+        ctx.restore()
+        ctx.set_operator(over_operator)
+
+
+def draw_zone_hints(ctx, width: int, height: int, layout: dict, panel_height: int) -> None:
+    zones = []
+    for workspace in layout.get("workspaces", []):
+        if isinstance(workspace, dict) and workspace.get("active"):
+            zones = [zone for zone in workspace.get("zones", []) if isinstance(zone, dict)]
+            break
+    if not zones:
+        zones = [{"id": "master"}, {"id": "stack"}]
+    work_height = max(1, height - max(0, panel_height))
+    zone_width = width / max(1, len(zones))
+    ctx.save()
+    ctx.set_dash([10.0, 8.0])
+    ctx.set_line_width(2.0)
+    ctx.select_font_face("Sans", 0, 0)
+    ctx.set_font_size(18)
+    for index, zone in enumerate(zones):
+        x = index * zone_width
+        ctx.set_source_rgba(0.0, 0.86, 0.74, 0.20)
+        ctx.rectangle(x + 8, 8, max(1, zone_width - 16), max(1, work_height - 16))
+        ctx.stroke()
+        ctx.set_source_rgba(0.92, 0.96, 0.98, 0.44)
+        ctx.move_to(x + 22, 34)
+        ctx.show_text(str(zone.get("id") or "zone")[:32])
+    ctx.restore()
+
+
+def draw_surface(ctx, surface: dict, output_width: int, output_height: int) -> bool:
+    geometry = surface.get("geometry")
+    if not isinstance(geometry, dict):
+        return False
+    x = number(geometry.get("x"))
+    y = number(geometry.get("y"))
+    width = number(geometry.get("width"))
+    height = number(geometry.get("height"))
+    if width <= 0 or height <= 0:
+        return False
+    x = max(0, min(x, output_width - 1))
+    y = max(0, min(y, output_height - 1))
+    width = max(1, min(width, output_width - x))
+    height = max(1, min(height, output_height - y))
+
+    focused = bool(surface.get("focused"))
+    outline = (1.0, 0.78, 0.12, 0.96) if focused else (0.0, 0.86, 0.74, 0.90)
+    ctx.save()
+    ctx.set_line_width(4.0 if focused else 3.0)
+    ctx.set_source_rgba(*outline)
+    ctx.rectangle(x + 2, y + 2, max(1, width - 4), max(1, height - 4))
+    ctx.stroke()
+
+    label = text(surface.get("label"), str(int(number(surface.get("order"), 0)) + 1))
+    app = text(surface.get("title"), text(surface.get("appId"), text(surface.get("surfaceId"), "?")))
+    label_text = f"{label}  {app}"[:64]
+    label_width = min(max(170, text_width(ctx, label_text) + 72), max(180, width - 18))
+    label_height = 34
+    label_x = max(x + 8, x + width - label_width - 10)
+    label_y = y + 10
+
+    rounded_rect(ctx, label_x, label_y, label_width, label_height, 4)
+    ctx.set_source_rgba(0.03, 0.05, 0.12, 0.82)
+    ctx.fill_preserve()
+    ctx.set_source_rgba(*outline)
+    ctx.set_line_width(2.0)
+    ctx.stroke()
+
+    ctx.select_font_face("Sans", 0, 1)
+    ctx.set_font_size(18)
+    badge_w = 30
+    rounded_rect(ctx, label_x + 5, label_y + 5, badge_w, label_height - 10, 3)
+    ctx.set_source_rgba(outline[0], outline[1], outline[2], 0.96)
+    ctx.fill()
+    ctx.set_source_rgba(0.03, 0.05, 0.12, 1.0)
+    ctx.move_to(label_x + 14, label_y + 26)
+    ctx.show_text(label[:3])
+    ctx.set_source_rgba(0.92, 0.96, 0.98, 0.98)
+    ctx.move_to(label_x + 44, label_y + 24)
+    ctx.show_text(label_text[0:48])
+
+    bounds = f"{int(x)},{int(y)} {int(width)}x{int(height)}"
+    ctx.select_font_face("Monospace", 0, 0)
+    ctx.set_font_size(14)
+    bounds_width = min(text_width(ctx, bounds) + 18, max(120, width - 18))
+    bounds_x = x + 10
+    bounds_y = max(y + 48, y + height - 30)
+    rounded_rect(ctx, bounds_x, bounds_y, bounds_width, 24, 3)
+    ctx.set_source_rgba(0.03, 0.05, 0.12, 0.70)
+    ctx.fill_preserve()
+    ctx.set_source_rgba(0.49, 0.57, 0.67, 0.92)
+    ctx.set_line_width(1.5)
+    ctx.stroke()
+    ctx.set_source_rgba(0.92, 0.96, 0.98, 0.88)
+    ctx.move_to(bounds_x + 8, bounds_y + 17)
+    ctx.show_text(bounds)
+    ctx.restore()
+    return True
+
+
+def draw_mapped_only(ctx, surfaces: list, error: str) -> None:
+    ctx.save()
+    ctx.select_font_face("Sans", 0, 1)
+    ctx.set_font_size(18)
+    lines = ["mapped-only overlay state"]
+    if error:
+        lines.append(error[:72])
+    work_surfaces = []
+    for item in surfaces:
+        if not isinstance(item, dict):
+            continue
+        app_id = str(item.get("appId") or "")
+        if app_id.startswith("io.agorade.Shell"):
+            continue
+        if item.get("mapped") or item.get("visible"):
+            work_surfaces.append(item)
+    lines.extend(f"{item.get('id', '?')} / {item.get('appId', '?')}"[:72] for item in work_surfaces[:8])
+    width = max(280, max((text_width(ctx, line) for line in lines), default=260) + 28)
+    height = 18 + 28 * len(lines)
+    rounded_rect(ctx, 24, 24, width, height, 4)
+    ctx.set_source_rgba(0.03, 0.05, 0.12, 0.76)
+    ctx.fill_preserve()
+    ctx.set_source_rgba(1.0, 0.78, 0.12, 0.96)
+    ctx.set_line_width(2)
+    ctx.stroke()
+    ctx.set_source_rgba(0.92, 0.96, 0.98, 0.95)
+    for index, line in enumerate(lines):
+        ctx.move_to(38, 56 + index * 28)
+        ctx.show_text(line)
+    ctx.restore()
+
+
+def rounded_rect(ctx, x: float, y: float, width: float, height: float, radius: float) -> None:
+    radius = max(0.0, min(radius, width / 2, height / 2))
+    ctx.new_sub_path()
+    ctx.arc(x + width - radius, y + radius, radius, -math.pi / 2, 0)
+    ctx.arc(x + width - radius, y + height - radius, radius, 0, math.pi / 2)
+    ctx.arc(x + radius, y + height - radius, radius, math.pi / 2, math.pi)
+    ctx.arc(x + radius, y + radius, radius, math.pi, 3 * math.pi / 2)
+    ctx.close_path()
+
+
+def text_width(ctx, value: str) -> float:
+    return ctx.text_extents(value).width
+
+
+def number(value, fallback: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if not math.isfinite(parsed):
+        return fallback
+    return parsed
+
+
+def text(value, fallback: str) -> str:
+    trimmed = str(value or "").strip()
+    return trimmed or fallback
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

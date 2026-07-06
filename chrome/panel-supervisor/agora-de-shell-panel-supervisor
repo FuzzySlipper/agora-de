@@ -4,7 +4,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 COMPOSITORCTL=${COMPOSITORCTL:-/home/agent/.local/bin/agora-de-compositorctl}
-WEBVIEW_LAUNCHER=${WEBVIEW_LAUNCHER:-${AGORA_DE_SHELL_WEBVIEW_LAUNCHER:-$HOME/.local/bin/agora-de-gtk4-layer-shell-webview}}
+SURFACE_LAUNCHER=${AGORA_DE_SHELL_SURFACE_LAUNCHER:-${WEBVIEW_LAUNCHER:-${AGORA_DE_SHELL_WEBVIEW_LAUNCHER:-$HOME/.local/bin/agora-de-gtk4-layer-shell-webview}}}
 SURFACE_URL=${AGORA_DE_SHELL_SURFACE_URL:-${AGORA_DE_SHELL_PANEL_URL:-http://127.0.0.1:17780/shell/dist/desktop/?surface=dock}}
 SURFACE_ROLE=${AGORA_DE_SHELL_SURFACE_ROLE:-${AGORA_DE_SHELL_PANEL_ROLE:-panel}}
 SURFACE_TITLE=${AGORA_DE_SHELL_SURFACE_TITLE:-${AGORA_DE_SHELL_PANEL_TITLE:-AGORA-DE-SHELL-PANEL}}
@@ -157,11 +157,11 @@ trap 'cleanup 0' TERM INT
 trap 'cleanup $?' EXIT
 
 need "$COMPOSITORCTL"
-need "$WEBVIEW_LAUNCHER"
+need "$SURFACE_LAUNCHER"
 need python3
 
-webview_args=(
-  "$WEBVIEW_LAUNCHER"
+surface_args=(
+  "$SURFACE_LAUNCHER"
   --url "$SURFACE_URL"
   --role "$SURFACE_ROLE"
   --width "$SURFACE_WIDTH"
@@ -175,8 +175,8 @@ if [[ "$CLOSE_EXISTING" == "true" ]]; then
   close_existing_surfaces
 fi
 
-log "launching Agora DE shell surface: url=$SURFACE_URL role=$SURFACE_ROLE title=$SURFACE_TITLE app_id=$SURFACE_APP_ID size=${SURFACE_WIDTH}x${SURFACE_HEIGHT} exclusive_zone=$SURFACE_EXCLUSIVE_ZONE"
-"${webview_args[@]}" &
+log "launching Agora DE shell surface: launcher=$SURFACE_LAUNCHER url=$SURFACE_URL role=$SURFACE_ROLE title=$SURFACE_TITLE app_id=$SURFACE_APP_ID size=${SURFACE_WIDTH}x${SURFACE_HEIGHT} exclusive_zone=$SURFACE_EXCLUSIVE_ZONE"
+"${surface_args[@]}" &
 launcher_pid=$!
 
 surface_json=$(mktemp -t agora-de-shell-panel-surface.XXXXXX.json)

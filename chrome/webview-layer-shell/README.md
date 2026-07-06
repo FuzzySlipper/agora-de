@@ -8,5 +8,7 @@ Supported roles:
 
 - `background`: bottom full-work-area shell background.
 - `panel`: bottom panel with an exclusive zone.
-- `overlay`: full-screen non-exclusive diagnostic overlay.
 - `popup`: non-exclusive launcher/menu popup above the panel.
+
+The agent diagnostics overlay now uses `chrome/native-overlay` so it can draw
+transparent annotations without relying on WebKit background transparency.

@@ -36,6 +36,7 @@ Suggested install paths:
 ~/.config/agora-de/shellui.env
 ~/.local/bin/agora-de-shellui
 ~/.local/bin/agora-de-gtk4-layer-shell-webview
+~/.local/bin/agora-de-native-overlay
 ~/.local/bin/agora-de-shell-panel-supervisor
 ~/.local/share/agora-de/shell/dist
 ```
@@ -49,6 +50,7 @@ install -D -m 0644 deploy/shellui/agora-de-shell-background.user.service ~/.conf
 install -D -m 0644 deploy/shellui/agora-de-shell-panel.user.service ~/.config/systemd/user/agora-de-shell-panel.service
 install -D -m 0644 deploy/shellui/agora-de-shell-overlay.user.service ~/.config/systemd/user/agora-de-shell-overlay.service
 install -D -m 0755 chrome/webview-layer-shell/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
+install -D -m 0755 chrome/native-overlay/agora-de-native-overlay ~/.local/bin/agora-de-native-overlay
 install -D -m 0755 chrome/panel-supervisor/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
 install -D -m 0644 deploy/shellui/shellui.user.env.example ~/.config/agora-de/shellui.env
 systemctl --user daemon-reload
@@ -61,11 +63,13 @@ The user-service example uses `127.0.0.1:17780` to avoid colliding with the
 currently bound predecessor port `7780`. Move it to `7780` once that port is
 free or intentionally replaced.
 
-`agora-de-shell-background.service` launches the background shell,
-`agora-de-shell-panel.service` launches the dock/panel shell, and
+`agora-de-shell-background.service` launches the background shell and
+`agora-de-shell-panel.service` launches the dock/panel shell through the
+repo-owned GTK4/WebKit 6 + gtk4-layer-shell helper.
 `agora-de-shell-overlay.service` launches the agent-visible label/bounds
-overlay. All use the repo-owned GTK4/WebKit 6 + gtk4-layer-shell helper by
-default. On the current den-k8 host GTK4 layer-shell support requires:
+overlay through the repo-owned GTK4/Cairo native overlay helper, so diagnostics
+do not depend on WebKit transparent-background behavior. On the current den-k8
+host GTK4 layer-shell support requires:
 
 ```text
 GDK_BACKEND=wayland
@@ -77,16 +81,15 @@ brand, `Apps`, `Refresh`, and `Status` controls, app entries from
 `/api/catalog/apps`, running surface entries from `/api/surfaces`, workspace
 state, mapped-surface status, and a clock.
 
-The overlay route is `?surface=overlay`. It is a transparent top layer-shell
-surface driven by `/api/layout` and `/api/surfaces`; it renders stable numbered
-labels, app/title badges, focus indication, zone hints, and geometry bounds over
-native work surfaces without wrapping those apps in a webview.
+The overlay service still uses `?surface=overlay` as its route identity, but the
+installed diagnostics surface is drawn by `agora-de-native-overlay`. The helper
+polls `/api/layout` and `/api/surfaces`, renders stable numbered labels,
+app/title badges, focus indication, zone hints, and geometry bounds, and clears
+the rest of the layer to transparent so native work-surface pixels remain
+visible in physical captures.
 
 The overlay service is intentionally not enabled by the default user-service
-install path. On the current den-k8 GTK4/WebKit layer-shell stack, the full
-screen overlay can mask native client pixels even when the page requests a
-transparent background. Keep it as an opt-in diagnostic surface until the
-overlay is implemented as a non-occluding compositor/client surface:
+install path. It is an opt-in diagnostic surface:
 
 ```bash
 systemctl --user enable --now agora-de-shell-overlay.service
@@ -165,7 +168,8 @@ and closes the native surface.
 Use `harness/live/check-overlay-labels.py` for the agent overlay path. It
 requires `io.agorade.ShellOverlay` to be mapped, launches at least two native
 apps through shellui, focuses each app, captures the physical output after focus
-changes, and closes the launched surfaces.
+changes, and closes the launched surfaces. The capture check fails unless the
+same output image contains overlay annotation pixels and native app pixels.
 
 The `Status` control launches `?surface=operator`, a read-only shell status
 utility backed by `/api/operator/status`. It exposes service/socket/output and

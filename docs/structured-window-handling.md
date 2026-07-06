@@ -125,7 +125,8 @@ native geometry authority.
 
 Den task 4250 adds the first shell-owned prototype:
 
-- `?surface=overlay` renders a transparent top layer-shell surface.
+- `agora-de-native-overlay` renders a transparent GTK4/Cairo top layer-shell
+  surface identified by the `?surface=overlay` route.
 - `deploy/shellui/agora-de-shell-overlay.user.service` starts it as
   `io.agorade.ShellOverlay`.
 - The overlay polls `/api/layout` and `/api/surfaces`.
@@ -133,14 +134,16 @@ Den task 4250 adds the first shell-owned prototype:
   active/focus outline, zone hints, and bounds text.
 - `./harness/live/check-overlay-labels.py` launches two native apps, verifies the
   overlay surface is mapped, focuses each app, captures after focus changes, and
-  closes launched surfaces.
+  closes launched surfaces. Capture evidence must prove both overlay annotation
+  pixels and native app pixels, so mapped-only or WebKit-occluding overlays do
+  not close the claim.
 
 This is intentionally not a native-app wrapper. It is a separate shell-owned
 layer, so native clients remain normal compositor surfaces.
 
 Wayfire follow-up path:
 
-- keep the shell overlay as the near-term capture-visible evidence layer;
+- keep the native shell overlay as the near-term capture-visible evidence layer;
 - replace CSS-derived zone hints with compositor-provided zone rectangles once
   Wayfire reports truthful post-layout geometry;
 - move labels/bounds into a small Wayfire plugin only if it can draw overlays

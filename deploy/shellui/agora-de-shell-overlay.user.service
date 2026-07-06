@@ -1,5 +1,5 @@
 [Unit]
-Description=Agora DE Agent Overlay WebView (user service)
+Description=Agora DE Agent Diagnostics Overlay (user service)
 After=agora-de-shellui.service agora-de-shell-background.service
 Wants=agora-de-shellui.service
 
@@ -11,6 +11,7 @@ Environment=AGORA_DE_SHELL_SURFACE_TITLE=AGORA-DE-AGENT-OVERLAY
 Environment=AGORA_DE_SHELL_SURFACE_APP_ID=io.agorade.ShellOverlay
 Environment=AGORA_DE_SHELL_SURFACE_WIDTH=2560
 Environment=AGORA_DE_SHELL_SURFACE_HEIGHT=1440
+Environment=AGORA_DE_SHELL_SURFACE_LAUNCHER=%h/.local/bin/agora-de-native-overlay
 Environment=GDK_BACKEND=wayland
 Environment=LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so
 ExecStart=%h/.local/bin/agora-de-shell-panel-supervisor

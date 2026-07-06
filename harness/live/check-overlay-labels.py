@@ -3,6 +3,7 @@ import argparse
 import importlib.util
 import json
 import pathlib
+import subprocess
 import sys
 import time
 import urllib.error
@@ -30,8 +31,8 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=float, default=10)
     args = parser.parse_args()
 
-    app_ids = args.app_id or ["Alacritty.desktop", "foot.desktop"]
-    expected_app_ids = args.expected_app_id or ["Alacritty", "foot"]
+    app_ids = args.app_id or ["Alacritty.desktop", "firefox.desktop"]
+    expected_app_ids = args.expected_app_id or ["Alacritty", "firefox"]
     checked_at = unix_millis()
     checks = []
     evidence_packets = []
@@ -83,9 +84,21 @@ def main() -> int:
             return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, focus_sequence, latest_layout, checked_at)
 
         for app_id, expected_app_id in zip(app_ids, expected_app_ids):
+            existing_surface_ids = surface_ids_for_app(args.base_url, expected_app_id)
             launch = post_json(args.base_url + "/api/catalog/launch", {"appId": app_id})
             surface_id = launch.get("surfaceId") or ""
             if launch.get("status") != "launched" or not surface_id:
+                recovered_surface = wait_for_new_surface(
+                    args.base_url,
+                    expected_app_id,
+                    existing_surface_ids,
+                    args.timeout_seconds,
+                )
+                if recovered_surface:
+                    surface_id = recovered_surface.get("id") or ""
+                    launch["status"] = "surface_observed_after_timeout"
+                    launch["surfaceId"] = surface_id
+            if not surface_id or launch.get("status") not in {"launched", "surface_observed_after_timeout"}:
                 checks.append(failed("launch", f"unexpected launch response for {app_id!r}: {launch}", appId=app_id))
                 return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, focus_sequence, latest_layout, checked_at)
             launched.append({"appId": app_id, "expectedAppId": expected_app_id, "surfaceId": surface_id})
@@ -114,18 +127,26 @@ def main() -> int:
 
         for index, item in enumerate(launched, start=1):
             post_json(args.base_url + "/api/surfaces/action", {"surfaceId": item["surfaceId"], "action": "focus"})
-            focused = wait_for_surface(
-                args.base_url,
-                item["surfaceId"],
-                item["expectedAppId"],
-                args.timeout_seconds,
-                focused=True,
-            )
-            if not focused:
+            latest_layout = wait_for_focused_layout(args.base_url, item["surfaceId"], args.timeout_seconds) or {}
+            if not latest_layout:
+                focused = wait_for_surface(
+                    args.base_url,
+                    item["surfaceId"],
+                    item["expectedAppId"],
+                    args.timeout_seconds,
+                    focused=True,
+                )
+            else:
+                focused = item.get("surface") or wait_for_surface(
+                    args.base_url,
+                    item["surfaceId"],
+                    item["expectedAppId"],
+                    args.timeout_seconds,
+                )
+            if not focused or not latest_layout:
                 checks.append(failed("focus", f"surface {item['surfaceId']!r} did not become focused", surfaceId=item["surfaceId"]))
                 return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, focus_sequence, latest_layout, checked_at)
 
-            latest_layout = wait_for_focused_layout(args.base_url, item["surfaceId"], args.timeout_seconds) or latest_layout
             focus_sequence.append({"surfaceId": item["surfaceId"], "label": layout_label(latest_layout, item["surfaceId"]), "index": index})
 
             if args.output_name:
@@ -139,6 +160,7 @@ def main() -> int:
                     surface_ids(launched),
                     item["surfaceId"],
                     args.overlay_app_id,
+                    latest_layout,
                 )
                 checks.append(capture_check)
                 if packet:
@@ -287,6 +309,36 @@ def wait_for_surface(
     return None
 
 
+def surface_ids_for_app(base_url: str, expected_app_id: str) -> set[str]:
+    ids = set()
+    for surface in get_json(base_url + "/api/surfaces").get("surfaces", []):
+        if surface.get("appId") == expected_app_id and surface.get("id"):
+            ids.add(surface["id"])
+    return ids
+
+
+def wait_for_new_surface(base_url: str, expected_app_id: str, existing_surface_ids: set[str], timeout_seconds: float) -> dict | None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        candidates = []
+        for surface in get_json(base_url + "/api/surfaces").get("surfaces", []):
+            visible = surface.get("visible")
+            if visible is None:
+                visible = surface.get("mapped")
+            if (
+                surface.get("appId") == expected_app_id
+                and surface.get("id")
+                and surface.get("id") not in existing_surface_ids
+                and surface.get("mapped")
+                and visible
+            ):
+                candidates.append(surface)
+        if candidates:
+            return candidates[-1]
+        time.sleep(0.25)
+    return None
+
+
 def wait_for_layout_surfaces(base_url: str, launched: list[dict], timeout_seconds: float) -> dict | None:
     wanted = set(surface_ids(launched))
     deadline = time.time() + timeout_seconds
@@ -378,28 +430,214 @@ def capture_visible_overlay(
     surface_ids_value: list[str],
     focused_surface_id: str,
     overlay_app_id: str,
+    layout: dict,
 ) -> tuple[dict, dict | None]:
     live_evidence = load_live_evidence_module()
-    capture_check, packet = live_evidence.capture_and_classify_output(
-        compositorctl,
-        output_name,
-        session_id,
-        checked_at,
-    )
+    capture_check, packet = capture_overlay_output(live_evidence, compositorctl, output_name, session_id, checked_at)
     if packet:
         packet = dict(packet)
         packet["scenario"] = "den-k8-overlay-labels-visible"
         packet["surfaceIds"] = surface_ids_value
         packet["focusedSurfaceId"] = focused_surface_id
         packet["overlayAppId"] = overlay_app_id
+        pixel_classification, pixel_error = classify_overlay_output_pixels(
+            live_evidence,
+            pathlib.Path(str(packet.get("artifactPath") or "")),
+            layout,
+            surface_ids_value,
+        )
+        if pixel_classification:
+            packet["overlayPixelClassification"] = pixel_classification
+        elif pixel_error:
+            packet["overlayPixelClassificationError"] = pixel_error
     if capture_check.get("status") == "pass":
         capture_check = dict(capture_check)
         capture_check["name"] = "overlay-labels-visible-capture"
-        capture_check["detail"] = "physical output capture shows agent-visible overlay labels during focus sequence"
+        pixel_classification = packet.get("overlayPixelClassification") if packet else None
+        overlay_visible = isinstance(pixel_classification, dict) and pixel_classification.get("overlayVisible")
+        native_visible = isinstance(pixel_classification, dict) and pixel_classification.get("nativePixelsVisible")
+        if not overlay_visible or not native_visible:
+            capture_check["status"] = "fail"
+            capture_check["detail"] = "physical output capture did not prove both overlay annotations and native app pixels"
+        else:
+            capture_check["detail"] = "physical output capture shows overlay annotations without hiding native app pixels"
         capture_check["surfaceIds"] = surface_ids_value
         capture_check["focusedSurfaceId"] = focused_surface_id
         capture_check["overlayAppId"] = overlay_app_id
+        if packet and isinstance(packet.get("overlayPixelClassification"), dict):
+            capture_check["overlayPixelClassification"] = packet["overlayPixelClassification"]
     return capture_check, packet
+
+
+def capture_overlay_output(live_evidence, compositorctl: str, output_name: str, session_id: str, checked_at: int) -> tuple[dict, dict | None]:
+    try:
+        completed = subprocess.run(
+            [
+                compositorctl,
+                "output",
+                "capture",
+                "--name",
+                output_name,
+                "--export",
+                "--session",
+                session_id,
+                "--evidence-class",
+                "viewport_screenshot",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return failed("capture", f"compositorctl output capture failed: {error}"), unavailable_packet(
+            checked_at,
+            [],
+            "",
+        )
+    if completed.returncode != 0:
+        return failed("capture", "compositorctl output capture failed", stderr=completed.stderr.strip()), unavailable_packet(
+            checked_at,
+            [],
+            "",
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        return failed("capture", f"invalid output capture JSON: {error}"), unavailable_packet(checked_at, [], "")
+    capture = live_evidence.first_capture_record(payload)
+    if not capture:
+        return failed("capture", "output capture did not return any capture artifacts"), unavailable_packet(checked_at, [], "")
+    return live_evidence.classify_capture_record(
+        capture,
+        checked_at,
+        output_name=output_name,
+        require_shell_pixels=False,
+    )
+
+
+def classify_overlay_output_pixels(live_evidence, image_path: pathlib.Path, layout: dict, surface_ids_value: list[str]) -> tuple[dict | None, str]:
+    if not str(image_path):
+        return None, "capture packet did not include an artifact path"
+    try:
+        image = live_evidence.read_png_rgb(image_path)
+    except Exception as error:
+        return None, str(error)
+
+    width = int(image["width"])
+    height = int(image["height"])
+    rows = image["rows"]
+    if width <= 0 or height <= 0:
+        return None, "capture has empty dimensions"
+
+    overlay_pixels = 0
+    for row in rows:
+        for x in range(width):
+            r, g, b = rgb_at(row, x)
+            if is_overlay_annotation_pixel(r, g, b):
+                overlay_pixels += 1
+
+    native_regions = native_region_stats(rows, width, height, layout, surface_ids_value)
+    native_pixels_visible = any(region["nativePixelsVisible"] for region in native_regions)
+    overlay_visible = overlay_pixels >= max(90, width // 10)
+    mapped_only = not overlay_visible or not native_pixels_visible
+    return {
+        "classification": "overlay_and_native_pixels_visible" if not mapped_only else "mapped_only_or_occluding",
+        "overlayVisible": overlay_visible,
+        "nativePixelsVisible": native_pixels_visible,
+        "mappedOnly": mapped_only,
+        "overlayAnnotationPixels": overlay_pixels,
+        "nativeRegions": native_regions,
+        "imageWidth": width,
+        "imageHeight": height,
+    }, ""
+
+
+def native_region_stats(rows: list[bytes], output_width: int, output_height: int, layout: dict, surface_ids_value: list[str]) -> list[dict]:
+    wanted = set(surface_ids_value)
+    stats = []
+    for surface in layout.get("surfaces", []) if isinstance(layout, dict) else []:
+        if not isinstance(surface, dict) or surface.get("surfaceId") not in wanted:
+            continue
+        geometry = surface.get("geometry")
+        if not isinstance(geometry, dict):
+            stats.append({"surfaceId": surface.get("surfaceId") or "", "nativePixelsVisible": False, "reason": "missing_geometry"})
+            continue
+        x = clamp_int(geometry.get("x"), 0, output_width - 1)
+        y = clamp_int(geometry.get("y"), 0, output_height - 1)
+        w = clamp_int(geometry.get("width"), 0, output_width - x)
+        h = clamp_int(geometry.get("height"), 0, output_height - y)
+        if w <= 0 or h <= 0:
+            stats.append({"surfaceId": surface.get("surfaceId") or "", "nativePixelsVisible": False, "reason": "empty_geometry"})
+            continue
+        inset_x = min(max(24, w // 8), max(0, (w - 1) // 2))
+        inset_y = min(max(24, h // 8), max(0, (h - 1) // 2))
+        left = x + inset_x
+        top = y + inset_y
+        right = max(left + 1, x + w - inset_x)
+        bottom = max(top + 1, y + h - inset_y)
+        sample_step = max(1, min(max(1, right - left), max(1, bottom - top)) // 80)
+        sampled = 0
+        non_overlay = 0
+        light_pixels = 0
+        mid_pixels = 0
+        saturated_pixels = 0
+        unique_colors = set()
+        for yy in range(top, bottom, sample_step):
+            row = rows[yy]
+            for xx in range(left, right, sample_step):
+                r, g, b = rgb_at(row, xx)
+                sampled += 1
+                if is_overlay_annotation_pixel(r, g, b):
+                    continue
+                non_overlay += 1
+                bucket = (r // 24, g // 24, b // 24)
+                unique_colors.add(bucket)
+                if r >= 220 and g >= 220 and b >= 220:
+                    light_pixels += 1
+                if 70 <= r <= 210 and 70 <= g <= 210 and 70 <= b <= 210:
+                    mid_pixels += 1
+                if max(r, g, b) - min(r, g, b) >= 80 and max(r, g, b) >= 120:
+                    saturated_pixels += 1
+        native_visible = (
+            sampled >= 64
+            and non_overlay >= max(48, sampled // 3)
+            and (len(unique_colors) >= 6 or light_pixels >= 24 or mid_pixels >= 24 or saturated_pixels >= 12)
+        )
+        stats.append(
+            {
+                "surfaceId": surface.get("surfaceId") or "",
+                "appId": surface.get("appId") or "",
+                "nativePixelsVisible": native_visible,
+                "sampledPixels": sampled,
+                "nonOverlayPixels": non_overlay,
+                "uniqueColorBuckets": len(unique_colors),
+                "lightPixels": light_pixels,
+                "midPixels": mid_pixels,
+                "saturatedPixels": saturated_pixels,
+            }
+        )
+    return stats
+
+
+def rgb_at(row: bytes, x: int) -> tuple[int, int, int]:
+    offset = x * 3
+    return row[offset], row[offset + 1], row[offset + 2]
+
+
+def is_overlay_annotation_pixel(r: int, g: int, b: int) -> bool:
+    cyan = r <= 80 and g >= 150 and b >= 120
+    yellow = r >= 200 and g >= 140 and b <= 120
+    return cyan or yellow
+
+
+def clamp_int(value: object, low: int, high: int) -> int:
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        parsed = low
+    return max(low, min(parsed, high))
 
 
 def load_live_evidence_module():
@@ -420,6 +658,12 @@ def unavailable_packet(checked_at: int, surface_ids_value: list[str], overlay_ap
         "overlayAppId": overlay_app_id,
         "visualStatus": "unknown",
         "captureClassification": "not_visible",
+        "overlayPixelClassification": {
+            "classification": "mapped_only_or_occluding",
+            "overlayVisible": False,
+            "nativePixelsVisible": False,
+            "mappedOnly": True,
+        },
     }
 
 
