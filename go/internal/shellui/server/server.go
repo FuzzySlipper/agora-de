@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"agora-de.local/go/internal/appcatalog"
@@ -647,6 +648,21 @@ func surfaceActionHandler(config Config) http.Handler {
 		}
 		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 		defer cancel()
+		if action.Action == "close" {
+			closed, err := closeShellLayerSurface(ctx, path, action.SurfaceID)
+			if err != nil {
+				writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+				return
+			}
+			if closed {
+				writeJSON(response, http.StatusAccepted, surfaceActionResponse{
+					Action:    action.Action,
+					SurfaceID: action.SurfaceID,
+					Status:    "accepted",
+				})
+				return
+			}
+		}
 		if output, err := exec.CommandContext(ctx, path, args...).CombinedOutput(); err != nil {
 			writeCompositorctlError(response, output, err)
 			return
@@ -675,6 +691,44 @@ func surfaceActionArgs(action surfaceActionRequest) ([]string, bool) {
 		return []string{"surface", "set-floating", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
 	default:
 		return nil, false
+	}
+}
+
+var signalProcess = syscall.Kill
+
+func closeShellLayerSurface(ctx context.Context, compositorctlPath string, surfaceID string) (bool, error) {
+	output, err := exec.CommandContext(ctx, compositorctlPath, "list-surfaces").Output()
+	if err != nil {
+		return false, fmt.Errorf("compositorctl list-surfaces: %w", err)
+	}
+	var response compositorctlListSurfacesResponse
+	if err := json.Unmarshal(output, &response); err != nil {
+		return false, fmt.Errorf("decode compositorctl surfaces: %w", err)
+	}
+	for _, tracked := range response.Surfaces {
+		if tracked.Surface.ID != surfaceID {
+			continue
+		}
+		if tracked.Surface.SurfaceKind != "layer_shell" || !isCloseableShellLayerApp(tracked.Surface.AppID) {
+			return false, nil
+		}
+		if tracked.Client.PID <= 0 {
+			return true, nil
+		}
+		if err := signalProcess(tracked.Client.PID, syscall.SIGTERM); err != nil && processExists(tracked.Client.PID) {
+			return true, fmt.Errorf("terminate shell layer client %d: %w", tracked.Client.PID, err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func isCloseableShellLayerApp(appID string) bool {
+	switch strings.TrimSpace(appID) {
+	case "io.agorade.ShellLauncher", "io.agorade.ShellOverlay":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -2125,6 +2179,7 @@ func writeLauncherHTML(response http.ResponseWriter) {
       try {
         await postJSON("/api/catalog/launch", {appId});
         document.getElementById("status").textContent = "launch accepted";
+        await closeLauncher();
       } catch (error) {
         document.getElementById("status").textContent = "launch failed";
       }

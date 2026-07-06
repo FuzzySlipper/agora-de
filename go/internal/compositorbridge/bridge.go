@@ -332,7 +332,7 @@ func (bridge *Bridge) ListSurfaces() []TrackedSurface {
 
 func (bridge *Bridge) pruneDeadClientSurfacesLocked(now time.Time) {
 	for id, surface := range bridge.surfaces {
-		if surface.Surface.SurfaceKind != SurfaceKindLayer || surface.Client.PID <= 0 {
+		if surface.Client.PID <= 0 {
 			continue
 		}
 		if now.Sub(surface.UpdatedAt) < deadClientPruneAfter || processExists(int(surface.Client.PID)) {
@@ -343,6 +343,7 @@ func (bridge *Bridge) pruneDeadClientSurfacesLocked(now time.Time) {
 		}
 		bridge.stale[id] = now
 		delete(bridge.surfaces, id)
+		bridge.removeSurfaceFromBackendLayoutLocked(id)
 	}
 }
 
@@ -375,8 +376,9 @@ func (bridge *Bridge) ListOutputs() []LogicalOutput {
 }
 
 func (bridge *Bridge) GetLayout() GetLayoutResponse {
-	bridge.mu.RLock()
-	defer bridge.mu.RUnlock()
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	bridge.pruneDeadClientSurfacesLocked(time.Now())
 	return GetLayoutResponse{Layout: bridge.layoutLocked()}
 }
 

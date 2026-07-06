@@ -149,6 +149,40 @@ func TestListSurfacesPrunesOldLayerShellSurfaceWithDeadClient(t *testing.T) {
 	}
 }
 
+func TestGetLayoutPrunesOldXDGShellSurfaceWithDeadClient(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-stale",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Visible:     &visible,
+			OutputID:    "HDMI-A-1",
+			Geometry:    &SurfaceGeometry{Width: 1200, Height: 800},
+		},
+		Client: ClientIdentity{PID: 99999999, UID: 1001, GID: 1002},
+	})
+	bridge.mu.Lock()
+	tracked := bridge.surfaces["view-stale"]
+	tracked.UpdatedAt = time.Now().Add(-deadClientPruneAfter - time.Second)
+	bridge.surfaces["view-stale"] = tracked
+	bridge.mu.Unlock()
+
+	layout := bridge.GetLayout().Layout
+	if len(layout.Surfaces) != 0 {
+		t.Fatalf("layout surfaces = %+v, want stale XDG surface pruned", layout.Surfaces)
+	}
+	if got := bridge.ListSurfaces(); len(got) != 0 {
+		t.Fatalf("surfaces = %+v, want stale XDG surface pruned", got)
+	}
+	if _, ok := bridge.stale["view-stale"]; !ok {
+		t.Fatalf("stale marker missing after XDG prune")
+	}
+}
+
 func TestGetLayoutDerivesStableWorkspaceState(t *testing.T) {
 	bridge := New(Config{})
 	visible := true

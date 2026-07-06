@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"agora-de.local/go/internal/shellui/catalog"
@@ -126,6 +127,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`io.agorade.ShellLauncher`,
 		`/api/catalog/apps`,
 		`/api/surfaces/action`,
+		`await closeLauncher()`,
 	} {
 		if !strings.Contains(launcher, want) {
 			t.Fatalf("launcher body missing %q: %s", want, launcher)
@@ -1081,6 +1083,72 @@ esac
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("compositorctl calls missing %q: %s", want, calls)
 		}
+	}
+}
+
+func TestHandlerClosesLauncherLayerByTerminatingShellClient(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	command := filepath.Join(dir, "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' "$*" >> "$CALL_LOG"
+case "$1" in
+  list-surfaces)
+    printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-launcher","app_id":"io.agorade.ShellLauncher","surface_kind":"layer_shell","visible":true},"client":{"pid":424242,"uid":60010},"last_event":"content_committed","visible":true}]}'
+    ;;
+  surface)
+    printf '%s\n' '{"status":"accepted"}'
+    ;;
+  *)
+    printf 'unexpected command %s\n' "$1" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CALL_LOG", logPath)
+	var signaledPID int
+	var signaledSignal syscall.Signal
+	originalSignalProcess := signalProcess
+	signalProcess = func(pid int, signal syscall.Signal) error {
+		signaledPID = pid
+		signaledSignal = signal
+		return nil
+	}
+	t.Cleanup(func() { signalProcess = originalSignalProcess })
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		SurfaceProvider:   SurfaceProviderCompositorctl,
+		CompositorctlPath: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	body := strings.NewReader(`{"surfaceId":"layer-launcher","action":"close"}`)
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, SurfaceActionPath, body))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("close launcher status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	if signaledPID != 424242 || signaledSignal != syscall.SIGTERM {
+		t.Fatalf("signal = (%d, %v), want (424242, SIGTERM)", signaledPID, signaledSignal)
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(calls), "list-surfaces") {
+		t.Fatalf("compositorctl calls missing list-surfaces: %s", calls)
+	}
+	if strings.Contains(string(calls), "surface close --surface layer-launcher") {
+		t.Fatalf("launcher layer close should not use work-surface close: %s", calls)
 	}
 }
 
