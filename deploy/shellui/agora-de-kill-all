@@ -6,6 +6,35 @@ AGORA_USER=${AGORA_DE_SESSION_USER:-agent}
 AGORA_UID=${AGORA_DE_SESSION_UID:-1001}
 RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$AGORA_UID}
 
+usage() {
+  cat <<'USAGE'
+Usage: agora-de-kill-all [--help]
+
+Stop live Agora DE/legacy Agora OS display-session pieces on den-k8.
+
+With no arguments, this stops shell/compositor services, terminates lingering
+Wayland/WebKit/Wayfire helper processes, resets failed units, and prints any
+remaining Agora/Wayfire processes.
+
+Options:
+  -h, --help, help   Print this help without stopping services or processes.
+USAGE
+}
+
+case "${1-}" in
+  "")
+    ;;
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  *)
+    printf 'agora-de-kill-all: unknown argument: %s\n\n' "$1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
 log() {
   printf '%s %s\n' "$(date --iso-8601=seconds)" "$*"
 }

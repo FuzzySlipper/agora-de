@@ -157,6 +157,21 @@ for required in [
 ]:
     if required not in daily:
         raise SystemExit(f"check-daily-wm-workflow.py missing required evidence hook {required!r}")
+
+kill_all = (root / "deploy/shellui/agora-de-kill-all").read_text(encoding="utf-8")
+for required in [
+    "Usage: agora-de-kill-all [--help]",
+    "-h|--help|help)",
+    "unknown argument",
+    "exit 2",
+    "log \"stopping Agora display/session processes",
+]:
+    if required not in kill_all:
+        raise SystemExit(f"agora-de-kill-all missing safety hook {required!r}")
+stop_index = kill_all.index('log "stopping Agora display/session processes')
+for required in ["-h|--help|help)", "unknown argument", "exit 2"]:
+    if kill_all.index(required) > stop_index:
+        raise SystemExit(f"agora-de-kill-all handles {required!r} after destructive cleanup starts")
 PY
 
 echo "live harness static checks: OK"

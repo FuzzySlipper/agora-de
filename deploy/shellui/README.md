@@ -328,5 +328,11 @@ the `agent` user to run it without a password:
 sudo /usr/local/sbin/agora-de-kill-all
 ```
 
+Help and argument validation are side-effect free:
+
+```bash
+sudo /usr/local/sbin/agora-de-kill-all --help
+```
+
 The helper intentionally leaves Agora display/session services stopped. Start or
 deploy them again only after the host is back to an empty state.

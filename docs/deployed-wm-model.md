@@ -178,6 +178,7 @@ systemctl --user restart agora-de-shell-background.service agora-de-shell-panel.
 Recover stale launched clients and shell surfaces:
 
 ```bash
+sudo /usr/local/sbin/agora-de-kill-all --help
 sudo /usr/local/sbin/agora-de-kill-all
 systemctl --user restart agora-de-shellui.service
 systemctl --user restart agora-de-shell-background.service agora-de-shell-panel.service agora-de-shell-overlay.service

@@ -133,6 +133,7 @@ recovery helper once and then use the sudoers-backed kill-all command:
 
 ```bash
 sudo deploy/shellui/install-den-k8-recovery-tools
+sudo /usr/local/sbin/agora-de-kill-all --help
 sudo /usr/local/sbin/agora-de-kill-all
 ```
 
