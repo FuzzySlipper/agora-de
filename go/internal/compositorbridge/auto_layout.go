@@ -34,7 +34,7 @@ func (bridge *Bridge) autoLayoutWorker(reason string) {
 		bridge.mu.RLock()
 		targetSeq := bridge.autoLayoutSeq
 		bridge.mu.RUnlock()
-		if err := bridge.applyAutoLayoutOnce(reason, targetSeq); err != nil {
+		if err := bridge.applyAutoLayoutOnce(reason); err != nil {
 			log.Printf("auto layout: %v", err)
 		}
 		bridge.mu.Lock()
@@ -47,11 +47,11 @@ func (bridge *Bridge) autoLayoutWorker(reason string) {
 	}
 }
 
-func (bridge *Bridge) applyAutoLayoutOnce(reason string, targetSeq uint64) error {
+func (bridge *Bridge) applyAutoLayoutOnce(reason string) error {
 	placements := bridge.autoLayoutPlan()
 	applied := make([]autoLayoutPlacement, 0, len(placements))
 	for _, placement := range placements {
-		if !bridge.shouldApplyAutoLayoutPlacement(placement.SurfaceID, targetSeq) {
+		if !bridge.shouldApplyAutoLayoutPlacement(placement.SurfaceID) {
 			continue
 		}
 		request := SurfaceLayoutActionRequest{
@@ -62,7 +62,7 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string, targetSeq uint64) error
 			WaitTimeoutMs: 1000,
 		}
 		guard := func(tracked TrackedSurface) bool {
-			return bridge.autoLayoutSeq == targetSeq && isAutoTileSurface(tracked)
+			return isAutoTileSurface(tracked)
 		}
 		if _, err := bridge.placeSurfaceChecked(request, "layout.auto_tile", placement.Geometry, placement.ZoneID, SurfaceLayoutRoleTiled, guard); err != nil {
 			class, _ := classifyError(err)
@@ -79,12 +79,9 @@ func (bridge *Bridge) applyAutoLayoutOnce(reason string, targetSeq uint64) error
 	return nil
 }
 
-func (bridge *Bridge) shouldApplyAutoLayoutPlacement(surfaceID string, targetSeq uint64) bool {
+func (bridge *Bridge) shouldApplyAutoLayoutPlacement(surfaceID string) bool {
 	bridge.mu.RLock()
 	defer bridge.mu.RUnlock()
-	if bridge.autoLayoutSeq != targetSeq {
-		return false
-	}
 	tracked, ok := bridge.surfaces[surfaceID]
 	return ok && isAutoTileSurface(tracked)
 }

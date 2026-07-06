@@ -806,10 +806,6 @@ func TestAutoLayoutPlacementDoesNotOverrideNewerFloatingDecision(t *testing.T) {
 			OutputID:    "HDMI-A-1",
 		},
 	})
-	bridge.mu.Lock()
-	bridge.autoLayoutSeq = 1
-	bridge.mu.Unlock()
-
 	done := make(chan error, 1)
 	go func() {
 		request := SurfaceLayoutActionRequest{SurfaceID: "view-a", WorkspaceID: "workspace-1", ZoneID: zoneMaster, WaitTimeoutMs: 1000}
@@ -820,7 +816,7 @@ func TestAutoLayoutPlacementDoesNotOverrideNewerFloatingDecision(t *testing.T) {
 			zoneMaster,
 			SurfaceLayoutRoleTiled,
 			func(tracked TrackedSurface) bool {
-				return bridge.autoLayoutSeq == 1 && isAutoTileSurface(tracked)
+				return isAutoTileSurface(tracked)
 			},
 		)
 		done <- err
@@ -841,7 +837,6 @@ func TestAutoLayoutPlacementDoesNotOverrideNewerFloatingDecision(t *testing.T) {
 	tracked.Surface.LayoutRole = tracked.LayoutRole
 	tracked.ZoneID = zoneTransient
 	tracked.Surface.ZoneID = tracked.ZoneID
-	bridge.autoLayoutSeq = 2
 	bridge.surfaces["view-a"] = tracked
 	bridge.mu.Unlock()
 
