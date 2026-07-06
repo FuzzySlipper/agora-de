@@ -341,6 +341,31 @@ func TestRunSurfaceTileReportsBackendUnsupported(t *testing.T) {
 	}
 }
 
+func TestRunSurfaceAssignZoneIncludesPlannerGeometry(t *testing.T) {
+	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
+		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}
+	})
+
+	err := run([]string{"surface", "assign-zone", "--surface", "view-1", "--zone", "stack", "--x", "601", "--y", "20", "--width", "389", "--height", "378"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("run surface assign-zone: %v", err)
+	}
+	request := (*requests)[0]
+	if request.Method != methodAssignSurfaceZone {
+		t.Fatalf("method = %q, want %q", request.Method, methodAssignSurfaceZone)
+	}
+	var body surfaceLayoutRequest
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.SurfaceID != "view-1" || body.ZoneID != "stack" || body.Geometry == nil {
+		t.Fatalf("body = %+v", body)
+	}
+	if body.Geometry.X != 601 || body.Geometry.Y != 20 || body.Geometry.Width != 389 || body.Geometry.Height != 378 {
+		t.Fatalf("geometry = %+v", body.Geometry)
+	}
+}
+
 func TestRunWorkspaceActivateCallsCompositorControlSocket(t *testing.T) {
 	requests := serveControlSocket(t, func(request controlRequest) controlResponse {
 		return controlResponse{OK: true, Body: json.RawMessage(`{"decision":"accepted"}`)}

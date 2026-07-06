@@ -511,6 +511,10 @@ func buildZoneSurfaceRequest(name string, args []string) (surfaceLayoutRequest, 
 	surfaceID := fs.String("surface", "", "surface id")
 	workspaceID := fs.String("workspace", "", "workspace id")
 	zoneID := fs.String("zone", "", "zone id")
+	x := fs.Int("x", 0, "planned surface x coordinate")
+	y := fs.Int("y", 0, "planned surface y coordinate")
+	width := fs.Int("width", 0, "planned surface width")
+	height := fs.Int("height", 0, "planned surface height")
 	timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
 	if err := fs.Parse(args); err != nil {
 		return surfaceLayoutRequest{}, err
@@ -521,7 +525,14 @@ func buildZoneSurfaceRequest(name string, args []string) (surfaceLayoutRequest, 
 	if *zoneID == "" {
 		return surfaceLayoutRequest{}, errors.New("--zone is required")
 	}
-	return surfaceLayoutRequest{SurfaceID: *surfaceID, WorkspaceID: *workspaceID, ZoneID: *zoneID, WaitTimeoutMs: *timeoutMs}, nil
+	req := surfaceLayoutRequest{SurfaceID: *surfaceID, WorkspaceID: *workspaceID, ZoneID: *zoneID, WaitTimeoutMs: *timeoutMs}
+	if *x != 0 || *y != 0 || *width != 0 || *height != 0 {
+		if *width <= 0 || *height <= 0 {
+			return surfaceLayoutRequest{}, errors.New("--width and --height must be positive when planner geometry is supplied")
+		}
+		req.Geometry = &surfaceGeometry{X: *x, Y: *y, Width: *width, Height: *height}
+	}
+	return req, nil
 }
 
 func buildFloatingSurfaceRequest(args []string) (surfaceLayoutRequest, error) {

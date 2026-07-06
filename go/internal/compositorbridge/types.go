@@ -295,6 +295,7 @@ type pluginEvent struct {
 	Layout    LayoutState       `json:"layout,omitempty"`
 	RequestID string            `json:"request_id,omitempty"`
 	SurfaceID string            `json:"surface_id,omitempty"`
+	Geometry  *SurfaceGeometry  `json:"geometry,omitempty"`
 	OK        bool              `json:"ok,omitempty"`
 	Error     string            `json:"error,omitempty"`
 }

@@ -332,7 +332,7 @@ func (bridge *Bridge) TileSurface(request SurfaceLayoutActionRequest) (LayoutAct
 	if strings.TrimSpace(request.ZoneID) == "" {
 		return LayoutActionResponse{}, fmt.Errorf("zone_id is required")
 	}
-	geometry, err := bridge.geometryForZone(request.SurfaceID, request.ZoneID)
+	geometry, err := bridge.geometryForLayoutRequest(request, "surface.tile")
 	if err != nil {
 		if class, _ := classifyError(err); class == ErrorBackendUnsupported {
 			return bridge.unsupportedSurfaceLayoutAction("surface.tile", request.SurfaceID)
@@ -353,7 +353,7 @@ func (bridge *Bridge) AssignSurfaceZone(request SurfaceLayoutActionRequest) (Lay
 	if strings.TrimSpace(request.ZoneID) == "" {
 		return LayoutActionResponse{}, fmt.Errorf("zone_id is required")
 	}
-	geometry, err := bridge.geometryForZone(request.SurfaceID, request.ZoneID)
+	geometry, err := bridge.geometryForLayoutRequest(request, "surface.assign_zone")
 	if err != nil {
 		if class, _ := classifyError(err); class == ErrorBackendUnsupported {
 			return bridge.unsupportedSurfaceLayoutAction("surface.assign_zone", request.SurfaceID)
@@ -448,6 +448,7 @@ func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action st
 	if timeout <= 0 {
 		timeout = 2 * time.Second
 	}
+	ackGeometry := geometry
 	select {
 	case response := <-waiter:
 		if !response.OK {
@@ -457,14 +458,20 @@ func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action st
 			}
 			return LayoutActionResponse{}, classifiedError{class: ErrorProtocol, message: message}
 		}
+		if response.Geometry != nil {
+			if response.Geometry.Width <= 0 || response.Geometry.Height <= 0 {
+				return LayoutActionResponse{}, classifiedError{class: ErrorProtocol, message: "placement response geometry width and height must be positive"}
+			}
+			ackGeometry = *response.Geometry
+		}
 	case <-time.After(timeout):
 		return LayoutActionResponse{}, classifiedError{class: ErrorFrameTimeout, message: "placement request timed out"}
 	}
 
 	bridge.mu.Lock()
 	tracked := bridge.surfaces[request.SurfaceID]
-	tracked.Geometry = cloneGeometry(&geometry)
-	tracked.Surface.Geometry = cloneGeometry(&geometry)
+	tracked.Geometry = cloneGeometry(&ackGeometry)
+	tracked.Surface.Geometry = cloneGeometry(&ackGeometry)
 	tracked.WorkspaceID = firstNonEmpty(request.WorkspaceID, tracked.WorkspaceID, "workspace-1")
 	tracked.Surface.WorkspaceID = tracked.WorkspaceID
 	tracked.ZoneID = firstNonEmpty(zoneID, tracked.ZoneID, "primary")
@@ -499,8 +506,18 @@ func (bridge *Bridge) placeSurface(request SurfaceLayoutActionRequest, action st
 	}, nil
 }
 
-func (bridge *Bridge) geometryForZone(surfaceID string, zoneID string) (SurfaceGeometry, error) {
-	surface, err := bridge.requireWorkSurface(surfaceID, "surface.assign_zone")
+func (bridge *Bridge) geometryForLayoutRequest(request SurfaceLayoutActionRequest, action string) (SurfaceGeometry, error) {
+	if request.Geometry != nil {
+		if request.Geometry.Width <= 0 || request.Geometry.Height <= 0 {
+			return SurfaceGeometry{}, fmt.Errorf("geometry width and height must be positive")
+		}
+		return *request.Geometry, nil
+	}
+	return bridge.geometryForZone(request.SurfaceID, request.ZoneID, action)
+}
+
+func (bridge *Bridge) geometryForZone(surfaceID string, zoneID string, action string) (SurfaceGeometry, error) {
+	surface, err := bridge.requireWorkSurface(surfaceID, action)
 	if err != nil {
 		return SurfaceGeometry{}, err
 	}
@@ -985,7 +1002,7 @@ func (bridge *Bridge) handlePlaceResponse(event pluginEvent) {
 		return
 	}
 	select {
-	case waiter <- pluginResponse{OK: event.OK, Error: event.Error}:
+	case waiter <- pluginResponse{OK: event.OK, Error: event.Error, Geometry: cloneGeometry(event.Geometry)}:
 	default:
 	}
 }
@@ -1411,8 +1428,9 @@ func (session *pluginSession) Close() error {
 }
 
 type pluginResponse struct {
-	OK    bool
-	Error string
+	OK       bool
+	Error    string
+	Geometry *SurfaceGeometry
 }
 
 func writeResponse(writer io.Writer, response Response) {

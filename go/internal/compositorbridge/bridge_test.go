@@ -409,6 +409,105 @@ func TestAssignSurfaceZonePlacesSurfaceThroughPlugin(t *testing.T) {
 	}
 }
 
+func TestAssignSurfaceZoneUsesPlannerGeometryAndBackendAck(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{X: 96, Y: 66, Width: 804, Height: 634},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+
+	pluginClient, pluginServer := net.Pipe()
+	defer pluginClient.Close()
+	go bridge.HandlePluginConn(pluginServer)
+
+	decoder := json.NewDecoder(pluginClient)
+	for range 2 {
+		var initial map[string]any
+		if err := decoder.Decode(&initial); err != nil {
+			t.Fatalf("decode initial plugin message: %v", err)
+		}
+	}
+	commandSeen := make(chan map[string]any, 1)
+	go func() {
+		var command map[string]any
+		if err := decoder.Decode(&command); err == nil {
+			commandSeen <- command
+		}
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		response, err := bridge.AssignSurfaceZone(SurfaceLayoutActionRequest{
+			SurfaceID:     "view-a",
+			ZoneID:        "stack",
+			Geometry:      &SurfaceGeometry{X: 601, Y: 20, Width: 389, Height: 378},
+			WaitTimeoutMs: 1000,
+		})
+		if err != nil {
+			t.Errorf("AssignSurfaceZone: %v", err)
+			return
+		}
+		if response.Decision != DecisionAccepted || response.Layout == nil {
+			t.Errorf("response = %+v", response)
+		}
+	}()
+
+	var command map[string]any
+	select {
+	case command = <-commandSeen:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for place command")
+	}
+	geometry, ok := command["geometry"].(map[string]any)
+	if !ok {
+		t.Fatalf("place geometry = %+v", command["geometry"])
+	}
+	if int(geometry["x"].(float64)) != 601 || int(geometry["y"].(float64)) != 20 || int(geometry["width"].(float64)) != 389 || int(geometry["height"].(float64)) != 378 {
+		t.Fatalf("place geometry = %+v", command["geometry"])
+	}
+	if err := json.NewEncoder(pluginClient).Encode(map[string]any{
+		"type":       PluginPlaceResponse,
+		"request_id": command["request_id"],
+		"surface_id": command["surface_id"],
+		"ok":         true,
+		"geometry": map[string]any{
+			"x":      610,
+			"y":      30,
+			"width":  380,
+			"height": 360,
+		},
+	}); err != nil {
+		t.Fatalf("send place response: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for assign-zone response")
+	}
+
+	layout := bridge.GetLayout().Layout
+	var placed LayoutSurface
+	for _, surface := range layout.Surfaces {
+		if surface.SurfaceID == "view-a" {
+			placed = surface
+			break
+		}
+	}
+	if placed.ZoneID != "stack" || placed.Geometry == nil || placed.Geometry.X != 610 || placed.Geometry.Width != 380 || placed.Participation != SurfaceLayoutRoleTiled {
+		t.Fatalf("placed layout surface = %+v", placed)
+	}
+}
+
 func TestLayoutSurfaceActionsValidateStaleBeforeUnsupportedBackend(t *testing.T) {
 	bridge := New(Config{})
 	visible := true
