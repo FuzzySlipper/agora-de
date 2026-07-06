@@ -10,6 +10,7 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-native-launch.py" \
   "$ROOT/harness/live/check-structured-layout.py" \
   "$ROOT/harness/live/check-layout-commands.py" \
+  "$ROOT/harness/live/check-planner-layout.py" \
   "$ROOT/harness/live/check-overlay-labels.py"
 
 python3 - "$ROOT" <<'PY'
@@ -23,6 +24,7 @@ expectations = {
     "harness/live/check-native-launch.py": "agora-de.native-launch-live.v1",
     "harness/live/check-structured-layout.py": "agora-de.structured-layout-live.v1",
     "harness/live/check-layout-commands.py": "agora-de.layout-commands-live.v1",
+    "harness/live/check-planner-layout.py": "agora-de.planner-layout-live.v1",
     "harness/live/check-overlay-labels.py": "agora-de.overlay-labels-live.v1",
 }
 for relative, schema in expectations.items():
@@ -68,6 +70,23 @@ for required in [
 ]:
     if required not in commands:
         raise SystemExit(f"check-layout-commands.py missing required evidence hook {required!r}")
+
+planner = (root / "harness/live/check-planner-layout.py").read_text(encoding="utf-8")
+for required in [
+    "/usr/local/bin/compositorctl",
+    "den-k8-planner-layout-visible",
+    "/api/catalog/launch",
+    "assign-zone",
+    "layout",
+    "planner-mismatch",
+    "backend-placement",
+    "focus-order",
+    "capture",
+    "cleanup",
+    "master_stack",
+]:
+    if required not in planner:
+        raise SystemExit(f"check-planner-layout.py missing required evidence hook {required!r}")
 
 overlay = (root / "harness/live/check-overlay-labels.py").read_text(encoding="utf-8")
 for required in [

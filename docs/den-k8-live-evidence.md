@@ -298,6 +298,32 @@ focus/close actions, `/api/layout`, and `/api/layout/action`. It distinguishes
 Zone assignment may pass as backend-unsupported only when the final layout still
 proves either distinct expected zones or non-overlapping geometry.
 
+Run the planner-backed master-stack layout loop with capture evidence:
+
+```bash
+./harness/live/check-planner-layout.py \
+  --base-url http://127.0.0.1:17780 \
+  --app-id Alacritty.desktop \
+  --app-id foot.desktop \
+  --app-id firefox.desktop \
+  --expected-app-id Alacritty \
+  --expected-app-id foot \
+  --expected-app-id firefox \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-planner-layout \
+  --require-capture
+```
+
+The planner-layout runner emits `agora-de.planner-layout-live.v1`. It launches
+three or more native apps, builds a backend-neutral `master_stack` plan from
+the compositor output work area, sends planned rectangles through
+`agora-de-compositorctl surface assign-zone --x --y --width --height`, verifies
+backend acknowledgement through `layout get`, checks non-overlap, optionally
+captures the physical output, and closes launched surfaces. Failures are split
+into `planner-mismatch`, `backend-placement`, `focus-order`, `capture`, and
+`cleanup` so planner math, backend application, evidence capture, and stale
+cleanup can be diagnosed independently.
+
 Run the agent-visible overlay label loop with capture evidence:
 
 ```bash
