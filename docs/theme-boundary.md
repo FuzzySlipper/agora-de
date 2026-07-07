@@ -7,6 +7,8 @@ The token contract is intentionally narrow:
 
 - normal presentation uses `presentation`, `state`, `layout`, and `typography`
   tokens;
+- shell chrome uses `component` tokens for named panel, popup, overlay, and
+  taskbar state treatments;
 - physical-display evidence uses `evidence` tokens;
 - arbitrary CSS, layout-capable theme overrides, imports, and URL-bearing values
   remain outside the supported customization surface.
@@ -24,6 +26,11 @@ Bundled variants live in `go/internal/shellui/theme` alongside fixtures under
 `harness/fixtures/theme/`. `agora-ember` is the first bundled variant. It keeps
 the same evidence markers and layout dimensions while changing presentation
 colors.
+
+Component tokens such as `--agora-panel-bg`, `--agora-popup-shadow`,
+`--agora-overlay-label-bg`, and `--agora-taskbar-minimized-bg` give visual
+polish a central vocabulary without moving style choices into compositor,
+layout, or launch plumbing.
 
 TypeScript feature libraries consume the same token vocabulary through
 `@agora-de/theme`. Feature packages may expose component-specific token maps,

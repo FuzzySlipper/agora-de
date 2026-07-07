@@ -1549,12 +1549,12 @@ func writeOverlayHTML(response http.ResponseWriter, themeCSS string) {
       border-color: var(--agora-warning);
       box-shadow:
         0 0 0 2px var(--agora-surface-strong),
-        0 0 22px rgba(251, 191, 36, 0.75),
+        var(--agora-focus-glow),
         inset 0 0 0 2px var(--agora-warning);
     }
     .label {
       align-items: center;
-      background: rgba(8, 13, 30, 0.72);
+      background: var(--agora-overlay-label-bg);
       border: 2px solid var(--agora-evidence-accent);
       color: var(--agora-fg);
       display: inline-flex;
@@ -1589,7 +1589,7 @@ func writeOverlayHTML(response http.ResponseWriter, themeCSS string) {
       text-overflow: ellipsis;
     }
     .bounds {
-      background: rgba(8, 13, 30, 0.62);
+      background: var(--agora-overlay-chip-bg);
       border: 2px solid var(--agora-border);
       bottom: 8px;
       color: var(--agora-text-muted);
@@ -1610,7 +1610,7 @@ func writeOverlayHTML(response http.ResponseWriter, themeCSS string) {
       right: 8px;
     }
     .chip {
-      background: rgba(8, 13, 30, 0.62);
+      background: var(--agora-overlay-chip-bg);
       border: 2px solid var(--agora-border);
       color: var(--agora-fg);
       font: var(--agora-font-code);
@@ -2161,7 +2161,7 @@ func writeLauncherHTML(response http.ResponseWriter, themeCSS string) {
       border: 2px solid var(--agora-border);
       border-bottom-color: var(--agora-accent);
       border-radius: var(--agora-radius-control);
-      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+      box-shadow: var(--agora-popup-shadow);
       display: grid;
       grid-template-rows: auto 1fr auto;
       height: 100vh;
@@ -2594,13 +2594,12 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
       overflow: hidden;
     }
     .panel {
-      --taskbar-control-height: 38px;
+      --taskbar-control-height: var(--agora-panel-control-height);
       align-items: center;
-      background: var(--agora-surface);
-      background: color-mix(in srgb, var(--agora-surface) 92%%, var(--agora-bg));
+      background: var(--agora-panel-bg);
       border-top: 3px solid var(--agora-evidence-accent);
       bottom: 0;
-      box-shadow: inset 0 1px 0 var(--agora-border-subtle), 0 -10px 26px rgba(0, 0, 0, 0.28);
+      box-shadow: var(--agora-panel-shadow);
       box-sizing: border-box;
       display: grid;
       gap: 8px;
@@ -2771,8 +2770,8 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
       box-shadow: inset 0 -3px 0 var(--agora-accent);
     }
     .task-button.minimized {
-      background: color-mix(in srgb, var(--agora-surface-raised) 74%%, var(--agora-bg));
-      border-color: color-mix(in srgb, var(--agora-warning) 74%%, var(--agora-border));
+      background: var(--agora-taskbar-minimized-bg);
+      border-color: var(--agora-taskbar-minimized-border);
       color: var(--agora-text-muted);
     }
     .task-button.minimized .task-label::after {
@@ -2869,7 +2868,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
       border: 2px solid var(--agora-border);
       border-radius: var(--agora-radius-control);
       bottom: calc(var(--agora-panel-height) - 2px);
-      box-shadow: 0 -10px 22px rgba(0, 0, 0, 0.35);
+      box-shadow: var(--agora-popup-shadow);
       display: none;
       gap: 8px;
       padding: 10px;

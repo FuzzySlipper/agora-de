@@ -72,6 +72,21 @@ func TestDefaultTokenDefinitionsSeparateEvidenceMarkers(t *testing.T) {
 	if roles[TokenBackground] == RoleEvidence || roles[TokenAccent] == RoleEvidence {
 		t.Fatalf("presentation tokens should not be classified as evidence markers: %+v", roles)
 	}
+	for _, name := range []string{
+		TokenPanelControlHeight,
+		TokenPanelBackground,
+		TokenPanelShadow,
+		TokenPopupShadow,
+		TokenOverlayLabelBackground,
+		TokenOverlayChipBackground,
+		TokenFocusGlow,
+		TokenTaskbarMinimizedBackground,
+		TokenTaskbarMinimizedBorder,
+	} {
+		if roles[name] != RoleComponent {
+			t.Fatalf("token %s role = %q, want %q", name, roles[name], RoleComponent)
+		}
+	}
 	if css := MustDefaultTokenCSS(); !strings.Contains(css, TokenEvidenceAccent) || !strings.Contains(css, TokenPanelHeight) {
 		t.Fatalf("default CSS missing centralized tokens: %s", css)
 	}
