@@ -1258,8 +1258,121 @@ func TestUnmanagedXDGSurfaceIsTransientAndExcludedFromAutoLayout(t *testing.T) {
 	if surfaces[0].LayoutRole != string(SurfaceLayoutRoleTransient) || surfaces[0].ZoneID != zoneTransient {
 		t.Fatalf("unmanaged surface classification = role %q zone %q, want transient", surfaces[0].LayoutRole, surfaces[0].ZoneID)
 	}
+	if surfaces[0].PolicyClass != SurfacePolicyClassTransient || surfaces[0].PolicyReason == "" {
+		t.Fatalf("unmanaged surface policy = class %q reason %q, want transient evidence", surfaces[0].PolicyClass, surfaces[0].PolicyReason)
+	}
 	if isAutoTileSurface(surfaces[0]) {
 		t.Fatalf("unmanaged surface should not be auto-tile eligible: %+v", surfaces[0])
+	}
+}
+
+func TestSurfacePolicyClassificationCoversWorkChromeAndDialogs(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	for _, event := range []pluginEvent{
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "layer-panel",
+				SurfaceKind: SurfaceKindLayer,
+				Role:        "panel",
+				Visible:     &visible,
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-work",
+				SurfaceKind: SurfaceKindXDG,
+				Role:        "toplevel",
+				Visible:     &visible,
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:              "view-dialog-parented",
+				SurfaceKind:     SurfaceKindXDG,
+				Role:            "modal-dialog",
+				ParentSurfaceID: "view-work",
+				Visible:         &visible,
+				OutputID:        "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-file-chooser",
+				SurfaceKind: SurfaceKindXDG,
+				Role:        "file-chooser-dialog",
+				Visible:     &visible,
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-menu",
+				SurfaceKind: SurfaceKindXDG,
+				Role:        "popup-menu",
+				Visible:     &visible,
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-shell-status",
+				SurfaceKind: SurfaceKindXDG,
+				AppID:       "io.agorade.ShellStatus",
+				Visible:     &visible,
+				OutputID:    "HDMI-A-1",
+			},
+		},
+	} {
+		bridge.handleSurfaceEvent(event)
+	}
+
+	byID := map[string]TrackedSurface{}
+	for _, surface := range bridge.ListSurfaces() {
+		byID[surface.Surface.ID] = surface
+	}
+
+	assertPolicy := func(surfaceID string, wantRole SurfaceLayoutRole, wantClass SurfacePolicyClass) {
+		t.Helper()
+		surface, ok := byID[surfaceID]
+		if !ok {
+			t.Fatalf("surface %s not tracked; got %+v", surfaceID, byID)
+		}
+		if surface.LayoutRole != string(wantRole) || surface.PolicyClass != wantClass || surface.PolicyReason == "" {
+			t.Fatalf("surface %s = role %q class %q reason %q, want role %q class %q", surfaceID, surface.LayoutRole, surface.PolicyClass, surface.PolicyReason, wantRole, wantClass)
+		}
+	}
+	assertPolicy("layer-panel", SurfaceLayoutRoleTransient, SurfacePolicyClassShellChrome)
+	assertPolicy("view-work", SurfaceLayoutRoleTiled, SurfacePolicyClassWork)
+	assertPolicy("view-dialog-parented", SurfaceLayoutRoleTransient, SurfacePolicyClassTransient)
+	assertPolicy("view-file-chooser", SurfaceLayoutRoleTransient, SurfacePolicyClassNoParent)
+	assertPolicy("view-menu", SurfaceLayoutRoleTransient, SurfacePolicyClassNoParent)
+	assertPolicy("view-shell-status", SurfaceLayoutRoleTransient, SurfacePolicyClassTransient)
+
+	layout := bridge.GetLayout().Layout
+	layoutByID := map[string]LayoutSurface{}
+	for _, surface := range layout.Surfaces {
+		layoutByID[surface.SurfaceID] = surface
+	}
+	if layoutByID["view-dialog-parented"].ParentSurfaceID != "view-work" || layoutByID["view-dialog-parented"].PolicyClass != SurfacePolicyClassTransient {
+		t.Fatalf("parented dialog layout policy = %+v", layoutByID["view-dialog-parented"])
+	}
+	if layoutByID["view-file-chooser"].PolicyClass != SurfacePolicyClassNoParent || layoutByID["view-menu"].PolicyClass != SurfacePolicyClassNoParent {
+		t.Fatalf("unparented transient layout policies = chooser %+v menu %+v", layoutByID["view-file-chooser"], layoutByID["view-menu"])
 	}
 }
 
@@ -1852,6 +1965,9 @@ func TestSetSurfaceFloatingEscapesAndReturnsToAutoLayout(t *testing.T) {
 	if response.Decision != DecisionAccepted || response.Surface == nil || response.Surface.LayoutRole != string(SurfaceLayoutRoleFloating) {
 		t.Fatalf("floating response = %+v", response)
 	}
+	if response.Surface.PolicyClass != SurfacePolicyClassFloatingOverride || response.Surface.PolicyReason == "" {
+		t.Fatalf("floating response policy = %+v, want explicit floating override", response.Surface)
+	}
 	readPlaceAndAck(t, bridge, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 1000, Height: 600})
 	layout := bridge.GetLayout().Layout
 	if len(layout.Surfaces) != 2 || layout.Surfaces[0].SurfaceID != "view-a" || layout.Surfaces[1].SurfaceID != "view-b" {
@@ -1859,6 +1975,9 @@ func TestSetSurfaceFloatingEscapesAndReturnsToAutoLayout(t *testing.T) {
 	}
 	if layout.Surfaces[1].Participation != SurfaceLayoutRoleFloating || layout.Surfaces[1].ZoneID != zoneTransient {
 		t.Fatalf("floating layout surface = %+v", layout.Surfaces[1])
+	}
+	if layout.Surfaces[1].PolicyClass != SurfacePolicyClassFloatingOverride || layout.Surfaces[1].PolicyReason == "" {
+		t.Fatalf("floating layout policy = %+v", layout.Surfaces[1])
 	}
 	surfaces := bridge.ListSurfaces()
 	var floating TrackedSurface
@@ -1868,7 +1987,7 @@ func TestSetSurfaceFloatingEscapesAndReturnsToAutoLayout(t *testing.T) {
 			break
 		}
 	}
-	if floating.LayoutRole != string(SurfaceLayoutRoleFloating) || floating.ZoneID != zoneTransient {
+	if floating.LayoutRole != string(SurfaceLayoutRoleFloating) || floating.ZoneID != zoneTransient || floating.PolicyClass != SurfacePolicyClassFloatingOverride {
 		t.Fatalf("floating surface state = %+v", floating)
 	}
 
@@ -1880,11 +1999,17 @@ func TestSetSurfaceFloatingEscapesAndReturnsToAutoLayout(t *testing.T) {
 	if response.Decision != DecisionAccepted {
 		t.Fatalf("return-to-tiling response = %+v", response)
 	}
+	if response.Surface == nil || response.Surface.PolicyClass != SurfacePolicyClassWork {
+		t.Fatalf("return-to-tiling policy = %+v, want work", response.Surface)
+	}
 	readPlaceAndAckNoWait(t, decoder, encoder, "view-a", SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 0, Y: 0, Width: 500, Height: 600})
 	readPlaceAndAck(t, bridge, decoder, encoder, "view-b", SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600}, SurfaceGeometry{X: 500, Y: 0, Width: 500, Height: 600})
 	layout = bridge.GetLayout().Layout
 	if len(layout.Surfaces) != 2 || layout.Surfaces[1].SurfaceID != "view-b" || layout.Surfaces[1].Participation != SurfaceLayoutRoleTiled {
 		t.Fatalf("surface did not return to tiled layout: %+v", layout.Surfaces)
+	}
+	if layout.Surfaces[1].PolicyClass != SurfacePolicyClassWork {
+		t.Fatalf("returned tiled layout policy = %+v", layout.Surfaces[1])
 	}
 }
 
@@ -2026,6 +2151,9 @@ func TestLayoutSurfaceActionsReturnUnsupportedForValidSurface(t *testing.T) {
 	}
 	if response.Action != "surface.tile" || response.SurfaceID != "view-live" || response.Decision != "unsupported" || response.Surface == nil {
 		t.Fatalf("response = %+v", response)
+	}
+	if response.Surface.PolicyClass != SurfacePolicyClassBackendLimited || response.Surface.PolicyReason == "" {
+		t.Fatalf("unsupported response policy = %+v, want backend-limited evidence", response.Surface)
 	}
 }
 

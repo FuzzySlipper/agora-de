@@ -23,6 +23,16 @@ export type SurfaceLayoutParticipation =
   | 'floating'
   | 'transient';
 
+export type SurfacePolicyClass =
+  | 'work'
+  | 'transient'
+  | 'floating_override'
+  | 'shell_chrome'
+  | 'stale'
+  | 'unsupported'
+  | 'no_parent'
+  | 'backend_limited';
+
 export type LayoutActionKind =
   | 'layout.get'
   | 'layout.set_mode'
@@ -49,10 +59,13 @@ export interface LayoutSurface {
   readonly title: string;
   readonly role: string;
   readonly outputId: string;
+  readonly parentSurfaceId: string;
   readonly workspaceId: string;
   readonly zoneId: string;
   readonly mode: LayoutMode;
   readonly participation: SurfaceLayoutParticipation;
+  readonly policyClass: SurfacePolicyClass;
+  readonly policyReason: string;
   readonly floating: boolean;
   readonly focused: boolean;
   readonly visible: boolean;

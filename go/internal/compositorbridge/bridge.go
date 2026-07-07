@@ -566,6 +566,7 @@ func (bridge *Bridge) SetSurfaceFloating(request SurfaceLayoutActionRequest) (La
 		tracked.Surface.LayoutRole = tracked.LayoutRole
 		tracked.ZoneID = zoneTransient
 		tracked.Surface.ZoneID = tracked.ZoneID
+		setSurfacePolicy(&tracked, SurfacePolicyClassFloatingOverride, "explicit floating override")
 	} else {
 		tracked.LayoutMode = string(bridge.tiledLayoutModeLocked())
 		tracked.Surface.LayoutMode = tracked.LayoutMode
@@ -576,6 +577,7 @@ func (bridge *Bridge) SetSurfaceFloating(request SurfaceLayoutActionRequest) (La
 			tracked.ZoneID = zoneMaster
 		}
 		tracked.Surface.ZoneID = tracked.ZoneID
+		setSurfacePolicy(&tracked, SurfacePolicyClassWork, "normal work surface")
 	}
 	bridge.layoutSeq++
 	tracked.LayoutRevision = bridge.layoutSeq
@@ -766,6 +768,7 @@ func (bridge *Bridge) unsupportedSurfaceLayoutAction(action string, surfaceID st
 	if err != nil {
 		return LayoutActionResponse{}, err
 	}
+	setSurfacePolicy(&surface, SurfacePolicyClassBackendLimited, "compositor backend lacks geometry authority")
 	return LayoutActionResponse{
 		Action:    action,
 		SurfaceID: surface.Surface.ID,
@@ -921,11 +924,17 @@ func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, ac
 		tracked.Surface.LayoutMode = string(layoutMode)
 		tracked.LayoutRole = string(SurfaceLayoutRoleTiled)
 		tracked.Surface.LayoutRole = string(SurfaceLayoutRoleTiled)
+		setSurfacePolicy(&tracked, SurfacePolicyClassWork, "normal work surface")
 	} else {
 		tracked.LayoutMode = firstNonEmpty(tracked.LayoutMode, string(LayoutModeFreeform))
 		tracked.Surface.LayoutMode = tracked.LayoutMode
 		tracked.LayoutRole = firstNonEmpty(tracked.LayoutRole, string(role), string(SurfaceLayoutRoleFloating))
 		tracked.Surface.LayoutRole = tracked.LayoutRole
+		if tracked.LayoutRole == string(SurfaceLayoutRoleFloating) {
+			setSurfacePolicy(&tracked, SurfacePolicyClassFloatingOverride, "explicit floating override")
+		} else {
+			setSurfacePolicy(&tracked, SurfacePolicyClassTransient, "transient surface placement")
+		}
 	}
 	bridge.layoutSeq++
 	tracked.LayoutRevision = bridge.layoutSeq
@@ -1067,27 +1076,33 @@ func (bridge *Bridge) updateBackendLayoutSurfaceLocked(tracked TrackedSurface) {
 		layout.Surfaces[index].ZoneID = tracked.ZoneID
 		layout.Surfaces[index].Mode = LayoutMode(tracked.LayoutMode)
 		layout.Surfaces[index].Participation = SurfaceLayoutRole(tracked.LayoutRole)
+		layout.Surfaces[index].ParentSurfaceID = firstNonEmpty(tracked.ParentSurfaceID, tracked.Surface.ParentSurfaceID)
+		layout.Surfaces[index].PolicyClass = tracked.PolicyClass
+		layout.Surfaces[index].PolicyReason = tracked.PolicyReason
 		layout.Surfaces[index].Floating = tracked.LayoutRole == string(SurfaceLayoutRoleFloating)
 		found = true
 		break
 	}
 	if !found {
 		layout.Surfaces = append(layout.Surfaces, LayoutSurface{
-			SurfaceID:     tracked.Surface.ID,
-			Label:         tracked.Surface.Label,
-			AppID:         tracked.Surface.AppID,
-			Title:         tracked.Surface.Title,
-			Role:          tracked.Surface.Role,
-			OutputID:      tracked.OutputID,
-			WorkspaceID:   tracked.WorkspaceID,
-			ZoneID:        tracked.ZoneID,
-			Mode:          LayoutMode(tracked.LayoutMode),
-			Participation: SurfaceLayoutRole(tracked.LayoutRole),
-			Floating:      tracked.LayoutRole == string(SurfaceLayoutRoleFloating),
-			Focused:       tracked.Focused,
-			Visible:       tracked.Visible,
-			Geometry:      cloneGeometry(tracked.Geometry),
-			Order:         len(layout.Surfaces),
+			SurfaceID:       tracked.Surface.ID,
+			Label:           tracked.Surface.Label,
+			AppID:           tracked.Surface.AppID,
+			Title:           tracked.Surface.Title,
+			Role:            tracked.Surface.Role,
+			OutputID:        tracked.OutputID,
+			ParentSurfaceID: firstNonEmpty(tracked.ParentSurfaceID, tracked.Surface.ParentSurfaceID),
+			WorkspaceID:     tracked.WorkspaceID,
+			ZoneID:          tracked.ZoneID,
+			Mode:            LayoutMode(tracked.LayoutMode),
+			Participation:   SurfaceLayoutRole(tracked.LayoutRole),
+			PolicyClass:     tracked.PolicyClass,
+			PolicyReason:    tracked.PolicyReason,
+			Floating:        tracked.LayoutRole == string(SurfaceLayoutRoleFloating),
+			Focused:         tracked.Focused,
+			Visible:         tracked.Visible,
+			Geometry:        cloneGeometry(tracked.Geometry),
+			Order:           len(layout.Surfaces),
 		})
 	}
 	layout.Revision = bridge.layoutSeq
@@ -1423,10 +1438,16 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	tracked.ZoneID = event.Surface.ZoneID
 	tracked.LayoutMode = event.Surface.LayoutMode
 	tracked.LayoutRole = event.Surface.LayoutRole
+	tracked.PolicyClass = event.Surface.PolicyClass
+	tracked.PolicyReason = event.Surface.PolicyReason
+	tracked.ParentSurfaceID = event.Surface.ParentSurfaceID
 	tracked.Surface.WorkspaceID = tracked.WorkspaceID
 	tracked.Surface.ZoneID = tracked.ZoneID
 	tracked.Surface.LayoutMode = tracked.LayoutMode
 	tracked.Surface.LayoutRole = tracked.LayoutRole
+	tracked.Surface.PolicyClass = tracked.PolicyClass
+	tracked.Surface.PolicyReason = tracked.PolicyReason
+	tracked.Surface.ParentSurfaceID = tracked.ParentSurfaceID
 	if event.Event == EventFocused {
 		tracked.Focused = true
 	}
@@ -1529,6 +1550,18 @@ func mergeSurfaceReadback(next *TrackedSurface, previous TrackedSurface, event s
 		next.LayoutRole = previous.LayoutRole
 		next.Surface.LayoutRole = previous.LayoutRole
 	}
+	if next.PolicyClass == "" {
+		next.PolicyClass = previous.PolicyClass
+		next.Surface.PolicyClass = previous.PolicyClass
+	}
+	if next.PolicyReason == "" {
+		next.PolicyReason = previous.PolicyReason
+		next.Surface.PolicyReason = previous.PolicyReason
+	}
+	if next.ParentSurfaceID == "" {
+		next.ParentSurfaceID = previous.ParentSurfaceID
+		next.Surface.ParentSurfaceID = previous.ParentSurfaceID
+	}
 	next.FrameCount = previous.FrameCount
 	next.LastPresentTimestamp = previous.LastPresentTimestamp
 	next.ContentCommitCount = previous.ContentCommitCount
@@ -1567,6 +1600,9 @@ func applyLayoutDefaults(surface *TrackedSurface) {
 	surface.Surface.ZoneID = surface.ZoneID
 	surface.Surface.LayoutMode = surface.LayoutMode
 	surface.Surface.LayoutRole = surface.LayoutRole
+	surface.Surface.PolicyClass = surface.PolicyClass
+	surface.Surface.PolicyReason = surface.PolicyReason
+	surface.Surface.ParentSurfaceID = surface.ParentSurfaceID
 }
 
 func (bridge *Bridge) handleFocusResponse(event pluginEvent) {
@@ -1796,21 +1832,24 @@ func (bridge *Bridge) layoutFromTrackedLocked() LayoutState {
 		}
 		active := bridge.workspaceActiveOnOutputLocked(workspaceID, outputID)
 		layoutSurfaces = append(layoutSurfaces, LayoutSurface{
-			SurfaceID:     surface.Surface.ID,
-			Label:         label,
-			AppID:         surface.Surface.AppID,
-			Title:         surface.Surface.Title,
-			Role:          surface.Surface.Role,
-			OutputID:      outputID,
-			WorkspaceID:   workspaceID,
-			ZoneID:        zoneID,
-			Mode:          mode,
-			Participation: role,
-			Floating:      role == SurfaceLayoutRoleFloating,
-			Focused:       active && bridge.layoutFocusedLocked(surface),
-			Visible:       active && surface.Visible,
-			Geometry:      firstGeometry(surface),
-			Order:         index,
+			SurfaceID:       surface.Surface.ID,
+			Label:           label,
+			AppID:           surface.Surface.AppID,
+			Title:           surface.Surface.Title,
+			Role:            surface.Surface.Role,
+			OutputID:        outputID,
+			ParentSurfaceID: firstNonEmpty(surface.ParentSurfaceID, surface.Surface.ParentSurfaceID),
+			WorkspaceID:     workspaceID,
+			ZoneID:          zoneID,
+			Mode:            mode,
+			Participation:   role,
+			PolicyClass:     surface.PolicyClass,
+			PolicyReason:    surface.PolicyReason,
+			Floating:        role == SurfaceLayoutRoleFloating,
+			Focused:         active && bridge.layoutFocusedLocked(surface),
+			Visible:         active && surface.Visible,
+			Geometry:        firstGeometry(surface),
+			Order:           index,
 		})
 	}
 
@@ -2077,6 +2116,9 @@ func (bridge *Bridge) applyWorkspaceAuthorityToLayoutLocked(layout *LayoutState)
 			if surface.OutputID == "" {
 				surface.OutputID = firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID)
 			}
+			surface.ParentSurfaceID = firstNonEmpty(tracked.ParentSurfaceID, tracked.Surface.ParentSurfaceID, surface.ParentSurfaceID)
+			surface.PolicyClass = tracked.PolicyClass
+			surface.PolicyReason = tracked.PolicyReason
 			surfaceActive := bridge.workspaceActiveOnOutputLocked(surface.WorkspaceID, surface.OutputID)
 			surface.Visible = tracked.Visible && surfaceActive
 			surface.Focused = surfaceActive && bridge.layoutFocusedLocked(tracked)
@@ -2175,6 +2217,12 @@ func normalizeLayoutState(layout *LayoutState) {
 		}
 		if surface.Participation == "" {
 			surface.Participation = SurfaceLayoutRoleTiled
+		}
+		if surface.PolicyClass == "" {
+			surface.PolicyClass, surface.PolicyReason = defaultLayoutSurfacePolicy(*surface)
+		}
+		if surface.PolicyReason == "" {
+			_, surface.PolicyReason = defaultLayoutSurfacePolicy(*surface)
 		}
 		surface.Floating = surface.Participation == SurfaceLayoutRoleFloating
 		surface.Order = index

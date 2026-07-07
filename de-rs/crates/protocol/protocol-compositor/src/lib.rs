@@ -41,11 +41,7 @@ pub enum LayoutMode {
 }
 
 impl LayoutMode {
-    pub const ALL: [LayoutMode; 3] = [
-        LayoutMode::Freeform,
-        LayoutMode::Zones,
-        LayoutMode::Columns,
-    ];
+    pub const ALL: [LayoutMode; 3] = [LayoutMode::Freeform, LayoutMode::Zones, LayoutMode::Columns];
 
     pub fn wire_name(&self) -> &'static str {
         match self {
@@ -75,6 +71,44 @@ impl SurfaceLayoutParticipation {
             SurfaceLayoutParticipation::Tiled => "tiled",
             SurfaceLayoutParticipation::Floating => "floating",
             SurfaceLayoutParticipation::Transient => "transient",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SurfacePolicyClass {
+    Work,
+    Transient,
+    FloatingOverride,
+    ShellChrome,
+    Stale,
+    Unsupported,
+    NoParent,
+    BackendLimited,
+}
+
+impl SurfacePolicyClass {
+    pub const ALL: [SurfacePolicyClass; 8] = [
+        SurfacePolicyClass::Work,
+        SurfacePolicyClass::Transient,
+        SurfacePolicyClass::FloatingOverride,
+        SurfacePolicyClass::ShellChrome,
+        SurfacePolicyClass::Stale,
+        SurfacePolicyClass::Unsupported,
+        SurfacePolicyClass::NoParent,
+        SurfacePolicyClass::BackendLimited,
+    ];
+
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            SurfacePolicyClass::Work => "work",
+            SurfacePolicyClass::Transient => "transient",
+            SurfacePolicyClass::FloatingOverride => "floating_override",
+            SurfacePolicyClass::ShellChrome => "shell_chrome",
+            SurfacePolicyClass::Stale => "stale",
+            SurfacePolicyClass::Unsupported => "unsupported",
+            SurfacePolicyClass::NoParent => "no_parent",
+            SurfacePolicyClass::BackendLimited => "backend_limited",
         }
     }
 }
@@ -125,7 +159,10 @@ impl LayoutActionKind {
 
 #[cfg(test)]
 mod tests {
-    use super::{LayoutActionKind, LayoutMode, SurfaceEventKind, SurfaceLayoutParticipation};
+    use super::{
+        LayoutActionKind, LayoutMode, SurfaceEventKind, SurfaceLayoutParticipation,
+        SurfacePolicyClass,
+    };
 
     #[test]
     fn surface_event_wire_names_are_stable() {
@@ -146,6 +183,24 @@ mod tests {
             .map(SurfaceLayoutParticipation::wire_name)
             .collect();
         assert_eq!(participation, vec!["tiled", "floating", "transient"]);
+
+        let policy_classes: Vec<&str> = SurfacePolicyClass::ALL
+            .iter()
+            .map(SurfacePolicyClass::wire_name)
+            .collect();
+        assert_eq!(
+            policy_classes,
+            vec![
+                "work",
+                "transient",
+                "floating_override",
+                "shell_chrome",
+                "stale",
+                "unsupported",
+                "no_parent",
+                "backend_limited",
+            ]
+        );
 
         let actions: Vec<&str> = LayoutActionKind::ALL
             .iter()

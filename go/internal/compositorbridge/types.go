@@ -34,26 +34,29 @@ type LayerShellSurfaceMetadata struct {
 }
 
 type CompositorSurface struct {
-	ID            string                     `json:"id"`
-	WayfireViewID uint32                     `json:"wayfire_view_id"`
-	SurfaceKind   string                     `json:"surface_kind,omitempty"`
-	AppID         string                     `json:"app_id,omitempty"`
-	Title         string                     `json:"title,omitempty"`
-	Role          string                     `json:"role,omitempty"`
-	Label         string                     `json:"label,omitempty"`
-	LayerShell    *LayerShellSurfaceMetadata `json:"layer_shell,omitempty"`
-	Geometry      *SurfaceGeometry           `json:"geometry,omitempty"`
-	PixelSize     *SurfaceGeometry           `json:"pixel_size,omitempty"`
-	ScaleFactor   float64                    `json:"scale_factor,omitempty"`
-	Visible       *bool                      `json:"visible,omitempty"`
-	Fullscreen    *bool                      `json:"fullscreen,omitempty"`
-	Maximized     *bool                      `json:"maximized,omitempty"`
-	Minimized     *bool                      `json:"minimized,omitempty"`
-	OutputID      string                     `json:"output_id,omitempty"`
-	WorkspaceID   string                     `json:"workspace_id,omitempty"`
-	ZoneID        string                     `json:"zone_id,omitempty"`
-	LayoutMode    string                     `json:"layout_mode,omitempty"`
-	LayoutRole    string                     `json:"layout_role,omitempty"`
+	ID              string                     `json:"id"`
+	WayfireViewID   uint32                     `json:"wayfire_view_id"`
+	SurfaceKind     string                     `json:"surface_kind,omitempty"`
+	AppID           string                     `json:"app_id,omitempty"`
+	Title           string                     `json:"title,omitempty"`
+	Role            string                     `json:"role,omitempty"`
+	Label           string                     `json:"label,omitempty"`
+	ParentSurfaceID string                     `json:"parent_surface_id,omitempty"`
+	LayerShell      *LayerShellSurfaceMetadata `json:"layer_shell,omitempty"`
+	Geometry        *SurfaceGeometry           `json:"geometry,omitempty"`
+	PixelSize       *SurfaceGeometry           `json:"pixel_size,omitempty"`
+	ScaleFactor     float64                    `json:"scale_factor,omitempty"`
+	Visible         *bool                      `json:"visible,omitempty"`
+	Fullscreen      *bool                      `json:"fullscreen,omitempty"`
+	Maximized       *bool                      `json:"maximized,omitempty"`
+	Minimized       *bool                      `json:"minimized,omitempty"`
+	OutputID        string                     `json:"output_id,omitempty"`
+	WorkspaceID     string                     `json:"workspace_id,omitempty"`
+	ZoneID          string                     `json:"zone_id,omitempty"`
+	LayoutMode      string                     `json:"layout_mode,omitempty"`
+	LayoutRole      string                     `json:"layout_role,omitempty"`
+	PolicyClass     SurfacePolicyClass         `json:"policy_class,omitempty"`
+	PolicyReason    string                     `json:"policy_reason,omitempty"`
 }
 
 type ClientIdentity struct {
@@ -63,30 +66,33 @@ type ClientIdentity struct {
 }
 
 type TrackedSurface struct {
-	Surface                    CompositorSurface `json:"surface"`
-	Client                     ClientIdentity    `json:"client"`
-	LastEvent                  string            `json:"last_event"`
-	Device                     string            `json:"device,omitempty"`
-	UpdatedAt                  time.Time         `json:"updated_at"`
-	Geometry                   *SurfaceGeometry  `json:"geometry,omitempty"`
-	Focused                    bool              `json:"focused"`
-	PixelSize                  *SurfaceGeometry  `json:"pixel_size,omitempty"`
-	ScaleFactor                float64           `json:"scale_factor,omitempty"`
-	Capturable                 bool              `json:"capturable"`
-	InputInjectable            bool              `json:"input_injectable"`
-	FrameCount                 uint64            `json:"frame_count"`
-	LastPresentTimestamp       *time.Time        `json:"last_present_timestamp,omitempty"`
-	ContentCommitCount         uint64            `json:"content_commit_count,omitempty"`
-	LastContentCommitTimestamp *time.Time        `json:"last_content_commit_timestamp,omitempty"`
-	CaptureCount               uint64            `json:"capture_count,omitempty"`
-	LastCaptureTimestamp       *time.Time        `json:"last_capture_timestamp,omitempty"`
-	Visible                    bool              `json:"visible"`
-	OutputID                   string            `json:"output_id,omitempty"`
-	WorkspaceID                string            `json:"workspace_id,omitempty"`
-	ZoneID                     string            `json:"zone_id,omitempty"`
-	LayoutMode                 string            `json:"layout_mode,omitempty"`
-	LayoutRole                 string            `json:"layout_role,omitempty"`
-	LayoutRevision             uint64            `json:"layout_revision,omitempty"`
+	Surface                    CompositorSurface  `json:"surface"`
+	Client                     ClientIdentity     `json:"client"`
+	LastEvent                  string             `json:"last_event"`
+	Device                     string             `json:"device,omitempty"`
+	UpdatedAt                  time.Time          `json:"updated_at"`
+	Geometry                   *SurfaceGeometry   `json:"geometry,omitempty"`
+	Focused                    bool               `json:"focused"`
+	PixelSize                  *SurfaceGeometry   `json:"pixel_size,omitempty"`
+	ScaleFactor                float64            `json:"scale_factor,omitempty"`
+	Capturable                 bool               `json:"capturable"`
+	InputInjectable            bool               `json:"input_injectable"`
+	FrameCount                 uint64             `json:"frame_count"`
+	LastPresentTimestamp       *time.Time         `json:"last_present_timestamp,omitempty"`
+	ContentCommitCount         uint64             `json:"content_commit_count,omitempty"`
+	LastContentCommitTimestamp *time.Time         `json:"last_content_commit_timestamp,omitempty"`
+	CaptureCount               uint64             `json:"capture_count,omitempty"`
+	LastCaptureTimestamp       *time.Time         `json:"last_capture_timestamp,omitempty"`
+	Visible                    bool               `json:"visible"`
+	OutputID                   string             `json:"output_id,omitempty"`
+	WorkspaceID                string             `json:"workspace_id,omitempty"`
+	ZoneID                     string             `json:"zone_id,omitempty"`
+	LayoutMode                 string             `json:"layout_mode,omitempty"`
+	LayoutRole                 string             `json:"layout_role,omitempty"`
+	PolicyClass                SurfacePolicyClass `json:"policy_class,omitempty"`
+	PolicyReason               string             `json:"policy_reason,omitempty"`
+	ParentSurfaceID            string             `json:"parent_surface_id,omitempty"`
+	LayoutRevision             uint64             `json:"layout_revision,omitempty"`
 }
 
 type ListSurfacesResponse struct {
@@ -109,22 +115,38 @@ const (
 	SurfaceLayoutRoleTransient SurfaceLayoutRole = "transient"
 )
 
+type SurfacePolicyClass string
+
+const (
+	SurfacePolicyClassWork             SurfacePolicyClass = "work"
+	SurfacePolicyClassTransient        SurfacePolicyClass = "transient"
+	SurfacePolicyClassFloatingOverride SurfacePolicyClass = "floating_override"
+	SurfacePolicyClassShellChrome      SurfacePolicyClass = "shell_chrome"
+	SurfacePolicyClassStale            SurfacePolicyClass = "stale"
+	SurfacePolicyClassUnsupported      SurfacePolicyClass = "unsupported"
+	SurfacePolicyClassNoParent         SurfacePolicyClass = "no_parent"
+	SurfacePolicyClassBackendLimited   SurfacePolicyClass = "backend_limited"
+)
+
 type LayoutSurface struct {
-	SurfaceID     string            `json:"surface_id"`
-	Label         string            `json:"label"`
-	AppID         string            `json:"app_id,omitempty"`
-	Title         string            `json:"title,omitempty"`
-	Role          string            `json:"role,omitempty"`
-	OutputID      string            `json:"output_id,omitempty"`
-	WorkspaceID   string            `json:"workspace_id"`
-	ZoneID        string            `json:"zone_id"`
-	Mode          LayoutMode        `json:"mode"`
-	Participation SurfaceLayoutRole `json:"participation"`
-	Floating      bool              `json:"floating"`
-	Focused       bool              `json:"focused"`
-	Visible       bool              `json:"visible"`
-	Geometry      *SurfaceGeometry  `json:"geometry,omitempty"`
-	Order         int               `json:"order"`
+	SurfaceID       string             `json:"surface_id"`
+	Label           string             `json:"label"`
+	AppID           string             `json:"app_id,omitempty"`
+	Title           string             `json:"title,omitempty"`
+	Role            string             `json:"role,omitempty"`
+	OutputID        string             `json:"output_id,omitempty"`
+	ParentSurfaceID string             `json:"parent_surface_id"`
+	WorkspaceID     string             `json:"workspace_id"`
+	ZoneID          string             `json:"zone_id"`
+	Mode            LayoutMode         `json:"mode"`
+	Participation   SurfaceLayoutRole  `json:"participation"`
+	PolicyClass     SurfacePolicyClass `json:"policy_class"`
+	PolicyReason    string             `json:"policy_reason"`
+	Floating        bool               `json:"floating"`
+	Focused         bool               `json:"focused"`
+	Visible         bool               `json:"visible"`
+	Geometry        *SurfaceGeometry   `json:"geometry,omitempty"`
+	Order           int                `json:"order"`
 }
 
 type LayoutZone struct {

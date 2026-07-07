@@ -1,5 +1,5 @@
 use protocol_compositor::{
-    LayoutActionKind, LayoutMode, SurfaceEventKind, SurfaceLayoutParticipation,
+    LayoutActionKind, LayoutMode, SurfaceEventKind, SurfaceLayoutParticipation, SurfacePolicyClass,
 };
 use protocol_evidence::{CaptureClassification, VisualStatus};
 use protocol_os_boundary::AgentState;
@@ -36,6 +36,14 @@ pub fn generate_typescript_contracts() -> String {
         SurfaceLayoutParticipation::ALL
             .iter()
             .map(SurfaceLayoutParticipation::wire_name)
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+    let surface_policy_class_union = typescript_string_union(
+        "SurfacePolicyClass",
+        SurfacePolicyClass::ALL
+            .iter()
+            .map(SurfacePolicyClass::wire_name)
             .collect::<Vec<_>>()
             .as_slice(),
     );
@@ -85,6 +93,8 @@ pub fn generate_typescript_contracts() -> String {
         "",
         surface_layout_participation_union.as_str(),
         "",
+        surface_policy_class_union.as_str(),
+        "",
         layout_action_kind_union.as_str(),
         "",
         "export interface SurfaceGeometry {",
@@ -101,10 +111,13 @@ pub fn generate_typescript_contracts() -> String {
         "  readonly title: string;",
         "  readonly role: string;",
         "  readonly outputId: string;",
+        "  readonly parentSurfaceId: string;",
         "  readonly workspaceId: string;",
         "  readonly zoneId: string;",
         "  readonly mode: LayoutMode;",
         "  readonly participation: SurfaceLayoutParticipation;",
+        "  readonly policyClass: SurfacePolicyClass;",
+        "  readonly policyReason: string;",
         "  readonly floating: boolean;",
         "  readonly focused: boolean;",
         "  readonly visible: boolean;",
@@ -209,6 +222,8 @@ mod tests {
         let generated = generate_typescript_contracts();
         assert!(generated.contains("export interface SurfaceEvent"));
         assert!(generated.contains("export type LayoutActionKind"));
+        assert!(generated.contains("export type SurfacePolicyClass"));
+        assert!(generated.contains("readonly policyClass: SurfacePolicyClass"));
         assert!(generated.contains("export interface LayoutState"));
         assert!(generated.contains("export interface CatalogAppsResponse"));
         assert!(generated.contains("export type AgentState"));

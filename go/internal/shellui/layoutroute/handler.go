@@ -51,21 +51,24 @@ type layoutGaps struct {
 }
 
 type layoutSurface struct {
-	SurfaceID     string                 `json:"surfaceId"`
-	Label         string                 `json:"label"`
-	AppID         string                 `json:"appId,omitempty"`
-	Title         string                 `json:"title,omitempty"`
-	Role          string                 `json:"role,omitempty"`
-	OutputID      string                 `json:"outputId,omitempty"`
-	WorkspaceID   string                 `json:"workspaceId"`
-	ZoneID        string                 `json:"zoneId"`
-	Mode          string                 `json:"mode"`
-	Participation string                 `json:"participation"`
-	Floating      bool                   `json:"floating"`
-	Focused       bool                   `json:"focused"`
-	Visible       bool                   `json:"visible"`
-	Geometry      *surfaces.GeometryView `json:"geometry,omitempty"`
-	Order         int                    `json:"order"`
+	SurfaceID       string                 `json:"surfaceId"`
+	Label           string                 `json:"label"`
+	AppID           string                 `json:"appId,omitempty"`
+	Title           string                 `json:"title,omitempty"`
+	Role            string                 `json:"role,omitempty"`
+	OutputID        string                 `json:"outputId,omitempty"`
+	ParentSurfaceID string                 `json:"parentSurfaceId"`
+	WorkspaceID     string                 `json:"workspaceId"`
+	ZoneID          string                 `json:"zoneId"`
+	Mode            string                 `json:"mode"`
+	Participation   string                 `json:"participation"`
+	PolicyClass     string                 `json:"policyClass"`
+	PolicyReason    string                 `json:"policyReason"`
+	Floating        bool                   `json:"floating"`
+	Focused         bool                   `json:"focused"`
+	Visible         bool                   `json:"visible"`
+	Geometry        *surfaces.GeometryView `json:"geometry,omitempty"`
+	Order           int                    `json:"order"`
 }
 
 type layoutZone struct {
@@ -90,21 +93,24 @@ type compositorctlLayoutResponse struct {
 		Revision uint64                      `json:"revision"`
 		Settings compositorctlLayoutSettings `json:"settings"`
 		Surfaces []struct {
-			SurfaceID     string                 `json:"surface_id"`
-			Label         string                 `json:"label"`
-			AppID         string                 `json:"app_id"`
-			Title         string                 `json:"title"`
-			Role          string                 `json:"role"`
-			OutputID      string                 `json:"output_id"`
-			WorkspaceID   string                 `json:"workspace_id"`
-			ZoneID        string                 `json:"zone_id"`
-			Mode          string                 `json:"mode"`
-			Participation string                 `json:"participation"`
-			Floating      bool                   `json:"floating"`
-			Focused       bool                   `json:"focused"`
-			Visible       bool                   `json:"visible"`
-			Geometry      *surfaces.GeometryView `json:"geometry"`
-			Order         int                    `json:"order"`
+			SurfaceID       string                 `json:"surface_id"`
+			Label           string                 `json:"label"`
+			AppID           string                 `json:"app_id"`
+			Title           string                 `json:"title"`
+			Role            string                 `json:"role"`
+			OutputID        string                 `json:"output_id"`
+			ParentSurfaceID string                 `json:"parent_surface_id"`
+			WorkspaceID     string                 `json:"workspace_id"`
+			ZoneID          string                 `json:"zone_id"`
+			Mode            string                 `json:"mode"`
+			Participation   string                 `json:"participation"`
+			PolicyClass     string                 `json:"policy_class"`
+			PolicyReason    string                 `json:"policy_reason"`
+			Floating        bool                   `json:"floating"`
+			Focused         bool                   `json:"focused"`
+			Visible         bool                   `json:"visible"`
+			Geometry        *surfaces.GeometryView `json:"geometry"`
+			Order           int                    `json:"order"`
 		} `json:"surfaces"`
 		Workspaces []struct {
 			ID       string `json:"id"`
@@ -365,21 +371,24 @@ func decodeCompositorctlLayout(payload []byte) (layoutState, error) {
 	}
 	for _, surface := range response.Layout.Surfaces {
 		state.Surfaces = append(state.Surfaces, layoutSurface{
-			SurfaceID:     surface.SurfaceID,
-			Label:         surface.Label,
-			AppID:         surface.AppID,
-			Title:         surface.Title,
-			Role:          surface.Role,
-			OutputID:      surface.OutputID,
-			WorkspaceID:   firstNonEmpty(surface.WorkspaceID, "workspace-1"),
-			ZoneID:        firstNonEmpty(surface.ZoneID, "primary"),
-			Mode:          firstNonEmpty(surface.Mode, state.Mode),
-			Participation: firstNonEmpty(surface.Participation, "floating"),
-			Floating:      surface.Floating,
-			Focused:       surface.Focused,
-			Visible:       surface.Visible,
-			Geometry:      surface.Geometry,
-			Order:         surface.Order,
+			SurfaceID:       surface.SurfaceID,
+			Label:           surface.Label,
+			AppID:           surface.AppID,
+			Title:           surface.Title,
+			Role:            surface.Role,
+			OutputID:        surface.OutputID,
+			ParentSurfaceID: surface.ParentSurfaceID,
+			WorkspaceID:     firstNonEmpty(surface.WorkspaceID, "workspace-1"),
+			ZoneID:          firstNonEmpty(surface.ZoneID, "primary"),
+			Mode:            firstNonEmpty(surface.Mode, state.Mode),
+			Participation:   firstNonEmpty(surface.Participation, "floating"),
+			PolicyClass:     firstNonEmpty(surface.PolicyClass, "work"),
+			PolicyReason:    firstNonEmpty(surface.PolicyReason, "layout bridge policy"),
+			Floating:        surface.Floating,
+			Focused:         surface.Focused,
+			Visible:         surface.Visible,
+			Geometry:        surface.Geometry,
+			Order:           surface.Order,
 		})
 	}
 	for _, workspace := range response.Layout.Workspaces {
@@ -446,22 +455,26 @@ func collectLayoutState(request *http.Request, surfaceProvider surfaceroute.Prov
 		label := firstNonEmpty(view.Label, fmt.Sprintf("%d", order+1))
 		mode := firstNonEmpty(view.LayoutMode, "freeform")
 		participation := firstNonEmpty(view.LayoutRole, "floating")
+		policyClass, policyReason := policyForSurfaceView(view, participation)
 		layoutSurfaces = append(layoutSurfaces, layoutSurface{
-			SurfaceID:     view.ID,
-			Label:         label,
-			AppID:         view.AppID,
-			Title:         view.Title,
-			Role:          view.Role,
-			OutputID:      view.OutputID,
-			WorkspaceID:   firstNonEmpty(view.WorkspaceID, "workspace-1"),
-			ZoneID:        firstNonEmpty(view.ZoneID, "primary"),
-			Mode:          mode,
-			Participation: participation,
-			Floating:      participation == "floating",
-			Focused:       view.Focused,
-			Visible:       view.Visible || view.Mapped,
-			Geometry:      view.Geometry,
-			Order:         order,
+			SurfaceID:       view.ID,
+			Label:           label,
+			AppID:           view.AppID,
+			Title:           view.Title,
+			Role:            view.Role,
+			OutputID:        view.OutputID,
+			ParentSurfaceID: view.ParentSurfaceID,
+			WorkspaceID:     firstNonEmpty(view.WorkspaceID, "workspace-1"),
+			ZoneID:          firstNonEmpty(view.ZoneID, "primary"),
+			Mode:            mode,
+			Participation:   participation,
+			PolicyClass:     policyClass,
+			PolicyReason:    policyReason,
+			Floating:        participation == "floating",
+			Focused:         view.Focused,
+			Visible:         view.Visible || view.Mapped,
+			Geometry:        view.Geometry,
+			Order:           order,
 		})
 	}
 	return layoutState{
@@ -471,6 +484,36 @@ func collectLayoutState(request *http.Request, surfaceProvider surfaceroute.Prov
 		Surfaces:   layoutSurfaces,
 		Workspaces: []layoutWorkspace{workspaceFromSurfaces(layoutSurfaces)},
 	}
+}
+
+func policyForSurfaceView(view surfaces.SurfaceView, participation string) (string, string) {
+	if view.PolicyClass != "" {
+		return view.PolicyClass, firstNonEmpty(view.PolicyReason, "surface policy")
+	}
+	switch participation {
+	case "transient":
+		if transientRole(view.Role) && view.ParentSurfaceID == "" {
+			return "no_parent", "transient surface has no parent surface"
+		}
+		return "transient", "transient surface"
+	case "floating":
+		return "floating_override", "floating layout surface"
+	default:
+		return "work", "normal work surface"
+	}
+}
+
+func transientRole(role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	if role == "" {
+		return false
+	}
+	for _, marker := range []string{"dialog", "modal", "popup", "popover", "menu", "tooltip", "transient", "unmanaged"} {
+		if strings.Contains(role, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultLayoutSettings(mode string) layoutSettings {

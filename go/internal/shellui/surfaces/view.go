@@ -14,6 +14,7 @@ type SurfaceView struct {
 	Role               string        `json:"role,omitempty"`
 	SurfaceKind        string        `json:"surfaceKind,omitempty"`
 	LaunchID           string        `json:"launchId,omitempty"`
+	ParentSurfaceID    string        `json:"parentSurfaceId,omitempty"`
 	OwnerUID           int           `json:"ownerUid"`
 	Mapped             bool          `json:"mapped"`
 	Focused            bool          `json:"focused"`
@@ -26,6 +27,8 @@ type SurfaceView struct {
 	ZoneID             string        `json:"zoneId,omitempty"`
 	LayoutMode         string        `json:"layoutMode,omitempty"`
 	LayoutRole         string        `json:"layoutRole,omitempty"`
+	PolicyClass        string        `json:"policyClass,omitempty"`
+	PolicyReason       string        `json:"policyReason,omitempty"`
 	Geometry           *GeometryView `json:"geometry,omitempty"`
 	InputDeniedCount   int           `json:"inputDeniedCount"`
 	FrameCount         int           `json:"frameCount,omitempty"`
