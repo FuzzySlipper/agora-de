@@ -2418,16 +2418,18 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     .panel {
       align-items: center;
       background: var(--agora-surface);
-      border-top: 4px solid var(--agora-evidence-accent);
+      background: color-mix(in srgb, var(--agora-surface) 92%%, var(--agora-bg));
+      border-top: 3px solid var(--agora-evidence-accent);
       bottom: 0;
-      box-shadow: inset 0 1px 0 var(--agora-border-subtle);
+      box-shadow: inset 0 1px 0 var(--agora-border-subtle), 0 -10px 26px rgba(0, 0, 0, 0.28);
       box-sizing: border-box;
-      display: flex;
-      gap: var(--agora-panel-gap);
+      display: grid;
+      gap: 12px;
+      grid-template-columns: auto minmax(240px, 1fr) auto auto auto auto;
       height: var(--agora-panel-height);
       left: 0;
       min-height: var(--agora-panel-height);
-      padding: 0 var(--agora-panel-padding-x);
+      padding: 10px var(--agora-panel-padding-x);
       position: fixed;
       right: 0;
       width: 100vw;
@@ -2438,8 +2440,16 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     button:disabled {
       opacity: 0.55;
     }
-    .brand,
-    .control,
+    .taskbar-start,
+    .taskbar-tray,
+    .workspace-strip {
+      align-items: center;
+      display: inline-flex;
+      gap: 8px;
+      min-width: 0;
+    }
+    .start-button,
+    .taskbar-icon-button,
     .workspace,
     .layout-status,
     .status,
@@ -2449,35 +2459,35 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       display: inline-flex;
       height: var(--agora-control-height);
       justify-content: center;
-      padding: 0 16px;
+      min-width: 44px;
+      padding: 0 12px;
       white-space: nowrap;
     }
-    .brand {
+    .start-button {
       background: var(--agora-evidence-strong);
-      color: var(--agora-bg);
-      min-width: 132px;
+      border: 2px solid var(--agora-evidence-accent);
+      color: var(--agora-fg);
+      cursor: pointer;
+      font-weight: 800;
+      min-width: 96px;
     }
-    .control {
+    .start-button[aria-pressed="true"] {
       background: var(--agora-accent);
-      border: 0;
-      color: var(--agora-fg);
-      min-width: 94px;
+      color: var(--agora-bg);
     }
-    .control.secondary {
+    .taskbar-icon-button {
       background: var(--agora-surface-raised);
       border: 2px solid var(--agora-border);
-    }
-    .app-search {
-      background: var(--agora-surface-raised);
-      border: 2px solid var(--agora-border);
-      border-radius: var(--agora-radius-control);
-      box-sizing: border-box;
       color: var(--agora-fg);
-      font: inherit;
-      height: var(--agora-control-height);
-      min-width: 124px;
-      padding: 0 12px;
-      width: 124px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+    .taskbar-icon-button:hover,
+    .workspace:hover,
+    .layout-status:hover,
+    .wm-menu summary:hover,
+    .task-button:hover {
+      border-color: var(--agora-accent);
     }
     .workspace,
     .layout-status,
@@ -2486,25 +2496,45 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border: 2px solid var(--agora-border);
       color: var(--agora-fg);
     }
-    button.workspace {
+    .workspace {
       background: var(--agora-surface-raised);
+      cursor: pointer;
       font: inherit;
+      min-width: 48px;
+      position: relative;
+    }
+    .workspace.active {
+      background: var(--agora-surface-strong);
+      border-color: var(--agora-accent);
+      box-shadow: inset 0 -4px 0 var(--agora-accent);
+    }
+    .workspace-count {
+      align-items: center;
+      background: var(--agora-accent);
+      border-radius: 999px;
+      color: var(--agora-bg);
+      display: inline-flex;
+      font: 800 12px var(--agora-font-family);
+      height: 18px;
+      justify-content: center;
+      margin-left: 6px;
+      min-width: 18px;
+      padding: 0 5px;
     }
     .layout-status {
       background: var(--agora-surface-raised);
+      cursor: pointer;
       font: inherit;
-      min-width: 88px;
+      min-width: 92px;
     }
-    .dock-section {
+    .taskbar-tasks {
       align-items: center;
       display: flex;
-      gap: 10px;
+      gap: 8px;
       min-width: 0;
-    }
-    .running {
-      flex: 1 1 auto;
       overflow: hidden;
     }
+    .task-button,
     .dock-item {
       align-items: center;
       background: var(--agora-surface-raised);
@@ -2512,25 +2542,55 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border-radius: var(--agora-radius-control);
       color: var(--agora-fg);
       display: inline-flex;
+      gap: 10px;
       height: var(--agora-control-height);
-      max-width: 180px;
-      min-width: 86px;
+      min-width: 0;
       overflow: hidden;
       padding: 0 12px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .task-button {
+      cursor: pointer;
+      flex: 0 1 220px;
+      max-width: 240px;
+      min-width: 118px;
+    }
+    .task-button.focused {
+      background: var(--agora-surface-strong);
+      border-color: var(--agora-accent);
+      box-shadow: inset 0 -4px 0 var(--agora-accent);
+    }
+    .task-icon {
+      align-items: center;
+      background: var(--agora-evidence-strong);
+      border: 1px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      display: inline-flex;
+      flex: 0 0 28px;
+      font: 800 14px var(--agora-font-family);
+      height: 28px;
+      justify-content: center;
+      width: 28px;
+    }
+    .task-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     button.dock-item {
       cursor: pointer;
     }
-    .dock-item.focused {
-      border-color: var(--agora-accent);
-      box-shadow: inset 0 -3px 0 var(--agora-accent);
+    .dock-item.muted {
+      flex: 0 0 auto;
+      min-width: 132px;
     }
     .surface-actions {
       align-items: center;
       display: inline-flex;
       gap: 6px;
+      min-width: 0;
     }
     .surface-action {
       background: var(--agora-surface-raised);
@@ -2541,11 +2601,46 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       min-width: 58px;
       padding: 0 10px;
     }
+    .wm-menu {
+      position: relative;
+    }
+    .wm-menu summary {
+      align-items: center;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      box-sizing: border-box;
+      color: var(--agora-fg);
+      cursor: pointer;
+      display: inline-flex;
+      height: var(--agora-control-height);
+      justify-content: center;
+      list-style: none;
+      min-width: 64px;
+      padding: 0 12px;
+      white-space: nowrap;
+    }
+    .wm-menu summary::-webkit-details-marker {
+      display: none;
+    }
     .wm-controls {
-      flex: 0 1 auto;
-      max-width: 760px;
-      overflow-x: auto;
-      padding-bottom: 2px;
+      align-items: center;
+      background: var(--agora-surface);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      bottom: calc(var(--agora-panel-height) - 2px);
+      box-shadow: 0 -10px 22px rgba(0, 0, 0, 0.35);
+      display: none;
+      gap: 8px;
+      padding: 10px;
+      position: absolute;
+      right: 0;
+      width: min(760px, calc(100vw - 44px));
+      z-index: 5;
+    }
+    .wm-menu[open] .wm-controls {
+      display: flex;
+      flex-wrap: wrap;
     }
     .wm-control {
       background: var(--agora-surface);
@@ -2581,12 +2676,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       max-width: 170px;
       min-width: 104px;
     }
-    .spacer {
-      flex: 1 1 auto;
-      min-width: 24px;
-    }
     .status {
-      min-width: 88px;
+      background: var(--agora-surface-strong);
+      min-width: 96px;
     }
     .status.ready {
       border-color: var(--agora-accent);
@@ -2597,40 +2689,66 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     .muted {
       color: var(--agora-text-muted);
     }
+    @media (max-width: 980px) {
+      .panel {
+        gap: 8px;
+        grid-template-columns: auto minmax(120px, 1fr) auto auto;
+        padding-inline: 10px;
+      }
+      .layout-status,
+      .status {
+        display: none;
+      }
+      .taskbar-icon-button {
+        min-width: 40px;
+        padding: 0 10px;
+      }
+      .start-button {
+        min-width: 76px;
+      }
+    }
   </style>
 </head>
 <body data-surface="%s">
-  <main class="panel" aria-label="Agora DE shell panel">
-    <span class="brand">agora-de</span>
-    <button class="control" id="apps-button" type="button" aria-pressed="false">Apps</button>
-    <button class="control secondary" id="refresh-button" type="button">Refresh</button>
-    <button class="control secondary" id="operator-button" type="button">Status</button>
-    <section class="dock-section running" id="running-list" aria-label="Running surfaces">
+  <main class="panel taskbar" aria-label="Agora DE shell panel">
+    <section class="taskbar-start" aria-label="Shell controls">
+      <button class="start-button" id="apps-button" type="button" aria-pressed="false">Start</button>
+      <button class="taskbar-icon-button" id="refresh-button" type="button" title="Refresh">R</button>
+      <button class="taskbar-icon-button" id="operator-button" type="button" title="Status">S</button>
+    </section>
+    <section class="taskbar-tasks running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
     </section>
-    <section class="dock-section wm-controls" id="wm-controls" aria-label="Window controls">
-      <span class="dock-item surface-meta target-meta" id="target-label">no target</span>
-      <button class="wm-control" id="focus-prev-button" type="button">Prev</button>
-      <button class="wm-control" id="focus-next-button" type="button">Next</button>
-      <button class="wm-control primary" id="promote-button" type="button">Master</button>
-      <button class="wm-control" id="move-zone-button" type="button">Move</button>
-      <button class="wm-control" id="float-button" type="button">Float</button>
-      <button class="wm-control" id="fullscreen-button" type="button">Full</button>
-      <button class="wm-control" id="maximize-button" type="button">Max</button>
-      <button class="wm-control" id="minimize-button" type="button">Min</button>
-      <button class="wm-control" id="close-focus-button" type="button">Close</button>
-      <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
-      <button class="wm-control" id="rule-button" type="button">Rule</button>
-      <button class="wm-control" id="master-count-button" type="button">M1</button>
-      <button class="wm-control" id="master-ratio-button" type="button">50%%</button>
-      <button class="wm-control" id="gaps-button" type="button">Gap0</button>
-      <button class="wm-control" id="smart-gaps-button" type="button">Smart</button>
-      <span class="dock-item surface-meta wm-rule" id="layout-rule-label">master_stack</span>
+    <details class="wm-menu" id="wm-menu">
+      <summary>WM</summary>
+      <section class="wm-controls" id="wm-controls" aria-label="Window controls">
+        <span class="dock-item surface-meta target-meta" id="target-label">no target</span>
+        <button class="wm-control" id="focus-prev-button" type="button">Prev</button>
+        <button class="wm-control" id="focus-next-button" type="button">Next</button>
+        <button class="wm-control primary" id="promote-button" type="button">Master</button>
+        <button class="wm-control" id="move-zone-button" type="button">Move</button>
+        <button class="wm-control" id="float-button" type="button">Float</button>
+        <button class="wm-control" id="fullscreen-button" type="button">Full</button>
+        <button class="wm-control" id="maximize-button" type="button">Max</button>
+        <button class="wm-control" id="minimize-button" type="button">Min</button>
+        <button class="wm-control" id="close-focus-button" type="button">Close</button>
+        <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
+        <button class="wm-control" id="rule-button" type="button">Rule</button>
+        <button class="wm-control" id="master-count-button" type="button">M1</button>
+        <button class="wm-control" id="master-ratio-button" type="button">50%%</button>
+        <button class="wm-control" id="gaps-button" type="button">Gap0</button>
+        <button class="wm-control" id="smart-gaps-button" type="button">Smart</button>
+        <span class="dock-item surface-meta wm-rule" id="layout-rule-label">master_stack</span>
+      </section>
+    </details>
+    <section class="workspace-strip" id="workspace-list" aria-label="Workspaces">
+      <button class="workspace active" id="workspace-label" type="button" data-workspace-id="workspace-1">1</button>
     </section>
-    <button class="workspace" id="workspace-label" type="button">workspace 1</button>
     <button class="layout-status" id="layout-mode-button" type="button">freeform</button>
-    <span class="status" id="status-label">starting</span>
-    <time class="clock" id="clock-label">--:--</time>
+    <section class="taskbar-tray" aria-label="Status tray">
+      <span class="status" id="status-label">starting</span>
+      <time class="clock" id="clock-label">--:--</time>
+    </section>
   </main>
   <script>
     const state = {
@@ -2732,18 +2850,61 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return match ? Number(match[1]) : 0;
     }
 
+    function allWorkspaces() {
+      const fromLayout = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
+      const fromState = state.workspace && state.workspace.id ? [state.workspace] : [];
+      const byId = new Map();
+      fromLayout.concat(fromState).forEach((workspace) => {
+        const id = text(workspace && workspace.id, "");
+        if (!id || byId.has(id)) {
+          return;
+        }
+        byId.set(id, workspace);
+      });
+      if (!byId.size) {
+        byId.set("workspace-1", {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0});
+      }
+      return Array.from(byId.values()).sort((left, right) => workspaceNumber(left.id) - workspaceNumber(right.id));
+    }
+
+    function activeWorkspaceId() {
+      return text(state.workspace.id, text(activeLayoutWorkspace().id, "workspace-1"));
+    }
+
+    function workspaceShortName(workspace) {
+      const id = text(workspace && workspace.id, "workspace-1");
+      const number = workspaceNumber(id);
+      return number ? String(number) : text(workspace && workspace.name, id);
+    }
+
+    function workspaceSurfaceCount(workspace) {
+      if (Number.isFinite(Number(workspace && workspace.surfaceCount))) {
+        return Number(workspace.surfaceCount);
+      }
+      const order = Array.isArray(workspace && workspace.surfaceOrder) ? workspace.surfaceOrder : [];
+      return order.length;
+    }
+
     function nextWorkspaceId() {
-      const workspaces = Array.isArray(state.layout.workspaces) && state.layout.workspaces.length
-        ? state.layout.workspaces
-        : [state.workspace];
+      const workspaces = allWorkspaces();
       const ids = workspaces.map((workspace) => text(workspace.id, "")).filter(Boolean);
-      const activeId = text(state.workspace.id, text(activeLayoutWorkspace().id, "workspace-1"));
+      const activeId = activeWorkspaceId();
       if (ids.length <= 1) {
         const nextNumber = Math.max(2, workspaceNumber(activeId) + 1);
         return "workspace-" + nextNumber;
       }
       const index = ids.indexOf(activeId);
       return ids[(Math.max(index, 0) + 1) %% ids.length];
+    }
+
+    function surfaceWorkspaceId(surface) {
+      const layout = layoutSurface(surface.id) || {};
+      return text(layout.workspaceId, text(surface.workspaceId, activeWorkspaceId()));
+    }
+
+    function appIconLabel(surface, layout) {
+      const source = text(surface.appId, text(layout.appId, text(surface.title, surface.id)));
+      return source.slice(0, 1).toUpperCase();
     }
 
     function workspaceZones() {
@@ -2921,29 +3082,36 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       const showingApps = Boolean(launcher);
       document.querySelector(".panel").classList.toggle("apps-open", showingApps);
       const appsButton = document.getElementById("apps-button");
-      appsButton.textContent = showingApps ? "Hide Apps" : "Apps";
+      appsButton.textContent = "Start";
       appsButton.title = showingApps ? "Close applications" : state.apps.length + " apps";
       appsButton.setAttribute("aria-pressed", showingApps ? "true" : "false");
+      renderWorkspaces();
       const workSurfaces = state.surfaces.filter((surface) =>
         surface.mapped &&
         surface.surfaceKind !== "layer_shell" &&
-        surface.appId !== "io.agorade.ShellLauncher"
+        surface.appId !== "io.agorade.ShellLauncher" &&
+        surfaceWorkspaceId(surface) === activeWorkspaceId()
       );
       renderList("running-list", "no running apps", workSurfaces, (surface) => {
         const group = document.createElement("span");
         group.className = "surface-actions";
         const layout = layoutSurface(surface.id) || {};
-        const label = text(layout.label, text(surface.title, text(surface.appId, surface.id)));
         const zone = text(layout.zoneId, text(surface.zoneId, "primary"));
-        const focusButton = button(label, "dock-item" + (surface.focused || layout.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus"));
+        const taskLabel = text(surface.title, text(surface.appId, surface.id));
+        const focusButton = button("", "task-button" + (surface.focused || layout.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus"));
+        const icon = document.createElement("span");
+        icon.className = "task-icon";
+        icon.textContent = appIconLabel(surface, layout);
+        const name = document.createElement("span");
+        name.className = "task-label";
+        name.textContent = taskLabel;
+        focusButton.appendChild(icon);
+        focusButton.appendChild(name);
         const area = surfaceAreaLabel(layout, zone);
-        focusButton.title = text(surface.title, text(surface.appId, surface.id)) + " / " + area;
+        focusButton.title = taskLabel + " / " + area;
         group.appendChild(focusButton);
-        group.appendChild(item(area, "surface-meta muted"));
-        group.appendChild(button("Zone", "surface-action", () => assignZone(surface.id, nextZone(zone))));
-        group.appendChild(button("Close", "surface-action", () => actOnSurface(surface.id, "close")));
         return group;
-      });
+      }, 8);
       const status = document.getElementById("status-label");
       const feedback = statusFromFeedback();
       if (feedback) {
@@ -2956,16 +3124,46 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
         status.className = "status " + (workSurfaces.length ? "ready" : "warn");
       }
-      const workspace = document.getElementById("workspace-label");
-      workspace.textContent = text(state.workspace.name, "workspace 1");
-      workspace.title = "active " + text(state.workspace.id, "workspace-1") +
-        " / next " + nextWorkspaceId() +
-        (state.workspace.surfaceCount ? " / " + state.workspace.surfaceCount + " work surfaces" : "");
       const layoutMode = text(state.layout.mode, "freeform");
       const layoutStatus = document.getElementById("layout-mode-button");
       layoutStatus.textContent = layoutMode + (state.layout.revision ? " r" + state.layout.revision : "");
       layoutStatus.title = layoutSettingsLabel() + " / zones: " + workspaceZones().join(" / ");
       renderWMControls();
+    }
+
+    function renderWorkspaces() {
+      const target = document.getElementById("workspace-list");
+      const activeId = activeWorkspaceId();
+      target.replaceChildren();
+      allWorkspaces().forEach((workspace) => {
+        const workspaceId = text(workspace.id, "workspace-1");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "workspace" + (workspaceId === activeId || workspace.active ? " active" : "");
+        button.dataset.workspaceId = workspaceId;
+        if (workspaceId === activeId) {
+          button.id = "workspace-label";
+        }
+        const label = document.createElement("span");
+        label.textContent = workspaceShortName(workspace);
+        button.appendChild(label);
+        const count = workspaceSurfaceCount(workspace);
+        if (count) {
+          const badge = document.createElement("span");
+          badge.className = "workspace-count";
+          badge.textContent = String(count);
+          button.appendChild(badge);
+        }
+        button.title = workspaceId + (count ? " / " + count + " surfaces" : "");
+        target.appendChild(button);
+      });
+      const nextButton = document.createElement("button");
+      nextButton.type = "button";
+      nextButton.className = "workspace";
+      nextButton.dataset.workspaceId = nextWorkspaceId();
+      nextButton.textContent = "+";
+      nextButton.title = nextWorkspaceId();
+      target.appendChild(nextButton);
     }
 
     async function loadJSON(path) {
@@ -3259,7 +3457,12 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     document.getElementById("apps-button").addEventListener("click", toggleApps);
     document.getElementById("refresh-button").addEventListener("click", refresh);
     document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
-    document.getElementById("workspace-label").addEventListener("click", () => activateWorkspace(nextWorkspaceId()));
+    document.getElementById("workspace-list").addEventListener("click", (event) => {
+      const target = event.target.closest("button[data-workspace-id]");
+      if (target) {
+        activateWorkspace(target.dataset.workspaceId);
+      }
+    });
     document.getElementById("layout-mode-button").addEventListener("click", () => setLayoutMode(nextLayoutMode(text(state.layout.mode, "freeform"))));
     document.getElementById("focus-prev-button").addEventListener("click", () => focusRelative(-1));
     document.getElementById("focus-next-button").addEventListener("click", () => focusRelative(1));
