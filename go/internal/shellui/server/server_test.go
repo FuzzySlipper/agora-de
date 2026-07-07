@@ -361,6 +361,10 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 			State string `json:"state"`
 			Total int    `json:"total"`
 		} `json:"surfaces"`
+		Timing struct {
+			Schema string            `json:"schema"`
+			Routes []routeTimingView `json:"routes"`
+		} `json:"timing"`
 		Recovery struct {
 			KillAllCommand  string   `json:"killAllCommand"`
 			RestartCommands []string `json:"restartCommands"`
@@ -375,12 +379,48 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	if operatorResponse.Surfaces.State != "available" || operatorResponse.Surfaces.Total != 1 {
 		t.Fatalf("unexpected operator surface summary: %+v", operatorResponse.Surfaces)
 	}
+	if operatorResponse.Timing.Schema != "agora-de.shell-timing.v1" || len(operatorResponse.Timing.Routes) == 0 {
+		t.Fatalf("unexpected operator timing summary: %+v", operatorResponse.Timing)
+	}
+	if !timingRoutesContain(operatorResponse.Timing.Routes, "GET /api/catalog/apps", "shell_http", "catalog") {
+		t.Fatalf("operator timing summary missing catalog route: %+v", operatorResponse.Timing.Routes)
+	}
 	if operatorResponse.Recovery.KillAllCommand != "sudo /usr/local/sbin/agora-de-kill-all" {
 		t.Fatalf("unexpected recovery command: %+v", operatorResponse.Recovery)
 	}
 	if len(operatorResponse.Recovery.RestartCommands) == 0 || !strings.Contains(operatorResponse.Recovery.Runbook, "den-k8-visible-shell-runbook.md") {
 		t.Fatalf("unexpected recovery docs: %+v", operatorResponse.Recovery)
 	}
+
+	var timingResponse struct {
+		Schema string            `json:"schema"`
+		Routes []routeTimingView `json:"routes"`
+	}
+	decodeRoute(t, handler, TimingDiagnosticsPath, &timingResponse)
+	if timingResponse.Schema != "agora-de.shell-timing.v1" {
+		t.Fatalf("unexpected timing diagnostics schema: %+v", timingResponse)
+	}
+	if !timingRoutesContain(timingResponse.Routes, "GET /api/operator/status", "shell_http", "operator") {
+		t.Fatalf("timing diagnostics missing operator route: %+v", timingResponse.Routes)
+	}
+}
+
+type routeTimingView struct {
+	Name      string  `json:"name"`
+	Category  string  `json:"category"`
+	Backend   string  `json:"backend"`
+	Count     uint64  `json:"count"`
+	AverageMs float64 `json:"averageMs"`
+	P95Ms     float64 `json:"p95Ms"`
+}
+
+func timingRoutesContain(routes []routeTimingView, name string, category string, backend string) bool {
+	for _, route := range routes {
+		if route.Name == name && route.Category == category && route.Backend == backend && route.Count > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHandlerUsesSelectedTheme(t *testing.T) {

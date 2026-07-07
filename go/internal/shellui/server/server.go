@@ -37,6 +37,7 @@ const (
 	WorkControlsPath      = "/api/work-surface-controls"
 	SurfaceActionPath     = "/api/surfaces/action"
 	OperatorStatusPath    = "/api/operator/status"
+	TimingDiagnosticsPath = "/api/diagnostics/timing"
 	ThemePath             = "/api/theme"
 	WorkspacesPath        = "/api/workspaces"
 	WorkspaceActionPath   = "/api/workspaces/action"
@@ -86,6 +87,8 @@ func NewHandler(config Config) (http.Handler, error) {
 		ManifestPath: config.ThemeManifestPath,
 	})
 
+	useCompositorctl := strings.TrimSpace(config.SurfaceProvider) == SurfaceProviderCompositorctl
+	timings := newTimingRecorder(timingConfig{UseCompositorctl: useCompositorctl})
 	mux := http.NewServeMux()
 	mux.Handle(catalogroute.AppsPath, catalogroute.New(catalogProvider, launchProvider))
 	mux.Handle(catalogroute.LaunchPath, catalogroute.New(catalogProvider, launchProvider))
@@ -93,7 +96,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux.Handle(surfaceroute.SurfacesPath, surfaceroute.New(surfaceProvider))
 	mux.Handle(LayoutPath, layoutroute.New(layoutroute.Config{
 		CompositorctlPath: config.CompositorctlPath,
-		UseCompositorctl:  strings.TrimSpace(config.SurfaceProvider) == SurfaceProviderCompositorctl,
+		UseCompositorctl:  useCompositorctl,
 		SurfaceProvider:   surfaceProvider,
 	}))
 	mux.Handle(LayoutActionPath, layoutroute.NewAction(layoutroute.Config{CompositorctlPath: config.CompositorctlPath}))
@@ -102,17 +105,18 @@ func NewHandler(config Config) (http.Handler, error) {
 		Provider: surfaceProvider,
 	})
 	mux.Handle(SurfaceActionPath, surfaceActionHandler(config))
-	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider))
+	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider, timings))
+	mux.Handle(TimingDiagnosticsPath, timingDiagnosticsHandler(timings))
 	mux.Handle(ThemePath, themeHandler(themeSelection))
 	workspaceConfig := workspaceRouteConfig{
 		CompositorctlPath: config.CompositorctlPath,
-		UseCompositorctl:  strings.TrimSpace(config.SurfaceProvider) == SurfaceProviderCompositorctl,
+		UseCompositorctl:  useCompositorctl,
 		SurfaceProvider:   surfaceProvider,
 	}
 	mux.Handle(WorkspacesPath, workspacesHandler(workspaceConfig))
 	mux.Handle(WorkspaceActionPath, workspaceActionHandler(workspaceConfig))
 	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot, themeSelection.CSS))
-	return noStore(mux), nil
+	return noStore(timings.instrument(mux)), nil
 }
 
 type themeResponse struct {
@@ -1124,6 +1128,7 @@ type operatorStatusResponse struct {
 	Sockets               []operatorSocketView   `json:"sockets"`
 	Outputs               []operatorOutputView   `json:"outputs"`
 	Surfaces              operatorSurfaceSummary `json:"surfaces"`
+	Timing                timingSummaryResponse  `json:"timing"`
 	Recovery              operatorRecoveryView   `json:"recovery"`
 }
 
@@ -1165,7 +1170,7 @@ type operatorRecoveryView struct {
 	Note              string   `json:"note"`
 }
 
-func operatorStatusHandler(config Config, surfaceProvider surfaceroute.Provider) http.Handler {
+func operatorStatusHandler(config Config, surfaceProvider surfaceroute.Provider, timings *timingRecorder) http.Handler {
 	path := strings.TrimSpace(config.CompositorctlPath)
 	if path == "" {
 		path = "compositorctl"
@@ -1182,12 +1187,27 @@ func operatorStatusHandler(config Config, surfaceProvider surfaceroute.Provider)
 		}
 		ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
 		defer cancel()
-		status := collectOperatorStatus(ctx, path, surfaceProvider, time.Now())
+		status := collectOperatorStatus(ctx, path, surfaceProvider, timings, time.Now())
 		writeJSON(response, http.StatusOK, status)
 	})
 }
 
-func collectOperatorStatus(ctx context.Context, compositorctl string, surfaceProvider surfaceroute.Provider, now time.Time) operatorStatusResponse {
+func timingDiagnosticsHandler(timings *timingRecorder) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != TimingDiagnosticsPath {
+			http.NotFound(response, request)
+			return
+		}
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		writeJSON(response, http.StatusOK, timings.summary(time.Now()))
+	})
+}
+
+func collectOperatorStatus(ctx context.Context, compositorctl string, surfaceProvider surfaceroute.Provider, timings *timingRecorder, now time.Time) operatorStatusResponse {
 	services := []operatorServiceView{
 		checkSystemdService(ctx, "agora-de-shellui.service", "user"),
 		checkSystemdService(ctx, "agora-de-shell-background.service", "user"),
@@ -1227,6 +1247,7 @@ func collectOperatorStatus(ctx context.Context, compositorctl string, surfacePro
 		Sockets:               sockets,
 		Outputs:               outputs,
 		Surfaces:              surfaces,
+		Timing:                timings.summary(now),
 		Recovery: operatorRecoveryView{
 			KillAllCommand: "sudo /usr/local/sbin/agora-de-kill-all",
 			RestartCommands: []string{
