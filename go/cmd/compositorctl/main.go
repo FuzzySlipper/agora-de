@@ -17,6 +17,7 @@ import (
 )
 
 const defaultCompositorControlSocket = "/run/agent-os/compositor-control.sock"
+const launchSurfacePollInterval = 50 * time.Millisecond
 
 const (
 	launchStatusLaunched                    = "launched"
@@ -735,7 +736,7 @@ func waitForSurface(match launchSurfaceMatch, timeout time.Duration, done <-chan
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+grace)
 	defer cancel()
-	ticker := time.NewTicker(200 * time.Millisecond)
+	ticker := time.NewTicker(launchSurfacePollInterval)
 	defer ticker.Stop()
 	primaryDeadline := time.Now().Add(timeout)
 	processDone := false
