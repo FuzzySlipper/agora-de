@@ -17,9 +17,10 @@ type SelectionOptions struct {
 }
 
 type Selection struct {
-	Manifest Manifest
-	CSS      string
-	Source   string
+	Manifest       Manifest
+	CSS            string
+	Source         string
+	FallbackReason string
 }
 
 func Select(options SelectionOptions) (Selection, error) {
@@ -45,6 +46,16 @@ func Select(options SelectionOptions) (Selection, error) {
 		return Selection{}, fmt.Errorf("unknown bundled theme %q", id)
 	}
 	return selectionFromManifest(manifest, "builtin:"+manifest.ID)
+}
+
+func Resolve(options SelectionOptions) Selection {
+	selection, err := Select(options)
+	if err == nil {
+		return selection
+	}
+	fallback := MustDefaultSelection()
+	fallback.FallbackReason = err.Error()
+	return fallback
 }
 
 func MustDefaultSelection() Selection {

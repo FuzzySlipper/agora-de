@@ -41,6 +41,20 @@ func TestDecodeManifestRejectsNonAgoraToken(t *testing.T) {
 	}
 }
 
+func TestDecodeManifestRejectsUnknownAgoraToken(t *testing.T) {
+	_, err := DecodeManifest(strings.NewReader(`{"id":"bad","name":"Bad","tokens":{"--agora-not-real":"red"}}`))
+	if err == nil {
+		t.Fatal("DecodeManifest accepted unknown agora token")
+	}
+}
+
+func TestDecodeManifestRejectsMissingTokens(t *testing.T) {
+	_, err := DecodeManifest(strings.NewReader(`{"id":"bad","name":"Bad","tokens":{}}`))
+	if err == nil {
+		t.Fatal("DecodeManifest accepted missing tokens")
+	}
+}
+
 func TestSafeTokenCSS(t *testing.T) {
 	css, err := SafeTokenCSS(map[string]string{"--agora-bg": "#101418", "--agora-accent": "#46b3a5"})
 	if err != nil {
@@ -101,6 +115,19 @@ func TestValidateSafeVisualCSSRejectsLayoutAndExfiltration(t *testing.T) {
 	for _, css := range rejected {
 		if err := ValidateSafeVisualCSS(css); err == nil {
 			t.Fatalf("ValidateSafeVisualCSS accepted %q", css)
+		}
+	}
+}
+
+func TestValidateTokenRejectsUnsafeFragments(t *testing.T) {
+	rejected := []string{
+		"url(https://example.invalid/pixel)",
+		"position: fixed",
+		"@import https://example.invalid/theme.css",
+	}
+	for _, value := range rejected {
+		if err := ValidateToken(TokenBackground, value); err == nil {
+			t.Fatalf("ValidateToken accepted %q", value)
 		}
 	}
 }

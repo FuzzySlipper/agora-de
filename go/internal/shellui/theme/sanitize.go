@@ -21,13 +21,28 @@ func ValidateToken(name string, value string) error {
 	if !strings.HasPrefix(name, "--agora-") {
 		return fmt.Errorf("theme token %q is not an --agora-* token", name)
 	}
+	if !KnownTokenNames()[name] {
+		return fmt.Errorf("theme token %q is not a known agora-de theme token", name)
+	}
 	if value == "" {
 		return fmt.Errorf("theme token %q has empty value", name)
 	}
 	if strings.ContainsAny(value, "{};") {
 		return fmt.Errorf("theme token %q contains unsafe punctuation", name)
 	}
+	if err := ValidateSafeVisualCSS(value); err != nil {
+		return fmt.Errorf("theme token %q has unsafe value: %w", name, err)
+	}
 	return nil
+}
+
+func KnownTokenNames() map[string]bool {
+	definitions := DefaultTokenDefinitions()
+	names := make(map[string]bool, len(definitions))
+	for _, definition := range definitions {
+		names[definition.Name] = true
+	}
+	return names
 }
 
 func SafeTokenCSS(tokens map[string]string) (string, error) {

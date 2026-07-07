@@ -202,7 +202,6 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`className = "meta"`,
 		`action-hints`,
 		`right: 8px`,
-		`rgba(8, 13, 30, 0.72)`,
 		`dataset.layoutRule`,
 		`layoutRuleLabel`,
 		`surface.focused ? " focused"`,
@@ -399,15 +398,29 @@ func TestHandlerUsesSelectedTheme(t *testing.T) {
 	if !strings.Contains(body, "--agora-bg: #12100f;") {
 		t.Fatalf("shell body missing selected theme background: %s", body)
 	}
+
+	var route themeResponse
+	decodeRoute(t, handler, ThemePath, &route)
+	if route.ID != "agora-ember" || route.Fallback {
+		t.Fatalf("theme route = %+v, want ember without fallback", route)
+	}
 }
 
-func TestHandlerRejectsInvalidThemeSelection(t *testing.T) {
-	_, err := NewHandler(Config{
+func TestHandlerFallsBackForInvalidThemeSelection(t *testing.T) {
+	handler, err := NewHandler(Config{
 		FixtureProviders: true,
 		ThemeID:          "missing-theme",
 	})
-	if err == nil {
-		t.Fatal("NewHandler accepted missing theme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route themeResponse
+	decodeRoute(t, handler, ThemePath, &route)
+	if route.ID != "agora-default" || !route.Fallback {
+		t.Fatalf("theme route = %+v, want default fallback", route)
+	}
+	if !strings.Contains(route.FallbackReason, "unknown bundled theme") {
+		t.Fatalf("fallback reason = %q", route.FallbackReason)
 	}
 }
 

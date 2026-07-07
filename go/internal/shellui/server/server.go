@@ -37,6 +37,7 @@ const (
 	WorkControlsPath      = "/api/work-surface-controls"
 	SurfaceActionPath     = "/api/surfaces/action"
 	OperatorStatusPath    = "/api/operator/status"
+	ThemePath             = "/api/theme"
 	WorkspacesPath        = "/api/workspaces"
 	WorkspaceActionPath   = "/api/workspaces/action"
 	CatalogIconPathPrefix = "/api/catalog/icons/"
@@ -80,13 +81,10 @@ func NewHandler(config Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	themeSelection, err := theme.Select(theme.SelectionOptions{
+	themeSelection := theme.Resolve(theme.SelectionOptions{
 		ID:           config.ThemeID,
 		ManifestPath: config.ThemeManifestPath,
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	mux := http.NewServeMux()
 	mux.Handle(catalogroute.AppsPath, catalogroute.New(catalogProvider, launchProvider))
@@ -105,6 +103,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	})
 	mux.Handle(SurfaceActionPath, surfaceActionHandler(config))
 	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider))
+	mux.Handle(ThemePath, themeHandler(themeSelection))
 	workspaceConfig := workspaceRouteConfig{
 		CompositorctlPath: config.CompositorctlPath,
 		UseCompositorctl:  strings.TrimSpace(config.SurfaceProvider) == SurfaceProviderCompositorctl,
@@ -114,6 +113,31 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux.Handle(WorkspaceActionPath, workspaceActionHandler(workspaceConfig))
 	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot, themeSelection.CSS))
 	return noStore(mux), nil
+}
+
+type themeResponse struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Source         string `json:"source"`
+	Fallback       bool   `json:"fallback"`
+	FallbackReason string `json:"fallbackReason,omitempty"`
+}
+
+func themeHandler(selection theme.Selection) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		writeJSON(response, http.StatusOK, themeResponse{
+			ID:             selection.Manifest.ID,
+			Name:           selection.Manifest.Name,
+			Source:         selection.Source,
+			Fallback:       selection.FallbackReason != "",
+			FallbackReason: selection.FallbackReason,
+		})
+	})
 }
 
 func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, map[string]string, error) {

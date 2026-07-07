@@ -66,6 +66,11 @@ token set, and rendered with `SafeTokenCSS`. This lets users change a small
 number of tokens without copying the whole bundled manifest, while preserving
 safe default values for required shell dimensions and evidence markers.
 
+Shellui resolves configured themes through a safe runtime fallback. Invalid
+theme ids, missing manifest paths, or invalid manifest content fall back to
+`agora-default`; `/api/theme` reports the active id, source, whether fallback
+occurred, and the fallback reason.
+
 ## Customization Path
 
 User-facing theme customization validates manifests through

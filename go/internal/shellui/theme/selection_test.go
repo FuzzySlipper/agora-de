@@ -81,6 +81,31 @@ func TestSelectRejectsInvalidUserManifest(t *testing.T) {
 	}
 }
 
+func TestResolveFallsBackForBadPath(t *testing.T) {
+	selection := Resolve(SelectionOptions{ManifestPath: filepath.Join(t.TempDir(), "missing.json")})
+	if selection.Manifest.ID != DefaultThemeID {
+		t.Fatalf("fallback theme = %q, want %q", selection.Manifest.ID, DefaultThemeID)
+	}
+	if selection.FallbackReason == "" || !strings.Contains(selection.FallbackReason, "open theme manifest") {
+		t.Fatalf("fallback reason = %q", selection.FallbackReason)
+	}
+}
+
+func TestResolveFallsBackForInvalidManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "theme.json")
+	if err := os.WriteFile(path, []byte(`{"id":"bad","name":"Bad","tokens":{"--agora-not-real":"red"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	selection := Resolve(SelectionOptions{ManifestPath: path})
+	if selection.Manifest.ID != DefaultThemeID {
+		t.Fatalf("fallback theme = %q, want %q", selection.Manifest.ID, DefaultThemeID)
+	}
+	if selection.FallbackReason == "" || !strings.Contains(selection.FallbackReason, "not a known agora-de theme token") {
+		t.Fatalf("fallback reason = %q", selection.FallbackReason)
+	}
+}
+
 func TestEmberFixtureMatchesBundledManifest(t *testing.T) {
 	file, err := os.Open(filepath.Join("..", "..", "..", "..", "harness", "fixtures", "theme", "agora-ember-theme.json"))
 	if err != nil {
