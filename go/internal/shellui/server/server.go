@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -88,8 +89,13 @@ func NewHandler(config Config) (http.Handler, error) {
 	})
 	mux.Handle(SurfaceActionPath, surfaceActionHandler(config))
 	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider))
-	mux.Handle(WorkspacesPath, workspacesHandler(surfaceProvider))
-	mux.Handle(WorkspaceActionPath, workspaceActionHandler(surfaceProvider))
+	workspaceConfig := workspaceRouteConfig{
+		CompositorctlPath: config.CompositorctlPath,
+		UseCompositorctl:  strings.TrimSpace(config.SurfaceProvider) == SurfaceProviderCompositorctl,
+		SurfaceProvider:   surfaceProvider,
+	}
+	mux.Handle(WorkspacesPath, workspacesHandler(workspaceConfig))
+	mux.Handle(WorkspaceActionPath, workspaceActionHandler(workspaceConfig))
 	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot))
 	return noStore(mux), nil
 }
@@ -534,6 +540,14 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func defaultCompositorctlPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "compositorctl"
+	}
+	return path
+}
+
 func firstGeometryView(values ...*surfaces.GeometryView) *surfaces.GeometryView {
 	for _, value := range values {
 		if value != nil {
@@ -773,7 +787,14 @@ type workspaceActionResponse struct {
 	Workspaces         []workspaceView `json:"workspaces"`
 }
 
-func workspacesHandler(surfaceProvider surfaceroute.Provider) http.Handler {
+type workspaceRouteConfig struct {
+	CompositorctlPath string
+	UseCompositorctl  bool
+	SurfaceProvider   surfaceroute.Provider
+}
+
+func workspacesHandler(config workspaceRouteConfig) http.Handler {
+	path := defaultCompositorctlPath(config.CompositorctlPath)
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != WorkspacesPath {
 			http.NotFound(response, request)
@@ -784,11 +805,28 @@ func workspacesHandler(surfaceProvider surfaceroute.Provider) http.Handler {
 			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
-		writeJSON(response, http.StatusOK, collectWorkspaceState(request, surfaceProvider))
+		state := collectWorkspaceState(request, config.SurfaceProvider)
+		if config.UseCompositorctl {
+			ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+			defer cancel()
+			output, err := exec.CommandContext(ctx, path, "layout", "get").CombinedOutput()
+			if err != nil {
+				writeCompositorctlError(response, output, err)
+				return
+			}
+			layoutState, err := workspaceStateFromCompositorctlLayout(output)
+			if err != nil {
+				writeJSON(response, http.StatusServiceUnavailable, classifiedAPIError{Error: err.Error(), ErrorClass: "invalid_response"})
+				return
+			}
+			state = layoutState
+		}
+		writeJSON(response, http.StatusOK, state)
 	})
 }
 
-func workspaceActionHandler(surfaceProvider surfaceroute.Provider) http.Handler {
+func workspaceActionHandler(config workspaceRouteConfig) http.Handler {
+	path := defaultCompositorctlPath(config.CompositorctlPath)
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != WorkspaceActionPath {
 			http.NotFound(response, request)
@@ -804,43 +842,179 @@ func workspaceActionHandler(surfaceProvider surfaceroute.Provider) http.Handler 
 			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid workspace action request"})
 			return
 		}
-		if action.Action != "activate" || action.WorkspaceID != "workspace-1" {
+		action.Action = strings.TrimSpace(action.Action)
+		action.WorkspaceID = strings.TrimSpace(action.WorkspaceID)
+		if action.Action != "activate" {
 			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "unsupported workspace action"})
 			return
 		}
-		state := collectWorkspaceState(request, surfaceProvider)
+		if action.WorkspaceID == "" {
+			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "workspaceId is required"})
+			return
+		}
+		if config.UseCompositorctl {
+			ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+			defer cancel()
+			if output, err := exec.CommandContext(ctx, path, "workspace", "activate", "--workspace", action.WorkspaceID, "--timeout-ms", "2000").CombinedOutput(); err != nil {
+				writeCompositorctlError(response, output, err)
+				return
+			}
+		}
+		state := collectWorkspaceState(request, config.SurfaceProvider)
+		if config.UseCompositorctl {
+			ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+			defer cancel()
+			if output, err := exec.CommandContext(ctx, path, "layout", "get").CombinedOutput(); err == nil {
+				if layoutState, decodeErr := workspaceStateFromCompositorctlLayout(output); decodeErr == nil {
+					state = layoutState
+				}
+			}
+		}
+		workspace := workspaceView{ID: action.WorkspaceID, Name: workspaceDisplayName(action.WorkspaceID), Active: true}
+		for _, candidate := range state.Workspaces {
+			if candidate.ID == action.WorkspaceID {
+				workspace = candidate
+				break
+			}
+		}
 		writeJSON(response, http.StatusAccepted, workspaceActionResponse{
 			Action:             action.Action,
 			WorkspaceID:        action.WorkspaceID,
 			CurrentWorkspaceID: state.CurrentWorkspaceID,
 			Status:             "accepted",
-			Workspace:          state.Workspaces[0],
+			Workspace:          workspace,
 			Workspaces:         state.Workspaces,
 		})
 	})
 }
 
 func collectWorkspaceState(request *http.Request, surfaceProvider surfaceroute.Provider) workspacesResponse {
-	surfaceCount := 0
+	surfaceCounts := map[string]int{"workspace-1": 0}
 	if surfaceProvider != nil {
 		if views, err := surfaceProvider(request); err == nil {
 			for _, view := range views {
 				if view.Mapped && view.SurfaceKind != "layer_shell" {
-					surfaceCount++
+					workspaceID := firstNonEmpty(view.WorkspaceID, "workspace-1")
+					surfaceCounts[workspaceID]++
 				}
 			}
 		}
 	}
-	workspace := workspaceView{
-		ID:           "workspace-1",
-		Name:         "workspace 1",
-		Active:       true,
-		SurfaceCount: surfaceCount,
+	workspaceIDs := make([]string, 0, len(surfaceCounts))
+	for workspaceID := range surfaceCounts {
+		workspaceIDs = append(workspaceIDs, workspaceID)
+	}
+	sortWorkspaceIDs(workspaceIDs)
+	workspaces := make([]workspaceView, 0, len(workspaceIDs))
+	for _, workspaceID := range workspaceIDs {
+		workspaces = append(workspaces, workspaceView{
+			ID:           workspaceID,
+			Name:         workspaceDisplayName(workspaceID),
+			Active:       workspaceID == "workspace-1",
+			SurfaceCount: surfaceCounts[workspaceID],
+		})
 	}
 	return workspacesResponse{
-		CurrentWorkspaceID: workspace.ID,
-		Workspaces:         []workspaceView{workspace},
+		CurrentWorkspaceID: "workspace-1",
+		Workspaces:         workspaces,
 	}
+}
+
+func workspaceStateFromCompositorctlLayout(payload []byte) (workspacesResponse, error) {
+	var response struct {
+		Layout struct {
+			Surfaces []struct {
+				SurfaceID   string `json:"surface_id"`
+				WorkspaceID string `json:"workspace_id"`
+				Visible     bool   `json:"visible"`
+			} `json:"surfaces"`
+			Workspaces []struct {
+				ID           string   `json:"id"`
+				Name         string   `json:"name"`
+				Active       bool     `json:"active"`
+				SurfaceOrder []string `json:"surface_order"`
+			} `json:"workspaces"`
+		} `json:"layout"`
+	}
+	if err := json.Unmarshal(payload, &response); err != nil {
+		return workspacesResponse{}, fmt.Errorf("decode compositorctl workspace layout: %w", err)
+	}
+	counts := map[string]int{}
+	for _, surface := range response.Layout.Surfaces {
+		workspaceID := firstNonEmpty(surface.WorkspaceID, "workspace-1")
+		counts[workspaceID]++
+	}
+	workspaces := make([]workspaceView, 0, len(response.Layout.Workspaces))
+	current := ""
+	seen := map[string]bool{}
+	for _, workspace := range response.Layout.Workspaces {
+		workspaceID := firstNonEmpty(workspace.ID, "workspace-1")
+		count := counts[workspaceID]
+		if count == 0 && len(workspace.SurfaceOrder) > 0 {
+			count = len(workspace.SurfaceOrder)
+		}
+		workspaces = append(workspaces, workspaceView{
+			ID:           workspaceID,
+			Name:         firstNonEmpty(workspace.Name, workspaceDisplayName(workspaceID)),
+			Active:       workspace.Active,
+			SurfaceCount: count,
+		})
+		seen[workspaceID] = true
+		if workspace.Active {
+			current = workspaceID
+		}
+	}
+	for workspaceID, count := range counts {
+		if seen[workspaceID] {
+			continue
+		}
+		workspaces = append(workspaces, workspaceView{
+			ID:           workspaceID,
+			Name:         workspaceDisplayName(workspaceID),
+			SurfaceCount: count,
+		})
+	}
+	if len(workspaces) == 0 {
+		workspaces = []workspaceView{{ID: "workspace-1", Name: "workspace 1", Active: true}}
+	}
+	if current == "" {
+		for index := range workspaces {
+			if workspaces[index].Active {
+				current = workspaces[index].ID
+				break
+			}
+		}
+	}
+	if current == "" {
+		current = workspaces[0].ID
+		workspaces[0].Active = true
+	}
+	sort.SliceStable(workspaces, func(i, j int) bool {
+		if workspaces[i].ID == "workspace-1" || workspaces[j].ID == "workspace-1" {
+			return workspaces[i].ID == "workspace-1"
+		}
+		return workspaces[i].ID < workspaces[j].ID
+	})
+	return workspacesResponse{CurrentWorkspaceID: current, Workspaces: workspaces}, nil
+}
+
+func sortWorkspaceIDs(workspaceIDs []string) {
+	sort.SliceStable(workspaceIDs, func(i, j int) bool {
+		if workspaceIDs[i] == "workspace-1" || workspaceIDs[j] == "workspace-1" {
+			return workspaceIDs[i] == "workspace-1"
+		}
+		return workspaceIDs[i] < workspaceIDs[j]
+	})
+}
+
+func workspaceDisplayName(workspaceID string) string {
+	if strings.HasPrefix(workspaceID, "workspace-") {
+		suffix := strings.TrimSpace(strings.TrimPrefix(workspaceID, "workspace-"))
+		if suffix != "" {
+			return "workspace " + suffix
+		}
+	}
+	return workspaceID
 }
 
 type operatorStatusResponse struct {
@@ -2553,6 +2727,25 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         {zones: []};
     }
 
+    function workspaceNumber(workspaceId) {
+      const match = String(workspaceId || "").match(/^workspace-(\d+)$/);
+      return match ? Number(match[1]) : 0;
+    }
+
+    function nextWorkspaceId() {
+      const workspaces = Array.isArray(state.layout.workspaces) && state.layout.workspaces.length
+        ? state.layout.workspaces
+        : [state.workspace];
+      const ids = workspaces.map((workspace) => text(workspace.id, "")).filter(Boolean);
+      const activeId = text(state.workspace.id, text(activeLayoutWorkspace().id, "workspace-1"));
+      if (ids.length <= 1) {
+        const nextNumber = Math.max(2, workspaceNumber(activeId) + 1);
+        return "workspace-" + nextNumber;
+      }
+      const index = ids.indexOf(activeId);
+      return ids[(Math.max(index, 0) + 1) %% ids.length];
+    }
+
     function workspaceZones() {
       const zones = Array.isArray(activeLayoutWorkspace().zones) ? activeLayoutWorkspace().zones : [];
       const zoneIds = zones
@@ -2765,7 +2958,9 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
       const workspace = document.getElementById("workspace-label");
       workspace.textContent = text(state.workspace.name, "workspace 1");
-      workspace.title = text(state.layout.mode, "freeform") + (state.workspace.surfaceCount ? " / " + state.workspace.surfaceCount + " work surfaces" : "");
+      workspace.title = "active " + text(state.workspace.id, "workspace-1") +
+        " / next " + nextWorkspaceId() +
+        (state.workspace.surfaceCount ? " / " + state.workspace.surfaceCount + " work surfaces" : "");
       const layoutMode = text(state.layout.mode, "freeform");
       const layoutStatus = document.getElementById("layout-mode-button");
       layoutStatus.textContent = layoutMode + (state.layout.revision ? " r" + state.layout.revision : "");
@@ -2934,17 +3129,19 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       await setLayoutSettings({smartGaps: !settings.smartGaps});
     }
 
-    async function activateWorkspace() {
+    async function activateWorkspace(workspaceId) {
       const status = document.getElementById("status-label");
       status.textContent = "workspace";
       status.className = "status ready";
       try {
+        const targetWorkspaceId = text(workspaceId, nextWorkspaceId());
         if (state.layout.mode !== "zones") {
           await setLayoutMode("zones");
-        } else {
-          await postJSON("/api/workspaces/action", {workspaceId: "workspace-1", action: "activate"});
         }
+        const result = await postJSON("/api/workspaces/action", {workspaceId: targetWorkspaceId, action: "activate"});
         await refresh();
+        setFeedback(text(result.currentWorkspaceId, targetWorkspaceId), "ready");
+        render();
       } catch (error) {
         status.textContent = "workspace failed";
         status.className = "status warn";
@@ -3062,7 +3259,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     document.getElementById("apps-button").addEventListener("click", toggleApps);
     document.getElementById("refresh-button").addEventListener("click", refresh);
     document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
-    document.getElementById("workspace-label").addEventListener("click", activateWorkspace);
+    document.getElementById("workspace-label").addEventListener("click", () => activateWorkspace(nextWorkspaceId()));
     document.getElementById("layout-mode-button").addEventListener("click", () => setLayoutMode(nextLayoutMode(text(state.layout.mode, "freeform"))));
     document.getElementById("focus-prev-button").addEventListener("click", () => focusRelative(-1));
     document.getElementById("focus-next-button").addEventListener("click", () => focusRelative(1));

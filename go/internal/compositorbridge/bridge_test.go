@@ -478,6 +478,85 @@ func TestGetLayoutDerivesStableWorkspaceState(t *testing.T) {
 	}
 }
 
+func TestActivateWorkspaceCreatesIndependentWorkspaceState(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-a",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "Alacritty",
+			Title:       "Alacritty",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 800, Height: 600},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:    PluginSurfaceEvent,
+		Event:   EventFocused,
+		Surface: CompositorSurface{ID: "view-a", Visible: &visible},
+	})
+
+	response, err := bridge.ActivateWorkspace(WorkspaceActionRequest{WorkspaceID: "workspace-2"})
+	if err != nil {
+		t.Fatalf("activate workspace-2: %v", err)
+	}
+	if response.Decision != DecisionAccepted || response.WorkspaceID != "workspace-2" {
+		t.Fatalf("activation response = %+v", response)
+	}
+	layout := bridge.GetLayout().Layout
+	if len(layout.Workspaces) != 2 {
+		t.Fatalf("workspaces after activation = %+v", layout.Workspaces)
+	}
+	if workspaceByID(layout, "workspace-1").Active || !workspaceByID(layout, "workspace-2").Active {
+		t.Fatalf("active workspace state = %+v", layout.Workspaces)
+	}
+	if surfaceByID(layout, "view-a").Focused || surfaceByID(layout, "view-a").Visible {
+		t.Fatalf("inactive workspace surface should not project focus or visibility: %+v", surfaceByID(layout, "view-a"))
+	}
+
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-b",
+			SurfaceKind: SurfaceKindXDG,
+			AppID:       "foot",
+			Title:       "foot",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{Width: 800, Height: 600},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+	layout = bridge.GetLayout().Layout
+	if got := workspaceByID(layout, "workspace-1").SurfaceOrder; len(got) != 1 || got[0] != "view-a" {
+		t.Fatalf("workspace-1 order = %+v", got)
+	}
+	if got := workspaceByID(layout, "workspace-2").SurfaceOrder; len(got) != 1 || got[0] != "view-b" {
+		t.Fatalf("workspace-2 order = %+v", got)
+	}
+	if surfaceByID(layout, "view-b").WorkspaceID != "workspace-2" || !surfaceByID(layout, "view-b").Visible {
+		t.Fatalf("new active workspace surface = %+v", surfaceByID(layout, "view-b"))
+	}
+
+	if _, err := bridge.ActivateWorkspace(WorkspaceActionRequest{WorkspaceID: "workspace-1"}); err != nil {
+		t.Fatalf("reactivate workspace-1: %v", err)
+	}
+	layout = bridge.GetLayout().Layout
+	if !workspaceByID(layout, "workspace-1").Active || workspaceByID(layout, "workspace-2").Active {
+		t.Fatalf("reactivated workspace state = %+v", layout.Workspaces)
+	}
+	if !surfaceByID(layout, "view-a").Visible || !surfaceByID(layout, "view-a").Focused {
+		t.Fatalf("workspace-1 focus/visibility was not restored: %+v", surfaceByID(layout, "view-a"))
+	}
+	if surfaceByID(layout, "view-b").Visible {
+		t.Fatalf("workspace-2 surface should be inactive after switching back: %+v", surfaceByID(layout, "view-b"))
+	}
+}
+
 func TestGetLayoutUsesBackendLayoutStateWhenPluginProvidesIt(t *testing.T) {
 	bridge := New(Config{})
 	visible := true
@@ -1827,4 +1906,22 @@ func TestCaptureOutputUsesPhysicalGrimBackend(t *testing.T) {
 	if capture.VisualInspection == nil || capture.VisualInspection.Status != "visible" {
 		t.Fatalf("inspection = %+v", capture.VisualInspection)
 	}
+}
+
+func workspaceByID(layout LayoutState, workspaceID string) LayoutWorkspace {
+	for _, workspace := range layout.Workspaces {
+		if workspace.ID == workspaceID {
+			return workspace
+		}
+	}
+	return LayoutWorkspace{}
+}
+
+func surfaceByID(layout LayoutState, surfaceID string) LayoutSurface {
+	for _, surface := range layout.Surfaces {
+		if surface.SurfaceID == surfaceID {
+			return surface
+		}
+	}
+	return LayoutSurface{}
 }

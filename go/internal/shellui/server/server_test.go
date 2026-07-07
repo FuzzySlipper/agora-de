@@ -517,6 +517,89 @@ esac
 	}
 }
 
+func TestHandlerExposesWorkspaceStateViaCompositorctl(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	activePath := filepath.Join(dir, "active-workspace")
+	command := filepath.Join(dir, "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' "$*" >> "$CALL_LOG"
+[ -s "$ACTIVE_WORKSPACE" ] || printf '%s\n' 'workspace-1' > "$ACTIVE_WORKSPACE"
+case "$1 $2" in
+  "layout get")
+    current="$(cat "$ACTIVE_WORKSPACE")"
+    if [ "$current" = "workspace-2" ]; then
+      printf '%s\n' '{"layout":{"surfaces":[{"surface_id":"view-a","workspace_id":"workspace-1","visible":false},{"surface_id":"view-b","workspace_id":"workspace-2","visible":true}],"workspaces":[{"id":"workspace-1","name":"workspace 1","active":false,"surface_order":["view-a"]},{"id":"workspace-2","name":"workspace 2","active":true,"surface_order":["view-b"]}]}}'
+    else
+      printf '%s\n' '{"layout":{"surfaces":[{"surface_id":"view-a","workspace_id":"workspace-1","visible":true},{"surface_id":"view-b","workspace_id":"workspace-2","visible":false}],"workspaces":[{"id":"workspace-1","name":"workspace 1","active":true,"surface_order":["view-a"]},{"id":"workspace-2","name":"workspace 2","active":false,"surface_order":["view-b"]}]}}'
+    fi
+    ;;
+  "workspace activate")
+    workspace=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "--workspace" ]; then
+        shift
+        workspace="$1"
+      fi
+      shift || true
+    done
+    printf '%s\n' "$workspace" > "$ACTIVE_WORKSPACE"
+    printf '%s\n' '{"decision":"accepted"}'
+    ;;
+  "list-surfaces")
+    printf '%s\n' '{"surfaces":[]}'
+    ;;
+  *)
+    printf 'unexpected command %s %s\n' "$1" "$2" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CALL_LOG", logPath)
+	t.Setenv("ACTIVE_WORKSPACE", activePath)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		SurfaceProvider:   SurfaceProviderCompositorctl,
+		CompositorctlPath: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var state workspacesResponse
+	decodeRoute(t, handler, WorkspacesPath, &state)
+	if state.CurrentWorkspaceID != "workspace-1" || len(state.Workspaces) != 2 || !state.Workspaces[0].Active || state.Workspaces[1].SurfaceCount != 1 {
+		t.Fatalf("workspace state = %+v", state)
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, WorkspaceActionPath, strings.NewReader(`{"workspaceId":"workspace-2","action":"activate"}`)))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("workspace activate status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	var action workspaceActionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &action); err != nil {
+		t.Fatal(err)
+	}
+	if action.CurrentWorkspaceID != "workspace-2" || !action.Workspace.Active || action.Workspace.SurfaceCount != 1 {
+		t.Fatalf("workspace action = %+v", action)
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(calls), "workspace activate --workspace workspace-2 --timeout-ms 2000") {
+		t.Fatalf("workspace activation call missing: %s", calls)
+	}
+}
+
 func TestHandlerReturnsClassifiedLayoutActionErrors(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture is Unix-specific")

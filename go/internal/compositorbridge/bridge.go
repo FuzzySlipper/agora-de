@@ -38,6 +38,8 @@ const (
 	MethodActivateWorkspace    = "activate_workspace"
 )
 
+const defaultWorkspaceID = "workspace-1"
+
 const (
 	PluginSurfaceEvent         = "surface_event"
 	PluginLayoutState          = "layout_state"
@@ -99,9 +101,18 @@ type Bridge struct {
 	layoutSettingsPath string
 	backendLayout      *LayoutState
 	promotedSurfaceID  string
+	activeWorkspaceID  string
+	workspaces         map[string]workspaceRecord
+	workspaceOrder     []string
 
 	autoLayoutSeq     uint64
 	autoLayoutRunning bool
+}
+
+type workspaceRecord struct {
+	ID       string
+	Name     string
+	OutputID string
 }
 
 func New(config Config) *Bridge {
@@ -123,6 +134,11 @@ func New(config Config) *Bridge {
 		layoutMode:         settings.Mode,
 		layoutSettings:     settings,
 		layoutSettingsPath: config.LayoutSettingsPath,
+		activeWorkspaceID:  defaultWorkspaceID,
+		workspaces: map[string]workspaceRecord{
+			defaultWorkspaceID: {ID: defaultWorkspaceID, Name: workspaceDisplayName(defaultWorkspaceID)},
+		},
+		workspaceOrder: []string{defaultWorkspaceID},
 	}
 }
 
@@ -603,8 +619,12 @@ func (bridge *Bridge) PromoteSurface(request SurfaceLayoutActionRequest) (Layout
 	}
 	bridge.mu.Lock()
 	bridge.promotedSurfaceID = request.SurfaceID
+	targetWorkspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
 	for id, tracked := range bridge.surfaces {
 		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		if firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked()) != targetWorkspaceID {
 			continue
 		}
 		tracked.Focused = id == request.SurfaceID
@@ -649,18 +669,65 @@ func (bridge *Bridge) FullscreenSurface(request SurfaceLayoutActionRequest) (Lay
 }
 
 func (bridge *Bridge) ActivateWorkspace(request WorkspaceActionRequest) (LayoutActionResponse, error) {
-	if strings.TrimSpace(request.WorkspaceID) == "" {
+	workspaceID := strings.TrimSpace(request.WorkspaceID)
+	if workspaceID == "" {
 		return LayoutActionResponse{}, fmt.Errorf("workspace_id is required")
 	}
-	bridge.mu.RLock()
+	type workspaceVisibilityTarget struct {
+		SurfaceID string
+		Minimized bool
+	}
+	targets := []workspaceVisibilityTarget{}
+	var session *pluginSession
+	bridge.mu.Lock()
+	bridge.ensureWorkspaceLocked(workspaceID)
+	bridge.activeWorkspaceID = workspaceID
+	for id, tracked := range bridge.surfaces {
+		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		surfaceWorkspaceID := firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
+		tracked.WorkspaceID = surfaceWorkspaceID
+		tracked.Surface.WorkspaceID = surfaceWorkspaceID
+		active := surfaceWorkspaceID == workspaceID
+		tracked.Visible = active
+		visible := active
+		tracked.Surface.Visible = &visible
+		if !active && bridge.promotedSurfaceID == tracked.Surface.ID {
+			bridge.promotedSurfaceID = ""
+		}
+		tracked.LayoutRevision = bridge.layoutSeq + 1
+		tracked.UpdatedAt = time.Now()
+		bridge.surfaces[id] = tracked
+		targets = append(targets, workspaceVisibilityTarget{SurfaceID: tracked.Surface.ID, Minimized: !active})
+	}
+	bridge.layoutSeq++
+	bridge.applyWorkspaceAuthorityToBackendLayoutLocked()
 	layout := bridge.layoutLocked()
-	bridge.mu.RUnlock()
-	for _, workspace := range layout.Workspaces {
-		if workspace.ID == request.WorkspaceID {
-			return LayoutActionResponse{}, classifiedError{class: ErrorBackendUnsupported, message: "workspace activation requires compositor backend workspace authority"}
+	session = bridge.plugin
+	bridge.mu.Unlock()
+
+	for _, target := range targets {
+		if session == nil {
+			break
+		}
+		if err := bridge.sendPluginMessage(session, map[string]any{
+			"type":       PluginSetSurfaceState,
+			"request_id": fmt.Sprintf("workspace-%d-%s", time.Now().UnixNano(), target.SurfaceID),
+			"surface_id": target.SurfaceID,
+			"minimized":  target.Minimized,
+		}); err != nil {
+			break
 		}
 	}
-	return LayoutActionResponse{}, classifiedError{class: ErrorSurfaceNotFound, message: fmt.Sprintf("workspace %s not found", request.WorkspaceID)}
+	bridge.requestAutoLayout("workspace_activate")
+	return LayoutActionResponse{
+		Action:      "workspace.activate",
+		WorkspaceID: workspaceID,
+		Decision:    DecisionAccepted,
+		Reason:      "workspace activated by bridge authority",
+		Layout:      &layout,
+	}, nil
 }
 
 func (bridge *Bridge) CaptureOutput(request CaptureOutputRequest) (CaptureOutputResponse, error) {
@@ -835,7 +902,7 @@ func (bridge *Bridge) placeSurfaceChecked(request SurfaceLayoutActionRequest, ac
 	}
 	tracked.Geometry = cloneGeometry(&ackGeometry)
 	tracked.Surface.Geometry = cloneGeometry(&ackGeometry)
-	tracked.WorkspaceID = firstNonEmpty(request.WorkspaceID, tracked.WorkspaceID, "workspace-1")
+	tracked.WorkspaceID = firstNonEmpty(request.WorkspaceID, tracked.WorkspaceID, bridge.activeWorkspaceIDLocked())
 	tracked.Surface.WorkspaceID = tracked.WorkspaceID
 	tracked.ZoneID = firstNonEmpty(zoneID, tracked.ZoneID, "primary")
 	tracked.Surface.ZoneID = tracked.ZoneID
@@ -1015,7 +1082,7 @@ func (bridge *Bridge) updateBackendLayoutSurfaceLocked(tracked TrackedSurface) {
 		})
 	}
 	layout.Revision = bridge.layoutSeq
-	normalizeLayoutState(&layout)
+	bridge.applyWorkspaceAuthorityToLayoutLocked(&layout)
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
 }
 
@@ -1147,7 +1214,14 @@ func (bridge *Bridge) FocusSurface(request FocusSurfaceRequest) (SurfaceActionRe
 	}
 
 	bridge.mu.Lock()
+	targetWorkspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
 	for id, tracked := range bridge.surfaces {
+		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		if firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked()) != targetWorkspaceID {
+			continue
+		}
 		tracked.Focused = id == request.SurfaceID
 		if id == request.SurfaceID {
 			tracked.LayoutRevision = bridge.layoutSeq + 1
@@ -1241,10 +1315,18 @@ func (bridge *Bridge) handleLayoutState(layout LayoutState) {
 		}
 		bridge.mu.Unlock()
 	}
-	normalizeLayoutState(&layout)
-
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
+	for index := range layout.Surfaces {
+		if layout.Surfaces[index].WorkspaceID == "" {
+			layout.Surfaces[index].WorkspaceID = bridge.activeWorkspaceIDLocked()
+		}
+		bridge.ensureWorkspaceLocked(layout.Surfaces[index].WorkspaceID)
+	}
+	for _, workspace := range layout.Workspaces {
+		bridge.ensureWorkspaceLocked(workspace.ID)
+	}
+	bridge.applyWorkspaceAuthorityToLayoutLocked(&layout)
 	bridge.layoutMode = layout.Mode
 	layout.Settings = bridge.layoutSettings
 	bridge.preserveTrackedFocusLocked(&layout)
@@ -1359,6 +1441,11 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 	if previous, ok := bridge.surfaces[event.Surface.ID]; ok {
 		mergeSurfaceReadback(&tracked, previous, event.Event, now)
 	}
+	if tracked.WorkspaceID == "" {
+		tracked.WorkspaceID = bridge.activeWorkspaceIDLocked()
+		tracked.Surface.WorkspaceID = tracked.WorkspaceID
+	}
+	bridge.ensureWorkspaceLocked(tracked.WorkspaceID)
 	applyLayoutDefaults(&tracked)
 	bridge.applyLifecycleClassificationLocked(&tracked)
 	if event.Event == EventFrameDone {
@@ -1448,7 +1535,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func applyLayoutDefaults(surface *TrackedSurface) {
-	surface.WorkspaceID = firstNonEmpty(surface.WorkspaceID, "workspace-1")
+	surface.WorkspaceID = firstNonEmpty(surface.WorkspaceID, defaultWorkspaceID)
 	surface.LayoutMode = firstNonEmpty(surface.LayoutMode, string(LayoutModeFreeform))
 	if surface.Surface.SurfaceKind == SurfaceKindLayer {
 		surface.ZoneID = firstNonEmpty(surface.ZoneID, "chrome")
@@ -1561,41 +1648,75 @@ func (bridge *Bridge) outputsLocked() map[string]LogicalOutput {
 
 func (bridge *Bridge) layoutLocked() LayoutState {
 	if bridge.backendLayout != nil {
-		return cloneLayoutState(*bridge.backendLayout)
+		layout := cloneLayoutState(*bridge.backendLayout)
+		bridge.applyWorkspaceAuthorityToLayoutLocked(&layout)
+		return layout
 	}
+	return bridge.layoutFromTrackedLocked()
+}
+
+func (bridge *Bridge) layoutFromTrackedLocked() LayoutState {
 	surfaces := make([]TrackedSurface, 0, len(bridge.surfaces))
 	for _, surface := range bridge.surfaces {
 		if surface.Surface.SurfaceKind == SurfaceKindLayer {
 			continue
 		}
+		bridge.ensureWorkspaceLocked(firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked()))
 		surfaces = append(surfaces, surface)
 	}
-	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i].Surface.ID < surfaces[j].Surface.ID })
+	workspaceRank := bridge.workspaceRankLocked()
+	sort.Slice(surfaces, func(i, j int) bool {
+		leftWorkspace := firstNonEmpty(surfaces[i].WorkspaceID, surfaces[i].Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
+		rightWorkspace := firstNonEmpty(surfaces[j].WorkspaceID, surfaces[j].Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
+		if leftWorkspace != rightWorkspace {
+			leftRank, leftOK := workspaceRank[leftWorkspace]
+			rightRank, rightOK := workspaceRank[rightWorkspace]
+			if leftOK && rightOK {
+				return leftRank < rightRank
+			}
+			if leftOK != rightOK {
+				return leftOK
+			}
+			return leftWorkspace < rightWorkspace
+		}
+		left := firstNonEmpty(surfaces[i].Surface.Label, surfaces[i].Surface.ID)
+		right := firstNonEmpty(surfaces[j].Surface.Label, surfaces[j].Surface.ID)
+		if left == right {
+			return surfaces[i].Surface.ID < surfaces[j].Surface.ID
+		}
+		return left < right
+	})
 
-	zones := map[string]*LayoutZone{
-		"primary":   {ID: "primary", Name: "Primary", Kind: "work"},
-		"secondary": {ID: "secondary", Name: "Secondary", Kind: "work"},
-		"transient": {ID: "transient", Name: "Transient", Kind: "floating"},
+	builders := map[string]*layoutWorkspaceBuilder{}
+	workspaceOrder := bridge.workspaceOrderLocked()
+	for _, workspaceID := range workspaceOrder {
+		record := bridge.ensureWorkspaceLocked(workspaceID)
+		builders[workspaceID] = newWorkspaceBuilder(record, bridge.activeWorkspaceIDLocked())
 	}
-	zoneOrder := []string{"primary", "secondary", "transient"}
 	layoutSurfaces := make([]LayoutSurface, 0, len(surfaces))
-	surfaceOrder := make([]string, 0, len(surfaces))
-	outputID := ""
 	mode := bridge.layoutMode
 	if mode == "" || !validLayoutMode(mode) {
 		mode = LayoutModeZones
 	}
+	activeWorkspaceID := bridge.activeWorkspaceIDLocked()
 	for index, surface := range surfaces {
-		workspaceID := firstNonEmpty(surface.WorkspaceID, "workspace-1")
-		zoneID := firstNonEmpty(surface.ZoneID, "primary")
-		if _, ok := zones[zoneID]; !ok {
-			zones[zoneID] = &LayoutZone{ID: zoneID, Name: zoneID, Kind: "work"}
-			zoneOrder = append(zoneOrder, zoneID)
+		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, activeWorkspaceID)
+		record := bridge.ensureWorkspaceLocked(workspaceID)
+		builder := builders[workspaceID]
+		if builder == nil {
+			builder = newWorkspaceBuilder(record, activeWorkspaceID)
+			builders[workspaceID] = builder
+			workspaceOrder = append(workspaceOrder, workspaceID)
 		}
-		zones[zoneID].SurfaceIDs = append(zones[zoneID].SurfaceIDs, surface.Surface.ID)
-		surfaceOrder = append(surfaceOrder, surface.Surface.ID)
-		if outputID == "" {
-			outputID = firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+		zoneID := firstNonEmpty(surface.ZoneID, "primary")
+		if _, ok := builder.zones[zoneID]; !ok {
+			builder.zones[zoneID] = &LayoutZone{ID: zoneID, Name: zoneID, Kind: zoneKindForSurface(surface)}
+			builder.zoneOrder = append(builder.zoneOrder, zoneID)
+		}
+		builder.zones[zoneID].SurfaceIDs = append(builder.zones[zoneID].SurfaceIDs, surface.Surface.ID)
+		builder.workspace.SurfaceOrder = append(builder.workspace.SurfaceOrder, surface.Surface.ID)
+		if builder.workspace.OutputID == "" {
+			builder.workspace.OutputID = firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
 		}
 		if surface.LayoutMode != "" && validLayoutMode(LayoutMode(surface.LayoutMode)) {
 			mode = LayoutMode(surface.LayoutMode)
@@ -1608,6 +1729,7 @@ func (bridge *Bridge) layoutLocked() LayoutState {
 		if label == "" {
 			label = fmt.Sprintf("%d", index+1)
 		}
+		active := workspaceID == activeWorkspaceID
 		layoutSurfaces = append(layoutSurfaces, LayoutSurface{
 			SurfaceID:     surface.Surface.ID,
 			Label:         label,
@@ -1620,32 +1742,30 @@ func (bridge *Bridge) layoutLocked() LayoutState {
 			Mode:          mode,
 			Participation: role,
 			Floating:      role == SurfaceLayoutRoleFloating,
-			Focused:       bridge.layoutFocusedLocked(surface),
-			Visible:       surface.Visible,
+			Focused:       active && bridge.layoutFocusedLocked(surface),
+			Visible:       active && surface.Visible,
 			Geometry:      firstGeometry(surface),
 			Order:         index,
 		})
 	}
 
-	layoutZones := make([]LayoutZone, 0, len(zoneOrder))
-	for _, zoneID := range zoneOrder {
-		zone := zones[zoneID]
-		layoutZones = append(layoutZones, *zone)
-	}
-	workspace := LayoutWorkspace{
-		ID:           "workspace-1",
-		Name:         "workspace 1",
-		OutputID:     outputID,
-		Active:       true,
-		Zones:        layoutZones,
-		SurfaceOrder: surfaceOrder,
+	workspaces := make([]LayoutWorkspace, 0, len(workspaceOrder))
+	for _, workspaceID := range workspaceOrder {
+		builder := builders[workspaceID]
+		if builder == nil {
+			continue
+		}
+		for _, zoneID := range builder.zoneOrder {
+			builder.workspace.Zones = append(builder.workspace.Zones, *builder.zones[zoneID])
+		}
+		workspaces = append(workspaces, builder.workspace)
 	}
 	return LayoutState{
 		Mode:       mode,
 		Revision:   bridge.layoutSeq,
 		Settings:   bridge.layoutSettings,
 		Surfaces:   layoutSurfaces,
-		Workspaces: []LayoutWorkspace{workspace},
+		Workspaces: workspaces,
 	}
 }
 
@@ -1670,6 +1790,7 @@ func (bridge *Bridge) removeSurfaceFromBackendLayoutLocked(surfaceID string) {
 	}
 	bridge.layoutSeq++
 	layout.Revision = bridge.layoutSeq
+	bridge.applyWorkspaceAuthorityToLayoutLocked(&layout)
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
 }
 
@@ -1683,6 +1804,178 @@ func filterString(values []string, remove string) []string {
 	return filtered
 }
 
+func (bridge *Bridge) activeWorkspaceIDLocked() string {
+	if strings.TrimSpace(bridge.activeWorkspaceID) == "" {
+		bridge.activeWorkspaceID = defaultWorkspaceID
+	}
+	bridge.ensureWorkspaceLocked(bridge.activeWorkspaceID)
+	return bridge.activeWorkspaceID
+}
+
+func (bridge *Bridge) ensureWorkspaceLocked(workspaceID string) workspaceRecord {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		workspaceID = defaultWorkspaceID
+	}
+	if bridge.workspaces == nil {
+		bridge.workspaces = map[string]workspaceRecord{}
+	}
+	if record, ok := bridge.workspaces[workspaceID]; ok {
+		if record.Name == "" {
+			record.Name = workspaceDisplayName(workspaceID)
+			bridge.workspaces[workspaceID] = record
+		}
+		return record
+	}
+	record := workspaceRecord{ID: workspaceID, Name: workspaceDisplayName(workspaceID)}
+	bridge.workspaces[workspaceID] = record
+	bridge.workspaceOrder = append(bridge.workspaceOrder, workspaceID)
+	return record
+}
+
+func (bridge *Bridge) workspaceOrderLocked() []string {
+	bridge.ensureWorkspaceLocked(defaultWorkspaceID)
+	bridge.ensureWorkspaceLocked(bridge.activeWorkspaceIDLocked())
+	seen := map[string]bool{}
+	ordered := make([]string, 0, len(bridge.workspaceOrder)+len(bridge.workspaces))
+	for _, workspaceID := range bridge.workspaceOrder {
+		if workspaceID == "" || seen[workspaceID] {
+			continue
+		}
+		seen[workspaceID] = true
+		ordered = append(ordered, workspaceID)
+	}
+	extras := make([]string, 0, len(bridge.workspaces))
+	for workspaceID := range bridge.workspaces {
+		if !seen[workspaceID] {
+			extras = append(extras, workspaceID)
+		}
+	}
+	sort.Strings(extras)
+	ordered = append(ordered, extras...)
+	bridge.workspaceOrder = ordered
+	return append([]string(nil), ordered...)
+}
+
+func (bridge *Bridge) workspaceRankLocked() map[string]int {
+	order := bridge.workspaceOrderLocked()
+	rank := make(map[string]int, len(order))
+	for index, workspaceID := range order {
+		rank[workspaceID] = index
+	}
+	return rank
+}
+
+func workspaceDisplayName(workspaceID string) string {
+	if strings.HasPrefix(workspaceID, "workspace-") {
+		suffix := strings.TrimSpace(strings.TrimPrefix(workspaceID, "workspace-"))
+		if suffix != "" {
+			return "workspace " + suffix
+		}
+	}
+	return workspaceID
+}
+
+type layoutWorkspaceBuilder struct {
+	workspace LayoutWorkspace
+	zones     map[string]*LayoutZone
+	zoneOrder []string
+}
+
+func newWorkspaceBuilder(record workspaceRecord, activeWorkspaceID string) *layoutWorkspaceBuilder {
+	return &layoutWorkspaceBuilder{
+		workspace: LayoutWorkspace{
+			ID:           record.ID,
+			Name:         firstNonEmpty(record.Name, workspaceDisplayName(record.ID)),
+			OutputID:     record.OutputID,
+			Active:       record.ID == activeWorkspaceID,
+			SurfaceOrder: []string{},
+		},
+		zones: map[string]*LayoutZone{
+			"primary":   {ID: "primary", Name: "Primary", Kind: "work", SurfaceIDs: []string{}},
+			"secondary": {ID: "secondary", Name: "Secondary", Kind: "work", SurfaceIDs: []string{}},
+			"transient": {ID: "transient", Name: "Transient", Kind: "floating", SurfaceIDs: []string{}},
+		},
+		zoneOrder: []string{"primary", "secondary", "transient"},
+	}
+}
+
+func zoneKindForSurface(surface TrackedSurface) string {
+	role := SurfaceLayoutRole(surface.LayoutRole)
+	if role == SurfaceLayoutRoleFloating || role == SurfaceLayoutRoleTransient {
+		return "floating"
+	}
+	return "work"
+}
+
+func (bridge *Bridge) applyWorkspaceAuthorityToBackendLayoutLocked() {
+	if bridge.backendLayout == nil {
+		return
+	}
+	layout := cloneLayoutState(*bridge.backendLayout)
+	bridge.applyWorkspaceAuthorityToLayoutLocked(&layout)
+	bridge.backendLayout = cloneLayoutStatePtr(layout)
+}
+
+func (bridge *Bridge) applyWorkspaceAuthorityToLayoutLocked(layout *LayoutState) {
+	activeWorkspaceID := bridge.activeWorkspaceIDLocked()
+	for _, surface := range bridge.surfaces {
+		if surface.Surface.SurfaceKind == SurfaceKindLayer {
+			continue
+		}
+		bridge.ensureWorkspaceLocked(firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, activeWorkspaceID))
+	}
+	for index := range layout.Surfaces {
+		surface := &layout.Surfaces[index]
+		if surface.WorkspaceID == "" {
+			surface.WorkspaceID = activeWorkspaceID
+		}
+		bridge.ensureWorkspaceLocked(surface.WorkspaceID)
+		if tracked, ok := bridge.surfaces[surface.SurfaceID]; ok {
+			surface.WorkspaceID = firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, surface.WorkspaceID)
+			surface.Visible = tracked.Visible && surface.WorkspaceID == activeWorkspaceID
+			surface.Focused = surface.WorkspaceID == activeWorkspaceID && bridge.layoutFocusedLocked(tracked)
+		} else {
+			surface.Visible = surface.Visible && surface.WorkspaceID == activeWorkspaceID
+			surface.Focused = surface.Focused && surface.WorkspaceID == activeWorkspaceID
+		}
+	}
+	normalizeLayoutState(layout)
+	for _, workspaceID := range bridge.workspaceOrderLocked() {
+		ensureWorkspace(layout, workspaceID)
+	}
+	activeSeen := false
+	for index := range layout.Workspaces {
+		workspace := &layout.Workspaces[index]
+		record := bridge.ensureWorkspaceLocked(workspace.ID)
+		workspace.Name = firstNonEmpty(record.Name, workspace.Name, workspaceDisplayName(workspace.ID))
+		workspace.Active = workspace.ID == activeWorkspaceID
+		if workspace.Active {
+			activeSeen = true
+		}
+	}
+	if !activeSeen {
+		workspace := ensureWorkspace(layout, activeWorkspaceID)
+		workspace.Active = true
+	}
+	bridge.sortLayoutWorkspacesLocked(layout)
+}
+
+func (bridge *Bridge) sortLayoutWorkspacesLocked(layout *LayoutState) {
+	rank := bridge.workspaceRankLocked()
+	sort.SliceStable(layout.Workspaces, func(i, j int) bool {
+		leftRank, leftOK := rank[layout.Workspaces[i].ID]
+		rightRank, rightOK := rank[layout.Workspaces[j].ID]
+		if leftOK && rightOK {
+			return leftRank < rightRank
+		}
+		if leftOK != rightOK {
+			return leftOK
+		}
+		return layout.Workspaces[i].ID < layout.Workspaces[j].ID
+	})
+}
+
 func normalizeLayoutState(layout *LayoutState) {
 	if layout.Mode == "" {
 		layout.Mode = LayoutModeZones
@@ -1694,20 +1987,26 @@ func normalizeLayoutState(layout *LayoutState) {
 	for index := range layout.Workspaces {
 		workspace := &layout.Workspaces[index]
 		if workspace.ID == "" {
-			workspace.ID = "workspace-1"
+			workspace.ID = defaultWorkspaceID
 		}
 		if workspace.Name == "" {
 			workspace.Name = workspace.ID
 		}
 	}
 	if len(layout.Workspaces) == 0 {
-		layout.Workspaces = []LayoutWorkspace{{ID: "workspace-1", Name: "workspace 1", Active: true}}
+		layout.Workspaces = []LayoutWorkspace{{ID: defaultWorkspaceID, Name: workspaceDisplayName(defaultWorkspaceID), Active: true}}
 	}
 	for index := range layout.Workspaces {
 		workspace := &layout.Workspaces[index]
 		workspace.SurfaceOrder = uniqueStrings(workspace.SurfaceOrder)
+		if workspace.SurfaceOrder == nil {
+			workspace.SurfaceOrder = []string{}
+		}
 		for zoneIndex := range workspace.Zones {
 			workspace.Zones[zoneIndex].SurfaceIDs = uniqueStrings(workspace.Zones[zoneIndex].SurfaceIDs)
+			if workspace.Zones[zoneIndex].SurfaceIDs == nil {
+				workspace.Zones[zoneIndex].SurfaceIDs = []string{}
+			}
 		}
 	}
 	for index := range layout.Surfaces {
@@ -1719,7 +2018,7 @@ func normalizeLayoutState(layout *LayoutState) {
 			surface.Label = fmt.Sprintf("%d", index+1)
 		}
 		if surface.WorkspaceID == "" {
-			surface.WorkspaceID = "workspace-1"
+			surface.WorkspaceID = defaultWorkspaceID
 		}
 		if surface.ZoneID == "" {
 			surface.ZoneID = "primary"

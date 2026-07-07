@@ -1,7 +1,6 @@
 package compositorbridge
 
 import (
-	"fmt"
 	"log"
 	"sort"
 )
@@ -100,60 +99,21 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 	}
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
-	layout := LayoutState{
-		Mode:       bridge.tiledLayoutModeLocked(),
-		Settings:   bridge.layoutSettings,
-		Surfaces:   make([]LayoutSurface, 0, len(placements)),
-		Workspaces: []LayoutWorkspace{{ID: "workspace-1", Name: "workspace 1", Active: true}},
-	}
-	workspace := &layout.Workspaces[0]
-	zonesByID := map[string]*LayoutZone{}
-	zoneOrder := make([]string, 0, len(placements))
 	placed := map[string]bool{}
-	for index, placement := range placements {
+	for _, placement := range placements {
 		tracked, ok := bridge.surfaces[placement.SurfaceID]
 		if !ok {
 			continue
 		}
 		placed[tracked.Surface.ID] = true
-		workspaceID := firstNonEmpty(placement.WorkspaceID, tracked.WorkspaceID, tracked.Surface.WorkspaceID, "workspace-1")
-		if workspace.ID == "workspace-1" && workspaceID != "workspace-1" {
-			workspace.ID = workspaceID
-			workspace.Name = workspaceID
-		}
-		outputID := firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID)
-		if workspace.OutputID == "" {
-			workspace.OutputID = outputID
-		}
+		workspaceID := firstNonEmpty(placement.WorkspaceID, tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
+		bridge.ensureWorkspaceLocked(workspaceID)
 		zoneID := firstNonEmpty(placement.ZoneID, tracked.ZoneID, tracked.Surface.ZoneID, zoneMaster)
-		if _, ok := zonesByID[zoneID]; !ok {
-			zonesByID[zoneID] = &LayoutZone{ID: zoneID, Name: zoneID, Kind: "work"}
-			zoneOrder = append(zoneOrder, zoneID)
-		}
-		zonesByID[zoneID].SurfaceIDs = append(zonesByID[zoneID].SurfaceIDs, tracked.Surface.ID)
-		workspace.SurfaceOrder = append(workspace.SurfaceOrder, tracked.Surface.ID)
-		label := tracked.Surface.Label
-		if label == "" {
-			label = fmt.Sprintf("%d", index+1)
-		}
 		layoutMode := bridge.tiledLayoutModeLocked()
-		layout.Surfaces = append(layout.Surfaces, LayoutSurface{
-			SurfaceID:     tracked.Surface.ID,
-			Label:         label,
-			AppID:         tracked.Surface.AppID,
-			Title:         tracked.Surface.Title,
-			Role:          tracked.Surface.Role,
-			OutputID:      outputID,
-			WorkspaceID:   workspaceID,
-			ZoneID:        zoneID,
-			Mode:          layoutMode,
-			Participation: SurfaceLayoutRoleTiled,
-			Floating:      false,
-			Focused:       bridge.layoutFocusedLocked(tracked),
-			Visible:       tracked.Visible,
-			Geometry:      firstGeometry(tracked),
-			Order:         index,
-		})
+		tracked.WorkspaceID = workspaceID
+		tracked.Surface.WorkspaceID = workspaceID
+		tracked.ZoneID = zoneID
+		tracked.Surface.ZoneID = zoneID
 		tracked.LayoutMode = string(layoutMode)
 		tracked.LayoutRole = string(SurfaceLayoutRoleTiled)
 		tracked.Surface.LayoutMode = tracked.LayoutMode
@@ -169,26 +129,9 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 	}
 	sort.Slice(remaining, func(i, j int) bool { return remaining[i].Surface.ID < remaining[j].Surface.ID })
 	for _, tracked := range remaining {
-		workspaceID := firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, "workspace-1")
-		outputID := firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID)
-		if workspace.OutputID == "" {
-			workspace.OutputID = outputID
-		}
+		workspaceID := firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
+		bridge.ensureWorkspaceLocked(workspaceID)
 		zoneID := firstNonEmpty(tracked.ZoneID, tracked.Surface.ZoneID, zoneTransient)
-		kind := "floating"
-		if SurfaceLayoutRole(tracked.LayoutRole) == SurfaceLayoutRoleTiled {
-			kind = "work"
-		}
-		if _, ok := zonesByID[zoneID]; !ok {
-			zonesByID[zoneID] = &LayoutZone{ID: zoneID, Name: zoneID, Kind: kind}
-			zoneOrder = append(zoneOrder, zoneID)
-		}
-		zonesByID[zoneID].SurfaceIDs = append(zonesByID[zoneID].SurfaceIDs, tracked.Surface.ID)
-		workspace.SurfaceOrder = append(workspace.SurfaceOrder, tracked.Surface.ID)
-		label := tracked.Surface.Label
-		if label == "" {
-			label = fmt.Sprintf("%d", len(layout.Surfaces)+1)
-		}
 		role := SurfaceLayoutRole(tracked.LayoutRole)
 		if role == "" {
 			role = SurfaceLayoutRoleFloating
@@ -197,28 +140,18 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 		if mode == "" || !validLayoutMode(mode) {
 			mode = LayoutModeFreeform
 		}
-		layout.Surfaces = append(layout.Surfaces, LayoutSurface{
-			SurfaceID:     tracked.Surface.ID,
-			Label:         label,
-			AppID:         tracked.Surface.AppID,
-			Title:         tracked.Surface.Title,
-			Role:          tracked.Surface.Role,
-			OutputID:      outputID,
-			WorkspaceID:   workspaceID,
-			ZoneID:        zoneID,
-			Mode:          mode,
-			Participation: role,
-			Floating:      role == SurfaceLayoutRoleFloating,
-			Focused:       bridge.layoutFocusedLocked(tracked),
-			Visible:       tracked.Visible,
-			Geometry:      firstGeometry(tracked),
-			Order:         len(layout.Surfaces),
-		})
-	}
-	for _, zoneID := range zoneOrder {
-		workspace.Zones = append(workspace.Zones, *zonesByID[zoneID])
+		tracked.WorkspaceID = workspaceID
+		tracked.Surface.WorkspaceID = workspaceID
+		tracked.ZoneID = zoneID
+		tracked.Surface.ZoneID = zoneID
+		tracked.LayoutMode = string(mode)
+		tracked.Surface.LayoutMode = tracked.LayoutMode
+		tracked.LayoutRole = string(role)
+		tracked.Surface.LayoutRole = tracked.LayoutRole
+		bridge.surfaces[tracked.Surface.ID] = tracked
 	}
 	bridge.layoutSeq++
+	layout := bridge.layoutFromTrackedLocked()
 	layout.Revision = bridge.layoutSeq
 	bridge.backendLayout = cloneLayoutStatePtr(layout)
 }
@@ -232,6 +165,9 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 	surfaces := make([]TrackedSurface, 0, len(bridge.surfaces))
 	for _, surface := range bridge.surfaces {
 		if !isAutoTileSurface(surface) {
+			continue
+		}
+		if firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked()) != bridge.activeWorkspaceIDLocked() {
 			continue
 		}
 		surfaces = append(surfaces, surface)
@@ -281,7 +217,7 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 		surface := surfaces[0]
 		placements = append(placements, autoLayoutPlacement{
 			SurfaceID:   surface.Surface.ID,
-			WorkspaceID: firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, "workspace-1"),
+			WorkspaceID: firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked()),
 			ZoneID:      zoneMaster,
 			Geometry:    area,
 		})
@@ -314,7 +250,7 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 	masterRects := verticalSlices(SurfaceGeometry{X: area.X, Y: area.Y, Width: masterWidth, Height: area.Height}, nmaster, settings.Gaps.InnerVertical)
 	stackRects := verticalSlices(SurfaceGeometry{X: area.X + masterWidth + innerH, Y: area.Y, Width: stackWidth, Height: area.Height}, stackCount, settings.Gaps.InnerVertical)
 	for index, surface := range surfaces {
-		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, "workspace-1")
+		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
 		if index < nmaster {
 			placements = append(placements, autoLayoutPlacement{
 				SurfaceID:   surface.Surface.ID,
