@@ -2730,6 +2730,16 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border-color: var(--agora-accent);
       box-shadow: inset 0 -4px 0 var(--agora-accent);
     }
+    .task-button.minimized {
+      border-color: var(--agora-warning);
+      color: var(--agora-text-muted);
+    }
+    .task-button.minimized .task-label::after {
+      color: var(--agora-warning);
+      content: " minimized";
+      font-size: 12px;
+      margin-left: 8px;
+    }
     .task-icon {
       align-items: center;
       background: var(--agora-evidence-strong);
@@ -3383,7 +3393,14 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         const layout = layoutSurface(surface.id) || {};
         const zone = text(layout.zoneId, text(surface.zoneId, "primary"));
         const taskLabel = text(surface.title, text(surface.appId, surface.id));
-        const focusButton = button("", "task-button" + (surface.focused || layout.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus"));
+        const minimized = Boolean(surface.minimized);
+        const focusButton = button(
+          "",
+          "task-button" +
+            (surface.focused || layout.focused ? " focused" : "") +
+            (minimized ? " minimized" : ""),
+          () => activateTaskSurface(surface)
+        );
         const icon = createIcon("task-icon", appIconLabel(surface, layout), appIconURL(surface, layout), text(surface.appId, text(layout.appId, "")));
         const name = document.createElement("span");
         name.className = "task-label";
@@ -3391,7 +3408,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         focusButton.appendChild(icon);
         focusButton.appendChild(name);
         const area = surfaceAreaLabel(layout, zone);
-        focusButton.title = taskLabel + " / " + area;
+        focusButton.title = taskLabel + " / " + area + (minimized ? " / click to restore" : "");
         group.appendChild(focusButton);
         return group;
       }, 8);
@@ -3512,6 +3529,27 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         render();
       } catch (error) {
         status.textContent = "launch failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function activateTaskSurface(surface) {
+      if (!surface || !surface.id) {
+        return;
+      }
+      const status = document.getElementById("status-label");
+      status.textContent = surface.minimized ? "restoring" : "focus";
+      status.className = "status ready";
+      try {
+        if (surface.minimized) {
+          await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "minimize", enabled: false});
+        }
+        const result = await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "focus"});
+        await refresh();
+        setFeedback((surface.minimized ? "restore " : "focus ") + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = surface.minimized ? "restore failed" : "focus failed";
         status.className = "status warn";
       }
     }

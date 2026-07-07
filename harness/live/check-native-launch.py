@@ -109,6 +109,44 @@ def main() -> int:
             checks.append(failed("focus", f"surface {launched_surface!r} did not become focused"))
             return finish(checks, evidence_packets, args.app_id, args.expected_app_id, launched_surface, checked_at)
 
+        post_json(args.base_url + "/api/surfaces/action", {"surfaceId": launched_surface, "action": "minimize", "enabled": True})
+        minimized = wait_for_surface(
+            args.base_url,
+            launched_surface,
+            args.expected_app_id,
+            args.timeout_seconds,
+            minimized=True,
+            visible=False,
+        )
+        if minimized:
+            checks.append(passed("minimize", "minimize action made native surface restorable from shell state", surfaceId=launched_surface))
+        else:
+            checks.append(failed("minimize", f"surface {launched_surface!r} did not enter minimized shell state"))
+            return finish(checks, evidence_packets, args.app_id, args.expected_app_id, launched_surface, checked_at)
+
+        post_json(args.base_url + "/api/surfaces/action", {"surfaceId": launched_surface, "action": "minimize", "enabled": False})
+        restored = wait_for_surface(
+            args.base_url,
+            launched_surface,
+            args.expected_app_id,
+            args.timeout_seconds,
+            minimized=False,
+            visible=True,
+        )
+        if restored:
+            checks.append(passed("restore", "restore action made minimized native surface visible", surfaceId=launched_surface))
+        else:
+            checks.append(failed("restore", f"surface {launched_surface!r} did not restore from minimized shell state"))
+            return finish(checks, evidence_packets, args.app_id, args.expected_app_id, launched_surface, checked_at)
+
+        post_json(args.base_url + "/api/surfaces/action", {"surfaceId": launched_surface, "action": "focus"})
+        focused = wait_for_surface(args.base_url, launched_surface, args.expected_app_id, args.timeout_seconds, focused=True)
+        if focused:
+            checks.append(passed("restore-focus", "restored native surface can be focused again", surfaceId=launched_surface))
+        else:
+            checks.append(failed("restore-focus", f"surface {launched_surface!r} did not focus after restore"))
+            return finish(checks, evidence_packets, args.app_id, args.expected_app_id, launched_surface, checked_at)
+
         presentation_check, presentation_packet = classify_native_surface_presentation(
             focused,
             checked_at,
@@ -194,6 +232,8 @@ def wait_for_surface(
     expected_app_id: str,
     timeout_seconds: float,
     focused: bool = False,
+    minimized: bool | None = None,
+    visible: bool | None = None,
 ) -> dict | None:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -203,6 +243,8 @@ def wait_for_surface(
                 and surface.get("appId") == expected_app_id
                 and surface.get("mapped")
                 and (not focused or surface.get("focused"))
+                and (minimized is None or surface.get("minimized", False) is minimized)
+                and (visible is None or surface.get("visible", False) is visible)
             ):
                 return surface
         time.sleep(0.25)
