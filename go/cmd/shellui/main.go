@@ -19,6 +19,8 @@ func main() {
 	fixtureProviders := flag.Bool("fixture-providers", envBool("AGORA_DE_SHELLUI_FIXTURE_PROVIDERS", true), "serve deterministic deployment-testing providers")
 	catalogProvider := flag.String("catalog-provider", env("AGORA_DE_SHELLUI_CATALOG_PROVIDER", server.CatalogProviderFixture), "catalog provider: fixture or desktop_entries")
 	desktopEntryRoots := flag.String("desktop-entry-roots", env("AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS", ""), "desktop entry roots for desktop_entries catalog provider")
+	iconThemeRoots := flag.String("icon-theme-roots", env("AGORA_DE_SHELLUI_ICON_THEME_ROOTS", ""), "optional icon theme roots for desktop entry icon resolution")
+	iconPixmapRoots := flag.String("icon-pixmap-roots", env("AGORA_DE_SHELLUI_ICON_PIXMAP_ROOTS", ""), "optional pixmap roots for desktop entry icon resolution")
 	surfaceProvider := flag.String("surface-provider", env("AGORA_DE_SHELLUI_SURFACE_PROVIDER", server.SurfaceProviderFixture), "surface provider: fixture or compositorctl")
 	compositorctlPath := flag.String("compositorctl", env("AGORA_DE_SHELLUI_COMPOSITORCTL", "compositorctl"), "compositorctl path for live surface provider")
 	nativeLaunchProvider := flag.String("native-launch-provider", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER", server.NativeLaunchProviderDisabled), "native launch provider: disabled or structured_compositorctl")
@@ -36,6 +38,8 @@ func main() {
 		FixtureProviders:         *fixtureProviders,
 		CatalogProvider:          *catalogProvider,
 		DesktopEntryRoots:        splitPathList(*desktopEntryRoots),
+		IconThemeRoots:           splitPathList(*iconThemeRoots),
+		IconPixmapRoots:          splitPathList(*iconPixmapRoots),
 		SurfaceProvider:          *surfaceProvider,
 		CompositorctlPath:        *compositorctlPath,
 		NativeLaunchProvider:     *nativeLaunchProvider,

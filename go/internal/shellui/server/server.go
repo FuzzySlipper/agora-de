@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -29,14 +31,15 @@ import (
 )
 
 const (
-	DefaultListenAddress = "127.0.0.1:7780"
-	LayoutPath           = layoutroute.LayoutPath
-	LayoutActionPath     = layoutroute.ActionPath
-	WorkControlsPath     = "/api/work-surface-controls"
-	SurfaceActionPath    = "/api/surfaces/action"
-	OperatorStatusPath   = "/api/operator/status"
-	WorkspacesPath       = "/api/workspaces"
-	WorkspaceActionPath  = "/api/workspaces/action"
+	DefaultListenAddress  = "127.0.0.1:7780"
+	LayoutPath            = layoutroute.LayoutPath
+	LayoutActionPath      = layoutroute.ActionPath
+	WorkControlsPath      = "/api/work-surface-controls"
+	SurfaceActionPath     = "/api/surfaces/action"
+	OperatorStatusPath    = "/api/operator/status"
+	WorkspacesPath        = "/api/workspaces"
+	WorkspaceActionPath   = "/api/workspaces/action"
+	CatalogIconPathPrefix = "/api/catalog/icons/"
 
 	SurfaceProviderFixture                      = "fixture"
 	SurfaceProviderCompositorctl                = "compositorctl"
@@ -56,6 +59,8 @@ type Config struct {
 	FixtureProviders         bool
 	CatalogProvider          string
 	DesktopEntryRoots        []string
+	IconThemeRoots           []string
+	IconPixmapRoots          []string
 	SurfaceProvider          string
 	CompositorctlPath        string
 	NativeLaunchProvider     string
@@ -69,7 +74,7 @@ type Config struct {
 }
 
 func NewHandler(config Config) (http.Handler, error) {
-	catalogProvider, launchProvider, surfaceProvider, err := providers(config)
+	catalogProvider, launchProvider, surfaceProvider, iconFiles, err := providers(config)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +82,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle(catalogroute.AppsPath, catalogroute.New(catalogProvider, launchProvider))
 	mux.Handle(catalogroute.LaunchPath, catalogroute.New(catalogProvider, launchProvider))
+	mux.Handle(CatalogIconPathPrefix, catalogIconHandler(iconFiles))
 	mux.Handle(surfaceroute.SurfacesPath, surfaceroute.New(surfaceProvider))
 	mux.Handle(LayoutPath, layoutroute.New(layoutroute.Config{
 		CompositorctlPath: config.CompositorctlPath,
@@ -101,28 +107,77 @@ func NewHandler(config Config) (http.Handler, error) {
 	return noStore(mux), nil
 }
 
-func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, error) {
+func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, map[string]string, error) {
 	if !config.FixtureProviders {
-		return nil, nil, nil, fmt.Errorf("shellui live providers are not wired yet; enable fixture providers for deployment testing")
+		return nil, nil, nil, nil, fmt.Errorf("shellui live providers are not wired yet; enable fixture providers for deployment testing")
 	}
 
 	appCatalog, err := catalogSource(config)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	apps, err := launchAwareAppViews(config, appCatalog)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
+	iconFiles := map[string]string{}
+	apps = catalog.ApplyIconURLs(apps, iconResolver(config), func(path string) string {
+		key := iconKey(path)
+		iconFiles[key] = path
+		return CatalogIconPathPrefix + key + "/" + filepath.Base(path)
+	})
 	surfaceProvider, err := surfaceProvider(config)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	catalogProvider := func(*http.Request) ([]catalog.AppView, error) {
 		return apps, nil
 	}
-	return catalogProvider, launchProvider(config, appCatalog), surfaceProvider, nil
+	return catalogProvider, launchProvider(config, appCatalog), surfaceProvider, iconFiles, nil
+}
+
+func iconResolver(config Config) *catalog.IconResolver {
+	home := strings.TrimSpace(config.NativeLaunchHome)
+	if home == "" {
+		home = os.Getenv("HOME")
+	}
+	themeRoots := config.IconThemeRoots
+	if len(themeRoots) == 0 {
+		themeRoots = catalog.DefaultIconThemeRoots(home)
+	}
+	pixmapRoots := config.IconPixmapRoots
+	if len(pixmapRoots) == 0 {
+		pixmapRoots = catalog.DefaultIconPixmapRoots(home)
+	}
+	return catalog.NewIconResolver(themeRoots, pixmapRoots)
+}
+
+func iconKey(path string) string {
+	sum := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(sum[:])[:24]
+}
+
+func catalogIconHandler(files map[string]string) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if !strings.HasPrefix(request.URL.Path, CatalogIconPathPrefix) {
+			http.NotFound(response, request)
+			return
+		}
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		rest := strings.TrimPrefix(request.URL.Path, CatalogIconPathPrefix)
+		key, _, _ := strings.Cut(rest, "/")
+		path, ok := files[key]
+		if !ok || path == "" {
+			http.NotFound(response, request)
+			return
+		}
+		http.ServeFile(response, request, path)
+	})
 }
 
 func catalogSource(config Config) (*appcatalog.Catalog, error) {
@@ -2226,7 +2281,23 @@ func writeLauncherHTML(response http.ResponseWriter) {
       font-size: 14px;
       height: 34px;
       justify-content: center;
+      overflow: hidden;
       width: 34px;
+    }
+    .app-icon img {
+      display: block;
+      height: 100%%;
+      object-fit: contain;
+      width: 100%%;
+    }
+    .app-icon.has-image .icon-fallback {
+      display: none;
+    }
+    .app-icon.icon-load-failed img {
+      display: none;
+    }
+    .app-icon.icon-load-failed .icon-fallback {
+      display: inline;
     }
     .app-name,
     .app-detail {
@@ -2310,6 +2381,27 @@ func writeLauncherHTML(response http.ResponseWriter) {
       });
     }
 
+    function createIcon(className, label, iconUrl, title) {
+      const icon = document.createElement("span");
+      icon.className = className;
+      icon.title = title || "";
+      const fallback = document.createElement("span");
+      fallback.className = "icon-fallback";
+      fallback.textContent = label;
+      if (iconUrl) {
+        icon.classList.add("has-image");
+        const image = document.createElement("img");
+        image.src = iconUrl;
+        image.alt = "";
+        image.decoding = "async";
+        image.loading = "lazy";
+        image.addEventListener("error", () => icon.classList.add("icon-load-failed"), {once: true});
+        icon.appendChild(image);
+      }
+      icon.appendChild(fallback);
+      return icon;
+    }
+
     function renderCategories() {
       const target = document.getElementById("categories");
       target.replaceChildren();
@@ -2339,10 +2431,12 @@ func writeLauncherHTML(response http.ResponseWriter) {
       button.title = reason ? label + " - " + reason : label;
       button.addEventListener("click", () => launchApp(app.id));
 
-      const icon = document.createElement("span");
-      icon.className = "app-icon";
-      icon.textContent = text(app.iconLabel, label.slice(0, 1).toUpperCase());
-      icon.title = text(app.iconRef, text(app.icon, ""));
+      const icon = createIcon(
+        "app-icon",
+        text(app.iconLabel, label.slice(0, 1).toUpperCase()),
+        text(app.iconUrl, ""),
+        text(app.iconRef, text(app.icon, ""))
+      );
       const copy = document.createElement("span");
       const name = document.createElement("span");
       name.className = "app-name";
@@ -2647,7 +2741,23 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       font: 800 14px var(--agora-font-family);
       height: 28px;
       justify-content: center;
+      overflow: hidden;
       width: 28px;
+    }
+    .task-icon img {
+      display: block;
+      height: 100%%;
+      object-fit: contain;
+      width: 100%%;
+    }
+    .task-icon.has-image .icon-fallback {
+      display: none;
+    }
+    .task-icon.icon-load-failed img {
+      display: none;
+    }
+    .task-icon.icon-load-failed .icon-fallback {
+      display: inline;
     }
     .task-label {
       min-width: 0;
@@ -2989,6 +3099,27 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       return text(value, "").toLowerCase();
     }
 
+    function createIcon(className, label, iconUrl, title) {
+      const icon = document.createElement("span");
+      icon.className = className;
+      icon.title = title || "";
+      const fallback = document.createElement("span");
+      fallback.className = "icon-fallback";
+      fallback.textContent = label;
+      if (iconUrl) {
+        icon.classList.add("has-image");
+        const image = document.createElement("img");
+        image.src = iconUrl;
+        image.alt = "";
+        image.decoding = "async";
+        image.loading = "lazy";
+        image.addEventListener("error", () => icon.classList.add("icon-load-failed"), {once: true});
+        icon.appendChild(image);
+      }
+      icon.appendChild(fallback);
+      return icon;
+    }
+
     function isShellManagedSurface(surface) {
       const appId = text(surface && surface.appId, "");
       return appId.indexOf("io.agorade.Shell") === 0;
@@ -3022,8 +3153,40 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
 
     function appIconLabel(surface, layout) {
+      const app = catalogAppForSurface(surface, layout);
+      if (app) {
+        return text(app.iconLabel, text(app.name, text(app.id, "?")).slice(0, 1).toUpperCase());
+      }
       const source = text(surface.appId, text(layout.appId, text(surface.title, surface.id)));
       return source.slice(0, 1).toUpperCase();
+    }
+
+    function normalizeAppKey(value) {
+      return text(value, "").toLowerCase().replace(/\.desktop$/, "");
+    }
+
+    function catalogAppForSurface(surface, layout) {
+      const keys = new Set([
+        normalizeAppKey(surface && surface.appId),
+        normalizeAppKey(layout && layout.appId),
+        normalizeAppKey(surface && surface.id),
+        normalizeAppKey(surface && surface.title)
+      ]);
+      return state.apps.find((app) => {
+        const appKeys = [
+          normalizeAppKey(app.id),
+          normalizeAppKey(app.name),
+          normalizeAppKey(app.startupWMClass),
+          normalizeAppKey(app.iconRef),
+          normalizeAppKey(app.icon)
+        ];
+        return appKeys.some((key) => key && keys.has(key));
+      }) || null;
+    }
+
+    function appIconURL(surface, layout) {
+      const app = catalogAppForSurface(surface, layout);
+      return app ? text(app.iconUrl, "") : "";
     }
 
     function workspaceZones() {
@@ -3221,9 +3384,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         const zone = text(layout.zoneId, text(surface.zoneId, "primary"));
         const taskLabel = text(surface.title, text(surface.appId, surface.id));
         const focusButton = button("", "task-button" + (surface.focused || layout.focused ? " focused" : ""), () => actOnSurface(surface.id, "focus"));
-        const icon = document.createElement("span");
-        icon.className = "task-icon";
-        icon.textContent = appIconLabel(surface, layout);
+        const icon = createIcon("task-icon", appIconLabel(surface, layout), appIconURL(surface, layout), text(surface.appId, text(layout.appId, "")));
         const name = document.createElement("span");
         name.className = "task-label";
         name.textContent = taskLabel;

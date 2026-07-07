@@ -128,7 +128,8 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`id="categories"`,
 		`id="app-list"`,
 		`id="close-button"`,
-		`className = "app-icon"`,
+		`const icon = createIcon(`,
+		`icon-load-failed`,
 		`className = "app-detail"`,
 		`id="policy-status"`,
 		`dataset.disabledCode`,
@@ -672,11 +673,16 @@ func TestParseCompositorctlErrorHandlesCliErrorPrefix(t *testing.T) {
 
 func TestHandlerCanUseDesktopEntryCatalogProvider(t *testing.T) {
 	root := t.TempDir()
+	pixmaps := t.TempDir()
+	if err := os.WriteFile(filepath.Join(pixmaps, "terminal.svg"), []byte("<svg/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
 Type=Application
 Name=Terminal
 Exec=terminal %U
 Icon=terminal
+StartupWMClass=Terminal
 `)
 	writeServerDesktopEntry(t, root, "hidden.desktop", `[Desktop Entry]
 Type=Application
@@ -689,6 +695,7 @@ NoDisplay=true
 		FixtureProviders:  true,
 		CatalogProvider:   CatalogProviderDesktopEntries,
 		DesktopEntryRoots: []string{root},
+		IconPixmapRoots:   []string{pixmaps},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -699,6 +706,8 @@ NoDisplay=true
 			ID         string `json:"id"`
 			Name       string `json:"name"`
 			Icon       string `json:"icon"`
+			IconURL    string `json:"iconUrl"`
+			WMClass    string `json:"startupWMClass"`
 			Launchable bool   `json:"launchable"`
 			Code       string `json:"disabledCode"`
 			Reason     string `json:"disabledReason"`
@@ -711,6 +720,17 @@ NoDisplay=true
 	app := response.Apps[0]
 	if app.ID != "terminal.desktop" || app.Name != "Terminal" || app.Icon != "terminal" {
 		t.Fatalf("unexpected app: %+v", app)
+	}
+	if app.WMClass != "Terminal" {
+		t.Fatalf("startup wm class = %q, want Terminal", app.WMClass)
+	}
+	if !strings.HasPrefix(app.IconURL, CatalogIconPathPrefix) {
+		t.Fatalf("icon url = %q, want catalog icon route", app.IconURL)
+	}
+	iconRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(iconRecorder, httptest.NewRequest(http.MethodGet, app.IconURL, nil))
+	if iconRecorder.Code != http.StatusOK || !strings.Contains(iconRecorder.Body.String(), "<svg/>") {
+		t.Fatalf("icon response = status %d body %q", iconRecorder.Code, iconRecorder.Body.String())
 	}
 	if app.Launchable {
 		t.Fatalf("imported native app should not be launchable without explicit target: %+v", app)

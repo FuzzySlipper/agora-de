@@ -13,9 +13,11 @@ type AppView struct {
 	Icon           string   `json:"icon"`
 	IconKind       string   `json:"iconKind"`
 	IconRef        string   `json:"iconRef"`
+	IconURL        string   `json:"iconUrl,omitempty"`
 	IconLabel      string   `json:"iconLabel"`
 	Category       string   `json:"category"`
 	Categories     []string `json:"categories,omitempty"`
+	StartupWMClass string   `json:"startupWMClass,omitempty"`
 	Launchable     bool     `json:"launchable,omitempty"`
 	DisabledCode   string   `json:"disabledCode,omitempty"`
 	DisabledReason string   `json:"disabledReason,omitempty"`
@@ -28,21 +30,33 @@ func VisibleAppViews(source *appcatalog.Catalog) []AppView {
 	views := make([]AppView, 0, len(entries))
 	for _, entry := range entries {
 		view := AppView{
-			ID:         entry.ID,
-			Name:       entry.Name,
-			Icon:       entry.Icon,
-			IconKind:   IconKind(entry.Icon),
-			IconRef:    IconRef(entry.Icon),
-			IconLabel:  IconLabel(entry),
-			Category:   CategoryGroup(entry.Categories),
-			Categories: append([]string(nil), entry.Categories...),
-			Launchable: entry.Launchable(),
+			ID:             entry.ID,
+			Name:           entry.Name,
+			Icon:           entry.Icon,
+			IconKind:       IconKind(entry.Icon),
+			IconRef:        IconRef(entry.Icon),
+			IconLabel:      IconLabel(entry),
+			Category:       CategoryGroup(entry.Categories),
+			Categories:     append([]string(nil), entry.Categories...),
+			StartupWMClass: strings.TrimSpace(entry.StartupWMClass),
+			Launchable:     entry.Launchable(),
 		}
 		if !view.Launchable {
 			view.DisabledCode = DisabledCodeUnsupportedDesktopEntry
 			view.DisabledReason = "unsupported desktop entry"
 		}
 		views = append(views, view)
+	}
+	return views
+}
+
+func ApplyIconURLs(views []AppView, resolver *IconResolver, urlForPath func(string) string) []AppView {
+	for index := range views {
+		resolution := resolver.Resolve(views[index].Icon)
+		if resolution.Path == "" {
+			continue
+		}
+		views[index].IconURL = strings.TrimSpace(urlForPath(resolution.Path))
 	}
 	return views
 }
