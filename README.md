@@ -41,6 +41,8 @@ and CI-backed live harnesses.
 - Agent-facing state and actions through `/api/layout`, `/api/surfaces`,
   `/api/workspaces`, `/api/catalog/apps`, `/api/catalog/launch`, and
   `agora-de-compositorctl`.
+- Route/action timing diagnostics through `/api/diagnostics/timing` and
+  `/api/operator/status`.
 - Capture-visible native overlay labels for surface ids, bounds, focus, and
   zone hints.
 - Installed recovery helpers for compositor bridge restart and live-session
@@ -159,6 +161,7 @@ Supporting harnesses:
 ./harness/live/check-daily-wm-workflow.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-overlay-labels.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-popup-stability.py --output-name HDMI-A-1 --require-capture
+./harness/live/check-responsiveness-baseline.py
 ```
 
 Default installed-service proof:
@@ -225,5 +228,6 @@ rather than prove the basic architecture again:
 - [Structured window handling](docs/structured-window-handling.md)
 - [Theme boundary](docs/theme-boundary.md)
 - [Native launch policy](docs/native-launch-policy.md)
+- [Performance and responsiveness](docs/performance-responsiveness.md)
 - [den-k8 visible shell runbook](docs/den-k8-visible-shell-runbook.md)
 - [GitHub check gates](docs/github-check-gates.md)
