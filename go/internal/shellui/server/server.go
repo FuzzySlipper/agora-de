@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -466,6 +467,9 @@ type compositorctlTrackedSurface struct {
 		Role        string                 `json:"role"`
 		SurfaceKind string                 `json:"surface_kind"`
 		Visible     bool                   `json:"visible"`
+		Fullscreen  bool                   `json:"fullscreen"`
+		Maximized   bool                   `json:"maximized"`
+		Minimized   bool                   `json:"minimized"`
 		OutputID    string                 `json:"output_id"`
 		WorkspaceID string                 `json:"workspace_id"`
 		ZoneID      string                 `json:"zone_id"`
@@ -517,6 +521,9 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 			Mapped:             mapped,
 			Focused:            tracked.Focused,
 			Visible:            tracked.Visible || tracked.Surface.Visible,
+			Fullscreen:         tracked.Surface.Fullscreen,
+			Maximized:          tracked.Surface.Maximized,
+			Minimized:          tracked.Surface.Minimized,
 			OutputID:           firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID),
 			WorkspaceID:        firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID),
 			ZoneID:             firstNonEmpty(tracked.ZoneID, tracked.Surface.ZoneID),
@@ -632,6 +639,7 @@ func decodeCompositorctlLaunch(payload []byte) (catalogroute.LaunchResult, error
 type surfaceActionRequest struct {
 	Action    string `json:"action"`
 	SurfaceID string `json:"surfaceId"`
+	Enabled   *bool  `json:"enabled,omitempty"`
 }
 
 type surfaceActionResponse struct {
@@ -705,17 +713,21 @@ func surfaceActionHandler(config Config) http.Handler {
 }
 
 func surfaceActionArgs(action surfaceActionRequest) ([]string, bool) {
+	enabled := "true"
+	if action.Enabled != nil {
+		enabled = strconv.FormatBool(*action.Enabled)
+	}
 	switch action.Action {
 	case "focus":
 		return []string{"surface", "focus", "--surface", action.SurfaceID, "--timeout-ms", "2000"}, true
 	case "close":
 		return []string{"surface", "close", "--surface", action.SurfaceID, "--timeout-ms", "2000"}, true
 	case "maximize":
-		return []string{"surface", "maximize", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
+		return []string{"surface", "maximize", "--surface", action.SurfaceID, "--enabled=" + enabled, "--timeout-ms", "2000"}, true
 	case "minimize":
-		return []string{"surface", "minimize", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
+		return []string{"surface", "minimize", "--surface", action.SurfaceID, "--enabled=" + enabled, "--timeout-ms", "2000"}, true
 	case "fullscreen":
-		return []string{"surface", "fullscreen", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
+		return []string{"surface", "fullscreen", "--surface", action.SurfaceID, "--enabled=" + enabled, "--timeout-ms", "2000"}, true
 	case "setFloating":
 		return []string{"surface", "set-floating", "--surface", action.SurfaceID, "--enabled=true", "--timeout-ms", "2000"}, true
 	default:
@@ -2885,11 +2897,27 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     function targetSurface() {
       const layout = focusedLayoutSurface();
       if (layout) {
-        return layout;
+        const surface = state.surfaces.find((candidate) => candidate.id === layout.surfaceId) || {};
+        return {
+          ...layout,
+          fullscreen: Boolean(surface.fullscreen),
+          maximized: Boolean(surface.maximized),
+          minimized: Boolean(surface.minimized)
+        };
       }
       const surface = state.surfaces.find((candidate) => isTaskbarWorkSurface(candidate) && candidate.focused) ||
         state.surfaces.find((candidate) => isTaskbarWorkSurface(candidate));
-      return surface ? {surfaceId: surface.id, appId: surface.appId, title: surface.title, zoneId: surface.zoneId, focused: surface.focused, floating: surface.layoutRole === "floating"} : null;
+      return surface ? {
+        surfaceId: surface.id,
+        appId: surface.appId,
+        title: surface.title,
+        zoneId: surface.zoneId,
+        focused: surface.focused,
+        floating: surface.layoutRole === "floating",
+        fullscreen: Boolean(surface.fullscreen),
+        maximized: Boolean(surface.maximized),
+        minimized: Boolean(surface.minimized)
+      } : null;
     }
 
     function activeLayoutWorkspace() {
@@ -3143,6 +3171,14 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       if (moveButton && target) {
         moveButton.title = "Move " + text(target.title, target.surfaceId) + " to " + nextZone(text(target.zoneId, "primary"));
       }
+      const fullscreenButton = document.getElementById("fullscreen-button");
+      if (fullscreenButton) {
+        fullscreenButton.textContent = target && target.fullscreen ? "Unfull" : "Full";
+      }
+      const maximizeButton = document.getElementById("maximize-button");
+      if (maximizeButton) {
+        maximizeButton.textContent = target && target.maximized ? "Unmax" : "Max";
+      }
       const ruleLabel = document.getElementById("layout-rule-label");
       const settings = state.layout.settings || {};
       ruleLabel.textContent = layoutSettingsLabel();
@@ -3319,12 +3355,16 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
     }
 
-    async function actOnSurface(surfaceId, action) {
+    async function actOnSurface(surfaceId, action, enabled) {
       const status = document.getElementById("status-label");
       status.textContent = action;
       status.className = "status ready";
       try {
-        const result = await postJSON("/api/surfaces/action", {surfaceId, action});
+        const body = {surfaceId, action};
+        if (typeof enabled === "boolean") {
+          body.enabled = enabled;
+        }
+        const result = await postJSON("/api/surfaces/action", body);
         await refresh();
         setFeedback(action + " " + actionStatus(result), "ready");
         render();
@@ -3496,7 +3536,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
     }
 
-    async function actOnTarget(action) {
+    async function actOnTarget(action, enabled) {
       if (unsupportedSurfaceActions.has(action)) {
         const status = document.getElementById("status-label");
         status.textContent = action + " unsupported";
@@ -3505,8 +3545,16 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       }
       const target = targetSurface();
       if (target) {
-        await actOnSurface(target.surfaceId, action);
+        await actOnSurface(target.surfaceId, action, enabled);
       }
+    }
+
+    function toggleTargetState(action, field) {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      actOnSurface(target.surfaceId, action, !Boolean(target[field]));
     }
 
     async function resetLayout() {
@@ -3555,8 +3603,8 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     document.getElementById("promote-button").addEventListener("click", promoteTarget);
     document.getElementById("move-zone-button").addEventListener("click", moveTargetToNextZone);
     document.getElementById("float-button").addEventListener("click", toggleTargetFloating);
-    document.getElementById("fullscreen-button").addEventListener("click", () => actOnTarget("fullscreen"));
-    document.getElementById("maximize-button").addEventListener("click", () => actOnTarget("maximize"));
+    document.getElementById("fullscreen-button").addEventListener("click", () => toggleTargetState("fullscreen", "fullscreen"));
+    document.getElementById("maximize-button").addEventListener("click", () => toggleTargetState("maximize", "maximized"));
     document.getElementById("minimize-button").addEventListener("click", () => actOnTarget("minimize"));
     document.getElementById("close-focus-button").addEventListener("click", () => actOnTarget("close"));
     document.getElementById("reset-layout-button").addEventListener("click", resetLayout);

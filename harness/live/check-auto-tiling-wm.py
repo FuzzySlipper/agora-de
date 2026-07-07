@@ -327,10 +327,9 @@ def exercise_focus_order(structured, base_url: str, launched: list[dict], timeou
         result = structured.post_json(base_url + "/api/surfaces/action", {"surfaceId": item["surfaceId"], "action": "focus"})
         if result.get("status") != "accepted":
             return failed("focus-order", "shell focus action was not accepted", surfaceId=item["surfaceId"], response=result), sequence, latest_layout
-        focused = structured.wait_for_surface(base_url, item["surfaceId"], item["expectedAppId"], timeout_seconds, focused=True)
-        if not focused:
-            return failed("focus-order", "surface did not become focused", surfaceId=item["surfaceId"]), sequence, latest_layout
-        latest_layout = wait_for_focused_master(base_url, item["surfaceId"], timeout_seconds) or latest_layout
+        latest_layout = wait_for_focused_master(base_url, item["surfaceId"], timeout_seconds) or {}
+        if not latest_layout:
+            return failed("focus-order", "surface did not become the focused master layout target", surfaceId=item["surfaceId"]), sequence, {}
         layout_surface = layout_surface_for(latest_layout, item["surfaceId"]) if latest_layout else {}
         sequence.append(
             {
@@ -381,11 +380,21 @@ def exercise_shell_escape_hatches(base_url: str, launched: list[dict], timeout_s
     layout = retiled_layout
 
     for action in ["fullscreen", "maximize", "minimize"]:
-        status, payload = post_json_result(base_url + "/api/surfaces/action", {"action": action, "surfaceId": target["surfaceId"]})
-        if status < 300 or payload.get("errorClass") == "backend_unsupported":
-            events.append({"action": action, "status": status, "response": payload})
-            continue
-        return failed("shell-action", action + " action failed without backend classification", status=status, payload=payload), events, layout
+        for enabled in [True, False]:
+            status, payload = post_json_result(
+                base_url + "/api/surfaces/action",
+                {"action": action, "surfaceId": target["surfaceId"], "enabled": enabled},
+            )
+            if status < 300 or payload.get("errorClass") == "backend_unsupported":
+                events.append({"action": action, "enabled": enabled, "status": status, "response": payload})
+                continue
+            return failed(
+                "shell-action",
+                action + " action failed without backend classification",
+                enabled=enabled,
+                status=status,
+                payload=payload,
+            ), events, layout
     return passed("shell-action", "shell controls exercised floating, tiling, and compositor state actions", events=events), events, layout
 
 

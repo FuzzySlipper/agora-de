@@ -113,14 +113,28 @@ def main() -> int:
             checks.append(failed("api-layout-observes-command", "/api/layout did not observe CLI command results"))
             return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, latest_layout, checked_at)
 
-        unsupported = expect_backend_unsupported(args.compositorctl, ["layout", "set-mode", "--mode", "columns"])
-        checks.append(unsupported)
-        if unsupported["status"] != "pass":
+        columns = expect_accepted(args.compositorctl, ["layout", "set-mode", "--mode", "columns"], "layout-columns-command")
+        checks.append(columns)
+        if columns["status"] != "pass":
             return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, latest_layout, checked_at)
 
-        workspace_unsupported = expect_backend_unsupported(args.compositorctl, ["workspace", "activate", "--workspace", "workspace-1"])
-        checks.append(workspace_unsupported)
-        if workspace_unsupported["status"] != "pass":
+        zones = expect_accepted(args.compositorctl, ["layout", "set-mode", "--mode", "zones"], "layout-zones-command")
+        checks.append(zones)
+        if zones["status"] != "pass":
+            return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, latest_layout, checked_at)
+
+        workspace = expect_accepted(args.compositorctl, ["workspace", "activate", "--workspace", "workspace-1"], "workspace-activate-command")
+        checks.append(workspace)
+        if workspace["status"] != "pass":
+            return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, latest_layout, checked_at)
+
+        chrome_surface = first_layer_shell_surface(args.compositorctl)
+        if not chrome_surface:
+            checks.append(failed("unsupported-command-class", "no layer-shell chrome surface available for unsupported action proof"))
+            return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, latest_layout, checked_at)
+        unsupported = expect_backend_unsupported(args.compositorctl, ["surface", "focus", "--surface", chrome_surface])
+        checks.append(unsupported)
+        if unsupported["status"] != "pass":
             return finish(checks, evidence_packets, app_ids, expected_app_ids, launched, latest_layout, checked_at)
 
         if args.output_name:
@@ -194,6 +208,25 @@ def expect_backend_unsupported(compositorctl: str, args: list[str]) -> dict:
     if "server[backend_unsupported]" not in combined:
         return failed("unsupported-command-class", "unsupported command lacked backend_unsupported classification", command=args, output=combined)
     return passed("unsupported-command-class", "unsupported command returned backend_unsupported", command=args)
+
+
+def expect_accepted(compositorctl: str, args: list[str], name: str) -> dict:
+    try:
+        response = run_compositorctl_json(compositorctl, args)
+    except RuntimeError as error:
+        return failed(name, "command failed", command=args, error=str(error))
+    if response.get("decision") != "accepted":
+        return failed(name, "command was not accepted", command=args, response=response)
+    return passed(name, "command accepted", command=args)
+
+
+def first_layer_shell_surface(compositorctl: str) -> str:
+    payload = run_compositorctl_json(compositorctl, ["list-surfaces"])
+    for item in payload.get("surfaces", []):
+        surface = item.get("surface") or {}
+        if surface.get("surface_kind") == "layer_shell" and surface.get("id"):
+            return surface["id"]
+    return ""
 
 
 def wait_for_cli_layout(compositorctl: str, launched: list[dict], expected_zones: list[str], timeout_seconds: float) -> dict | None:

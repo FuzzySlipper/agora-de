@@ -18,6 +18,9 @@ type SurfaceView struct {
 	Mapped             bool          `json:"mapped"`
 	Focused            bool          `json:"focused"`
 	Visible            bool          `json:"visible"`
+	Fullscreen         bool          `json:"fullscreen,omitempty"`
+	Maximized          bool          `json:"maximized,omitempty"`
+	Minimized          bool          `json:"minimized,omitempty"`
 	OutputID           string        `json:"outputId,omitempty"`
 	WorkspaceID        string        `json:"workspaceId,omitempty"`
 	ZoneID             string        `json:"zoneId,omitempty"`

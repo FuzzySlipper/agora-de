@@ -53,10 +53,14 @@ does not compute placement policy.
 
 Known current limitations:
 
-- multi-workspace compositor placement is still future work;
+- multi-workspace compositor placement is implemented for backend-owned
+  workspaces on the current output; richer multi-output workspace policy is
+  still future work;
 - fullscreen, maximize, and minimize are compositor-backed in the installed
-  Wayfire adapter through `set_surface_state`; future adapters must either
-  expose equivalent acknowledged state changes or return `backend_unsupported`;
+  Wayfire adapter through `set_surface_state`, and shell-facing routes accept
+  explicit enable/disable state for reversible checks; future adapters must
+  either expose equivalent acknowledged state changes or return
+  `backend_unsupported`;
 - the shell overlay is an evidence layer, not a native app wrapper;
 - Wayfire is the current installed backend, but layout policy is not Wayfire
   product policy.

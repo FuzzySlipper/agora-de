@@ -1264,7 +1264,7 @@ func (bridge *Bridge) CloseSurface(request CloseSurfaceRequest) (SurfaceActionRe
 	if surface.Surface.SurfaceKind == SurfaceKindLayer {
 		return SurfaceActionResponse{}, classifiedError{class: ErrorBackendUnsupported, message: fmt.Sprintf("surface %s is a layer-shell surface and cannot be closed as a work surface", request.SurfaceID)}
 	}
-	if !surface.Visible {
+	if !surface.Visible && !boolPtrValue(surface.Surface.Minimized) {
 		return SurfaceActionResponse{}, classifiedError{class: ErrorSurfaceStale, message: fmt.Sprintf("surface %s is not visible", request.SurfaceID)}
 	}
 	if session == nil {
@@ -1532,6 +1532,10 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func boolPtrValue(value *bool) bool {
+	return value != nil && *value
 }
 
 func applyLayoutDefaults(surface *TrackedSurface) {

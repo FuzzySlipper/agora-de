@@ -46,6 +46,9 @@ type CompositorSurface struct {
 	PixelSize     *SurfaceGeometry           `json:"pixel_size,omitempty"`
 	ScaleFactor   float64                    `json:"scale_factor,omitempty"`
 	Visible       *bool                      `json:"visible,omitempty"`
+	Fullscreen    *bool                      `json:"fullscreen,omitempty"`
+	Maximized     *bool                      `json:"maximized,omitempty"`
+	Minimized     *bool                      `json:"minimized,omitempty"`
 	OutputID      string                     `json:"output_id,omitempty"`
 	WorkspaceID   string                     `json:"workspace_id,omitempty"`
 	ZoneID        string                     `json:"zone_id,omitempty"`
