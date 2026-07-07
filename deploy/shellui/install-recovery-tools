@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Install Agora DE recovery helpers and sudoers entry.
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+sbin_dir=${AGORA_DE_SBINDIR:-/usr/local/sbin}
+sudoers_dir=${AGORA_DE_SUDOERS_DIR:-/etc/sudoers.d}
+visudo_cmd=${AGORA_DE_VISUDO:-visudo}
+install_owner=${AGORA_DE_INSTALL_OWNER:-root}
+install_group=${AGORA_DE_INSTALL_GROUP:-root}
+target_user=${AGORA_DE_SUDO_USER:-${SUDO_USER:-}}
+if [[ -z "$target_user" || "$target_user" == "root" ]]; then
+  if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+    target_user=$(id -un)
+  elif id agent >/dev/null 2>&1; then
+    target_user=agent
+  else
+    echo "set AGORA_DE_SUDO_USER to the desktop user allowed to run the helper" >&2
+    exit 1
+  fi
+fi
+if ! id "$target_user" >/dev/null 2>&1; then
+  echo "unknown AGORA_DE_SUDO_USER: $target_user" >&2
+  exit 1
+fi
+
+install -D -o "$install_owner" -g "$install_group" -m 0755 \
+  "$repo_root/deploy/shellui/agora-de-kill-all" \
+  "$sbin_dir/agora-de-kill-all"
+
+install -d -o "$install_owner" -g "$install_group" -m 0755 "$sudoers_dir"
+cat >"$sudoers_dir/agora-de-recovery" <<SUDOERS
+$target_user ALL=(root) NOPASSWD: $sbin_dir/agora-de-kill-all
+SUDOERS
+
+chmod 0440 "$sudoers_dir/agora-de-recovery"
+"$visudo_cmd" -cf "$sudoers_dir/agora-de-recovery"
+
+printf 'installed %s/agora-de-kill-all for sudo user %s\n' "$sbin_dir" "$target_user"

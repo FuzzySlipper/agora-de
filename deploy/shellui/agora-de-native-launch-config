@@ -47,7 +47,33 @@ env_file="${AGORA_DE_SHELLUI_ENV:-${HOME}/.config/agora-de/shellui.env}"
 mkdir -p "$(dirname "${env_file}")"
 touch "${env_file}"
 
+desktop_roots=${AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS:-/usr/share/applications:${HOME}/.local/share/applications}
+native_uid=${AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID:-$(id -u)}
+native_gid=${AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID:-$(id -g)}
+native_token=${AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN:-session-native-shell}
+native_output=${AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT:-HDMI-A-1}
+native_home=${AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME:-$HOME}
+native_working_dir=${AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR:-}
+compositorctl=${AGORA_DE_SHELLUI_COMPOSITORCTL:-}
+if [[ -z "$compositorctl" ]]; then
+  if [[ -x "${HOME}/.local/bin/agora-de-compositorctl" ]]; then
+    compositorctl="${HOME}/.local/bin/agora-de-compositorctl"
+  else
+    compositorctl=$(command -v agora-de-compositorctl || printf '%s' "${HOME}/.local/bin/agora-de-compositorctl")
+  fi
+fi
+
+export AGORA_DE_NATIVE_CONFIG_DESKTOP_ROOTS="$desktop_roots"
+export AGORA_DE_NATIVE_CONFIG_UID="$native_uid"
+export AGORA_DE_NATIVE_CONFIG_GID="$native_gid"
+export AGORA_DE_NATIVE_CONFIG_SESSION_TOKEN="$native_token"
+export AGORA_DE_NATIVE_CONFIG_OUTPUT="$native_output"
+export AGORA_DE_NATIVE_CONFIG_HOME="$native_home"
+export AGORA_DE_NATIVE_CONFIG_WORKING_DIR="$native_working_dir"
+export AGORA_DE_NATIVE_CONFIG_COMPOSITORCTL="$compositorctl"
+
 python3 - "${env_file}" "${command}" <<'PY'
+import os
 import pathlib
 import sys
 
@@ -56,14 +82,14 @@ command = sys.argv[2]
 
 common = {
     "AGORA_DE_SHELLUI_CATALOG_PROVIDER": "desktop_entries",
-    "AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS": "/usr/share/applications:/home/agent/.local/share/applications",
-    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID": "1001",
-    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID": "1002",
-    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN": "session-native-shell",
-    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT": "HDMI-A-1",
-    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME": "/home/agent",
-    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR": "",
-    "AGORA_DE_SHELLUI_COMPOSITORCTL": "/home/agent/.local/bin/agora-de-compositorctl",
+    "AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS": os.environ["AGORA_DE_NATIVE_CONFIG_DESKTOP_ROOTS"],
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID": os.environ["AGORA_DE_NATIVE_CONFIG_UID"],
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID": os.environ["AGORA_DE_NATIVE_CONFIG_GID"],
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN": os.environ["AGORA_DE_NATIVE_CONFIG_SESSION_TOKEN"],
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT": os.environ["AGORA_DE_NATIVE_CONFIG_OUTPUT"],
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME": os.environ["AGORA_DE_NATIVE_CONFIG_HOME"],
+    "AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR": os.environ["AGORA_DE_NATIVE_CONFIG_WORKING_DIR"],
+    "AGORA_DE_SHELLUI_COMPOSITORCTL": os.environ["AGORA_DE_NATIVE_CONFIG_COMPOSITORCTL"],
 }
 if command == "enable-alacritty":
     updates = {

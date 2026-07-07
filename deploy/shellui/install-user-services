@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Install or update Agora DE shell user services from this checkout.
+set -euo pipefail
+IFS=$'\n\t'
+
+usage() {
+  cat <<'USAGE'
+Usage: deploy/shellui/install-user-services [--enable] [--enable-overlay] [--restart] [--overwrite-env]
+
+Builds shellui, installs user service units and chrome helper binaries, and
+creates ~/.config/agora-de/shellui.env when it does not already exist.
+
+Options:
+  --enable          Enable and start shellui, background, and panel services.
+  --enable-overlay  Enable and start the diagnostic overlay service too.
+  --restart         Restart installed shell services after copying artifacts.
+  --overwrite-env   Replace the shellui env file with current-user defaults.
+USAGE
+}
+
+enable_services=0
+enable_overlay=0
+restart_services=0
+overwrite_env=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --enable)
+      enable_services=1
+      ;;
+    --enable-overlay)
+      enable_overlay=1
+      ;;
+    --restart)
+      restart_services=1
+      ;;
+    --overwrite-env)
+      overwrite_env=1
+      ;;
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+repo_root=${AGORA_DE_REPO_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}
+env_file=${AGORA_DE_SHELLUI_ENV:-$HOME/.config/agora-de/shellui.env}
+compositorctl=${AGORA_DE_SHELLUI_COMPOSITORCTL:-$HOME/.local/bin/agora-de-compositorctl}
+desktop_roots=${AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS:-/usr/share/applications:$HOME/.local/share/applications}
+
+install -d -m 0755 "$HOME/.local/bin"
+go -C "$repo_root/go" build -trimpath -buildvcs=false -o "$HOME/.local/bin/agora-de-shellui" ./cmd/shellui
+
+install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shellui.user.service" "$HOME/.config/systemd/user/agora-de-shellui.service"
+install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shell-background.user.service" "$HOME/.config/systemd/user/agora-de-shell-background.service"
+install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shell-panel.user.service" "$HOME/.config/systemd/user/agora-de-shell-panel.service"
+install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shell-overlay.user.service" "$HOME/.config/systemd/user/agora-de-shell-overlay.service"
+install -D -m 0755 "$repo_root/chrome/webview-layer-shell/agora-de-gtk4-layer-shell-webview" "$HOME/.local/bin/agora-de-gtk4-layer-shell-webview"
+install -D -m 0755 "$repo_root/chrome/native-overlay/agora-de-native-overlay" "$HOME/.local/bin/agora-de-native-overlay"
+install -D -m 0755 "$repo_root/chrome/panel-supervisor/agora-de-shell-panel-supervisor" "$HOME/.local/bin/agora-de-shell-panel-supervisor"
+install -D -m 0755 "$repo_root/deploy/shellui/agora-de-native-launch-config" "$HOME/.local/bin/agora-de-native-launch-config"
+
+if [[ "$overwrite_env" -eq 1 || ! -f "$env_file" ]]; then
+  install -d -m 0755 "$(dirname -- "$env_file")"
+  cat >"$env_file" <<EOF
+AGORA_DE_SHELLUI_LISTEN=127.0.0.1:17780
+AGORA_DE_SHELLUI_STATIC_ROOT=
+AGORA_DE_SHELLUI_FIXTURE_PROVIDERS=true
+AGORA_DE_SHELLUI_CATALOG_PROVIDER=desktop_entries
+AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS=$desktop_roots
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID=$(id -u)
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID=$(id -g)
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_SESSION_TOKEN=session-native-shell
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT=HDMI-A-1
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME=$HOME
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR=
+AGORA_DE_SHELLUI_SURFACE_PROVIDER=compositorctl
+AGORA_DE_SHELLUI_COMPOSITORCTL=$compositorctl
+EOF
+fi
+
+systemctl --user daemon-reload
+if [[ "$enable_services" -eq 1 ]]; then
+  systemctl --user enable --now agora-de-shellui.service
+  systemctl --user enable --now agora-de-shell-background.service
+  systemctl --user enable --now agora-de-shell-panel.service
+fi
+if [[ "$enable_overlay" -eq 1 ]]; then
+  systemctl --user enable --now agora-de-shell-overlay.service
+fi
+if [[ "$restart_services" -eq 1 ]]; then
+  systemctl --user restart agora-de-shellui.service
+  systemctl --user restart agora-de-shell-background.service agora-de-shell-panel.service
+  if systemctl --user is-enabled --quiet agora-de-shell-overlay.service; then
+    systemctl --user restart agora-de-shell-overlay.service
+  fi
+fi
+
+printf 'installed Agora DE shell user-service artifacts from %s\n' "$repo_root"

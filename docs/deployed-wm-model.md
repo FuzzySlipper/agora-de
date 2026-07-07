@@ -12,7 +12,7 @@ Agora-de owns desktop environment concerns in this repo:
 - compositor bridge and layout state;
 - shellui HTTP projection, dock, launcher, status, and overlay surfaces;
 - native app launch through structured shell/catalog routes;
-- live evidence harnesses for den-k8 installed-service testing.
+- live evidence harnesses for installed-service testing on the current host.
 
 Agora-os remains predecessor evidence and, later, a possible typed governance
 service peer. It is not a runtime dependency for the deployed WM path. Product
@@ -114,60 +114,44 @@ the bounded adapter role in `docs/compositor-backend-decision.md`.
 
 ## Install And Update
 
-The current den-k8 style install uses the compositor bridge as a system service
-and shell surfaces as user services. The same shape can be used on an existing
-Linux install with Wayfire and the required GTK4/WebKit/gtk4-layer-shell stack.
+The existing-Linux install uses the compositor bridge as a system service and
+shell surfaces as user services. It requires Wayfire plus the GTK4/WebKit and
+gtk4-layer-shell stack used by the shell chrome helpers. It does not require
+agora-os services.
 
-From the repo root, build and install the compositor bridge:
+From the repo root, build and install or update the compositor bridge:
 
 ```bash
-sudo /home/dev/agora-de/deploy/compositor/install-compositor-bridge-service.sh
+sudo deploy/compositor/install-compositor-bridge-service.sh
 ```
 
-Install the user shell services and helper binaries:
+Install or update the user shell services and helper binaries:
 
 ```bash
-go build -C go -o ~/.local/bin/agora-de-shellui ./cmd/shellui
-install -D -m 0644 deploy/shellui/agora-de-shellui.user.service ~/.config/systemd/user/agora-de-shellui.service
-install -D -m 0644 deploy/shellui/agora-de-shell-background.user.service ~/.config/systemd/user/agora-de-shell-background.service
-install -D -m 0644 deploy/shellui/agora-de-shell-panel.user.service ~/.config/systemd/user/agora-de-shell-panel.service
-install -D -m 0644 deploy/shellui/agora-de-shell-overlay.user.service ~/.config/systemd/user/agora-de-shell-overlay.service
-install -D -m 0755 chrome/webview-layer-shell/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
-install -D -m 0755 chrome/native-overlay/agora-de-native-overlay ~/.local/bin/agora-de-native-overlay
-install -D -m 0755 chrome/panel-supervisor/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
-install -D -m 0644 deploy/shellui/shellui.user.env.example ~/.config/agora-de/shellui.env
-systemctl --user daemon-reload
-systemctl --user enable --now agora-de-shellui.service
-systemctl --user enable --now agora-de-shell-background.service
-systemctl --user enable --now agora-de-shell-panel.service
-systemctl --user enable --now agora-de-shell-overlay.service
+deploy/shellui/install-user-services --enable --enable-overlay --restart
 ```
 
-For the local den-k8 development install, native launch is usually enabled for
-all structured-launchable desktop entries:
+The installer preserves an existing `~/.config/agora-de/shellui.env`. Pass
+`--overwrite-env` only when intentionally replacing local settings. Enable
+native launch for all structured-launchable desktop entries on this development
+host with:
 
 ```bash
-install -D -m 0755 deploy/shellui/agora-de-native-launch-config ~/.local/bin/agora-de-native-launch-config
 ~/.local/bin/agora-de-native-launch-config enable-all --restart
 ```
 
 Install recovery helpers once when sudo-backed cleanup is desired:
 
 ```bash
-sudo deploy/shellui/install-den-k8-recovery-tools
-sudo deploy/compositor/install-den-k8-compositor-tools
+sudo deploy/shellui/install-recovery-tools
+sudo deploy/compositor/install-compositor-tools
 ```
 
 Update after pulling new agora-de code:
 
 ```bash
-sudo /home/dev/agora-de/deploy/compositor/install-compositor-bridge-service.sh
-go build -C go -o ~/.local/bin/agora-de-shellui ./cmd/shellui
-install -D -m 0755 chrome/webview-layer-shell/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
-install -D -m 0755 chrome/native-overlay/agora-de-native-overlay ~/.local/bin/agora-de-native-overlay
-install -D -m 0755 chrome/panel-supervisor/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
-systemctl --user restart agora-de-shellui.service
-systemctl --user restart agora-de-shell-background.service agora-de-shell-panel.service agora-de-shell-overlay.service
+sudo deploy/compositor/install-compositor-bridge-service.sh
+deploy/shellui/install-user-services --restart
 sudo /usr/local/sbin/agora-de-compositor-bridge-admin restart-bridge
 ```
 
@@ -205,7 +189,7 @@ Focused checks:
 ./harness/ci/check-live-harnesses.sh
 ```
 
-Run deployed WM evidence against the installed den-k8 service:
+Run deployed WM evidence against the installed service:
 
 ```bash
 ./harness/live/check-auto-tiling-wm.py \
@@ -224,7 +208,19 @@ Run deployed WM evidence against the installed den-k8 service:
 Useful supporting live harnesses:
 
 ```bash
-./harness/live/check-den-k8.py --output-name HDMI-A-1 --require-capture
+./harness/live/check-den-k8.py \
+  --systemd-units compositor-bridge.service,agora-wayfire.service \
+  --sockets /run/agent-os/compositor-bridge.sock,/run/agent-os/compositor-control.sock \
+  --shell-url http://127.0.0.1:17780/shell/dist/desktop/?surface=dock \
+  --catalog-url http://127.0.0.1:17780/api/catalog/apps \
+  --surfaces-url http://127.0.0.1:17780/api/surfaces \
+  --work-controls-url http://127.0.0.1:17780/api/work-surface-controls \
+  --workspaces-url http://127.0.0.1:17780/api/workspaces \
+  --operator-status-url http://127.0.0.1:17780/api/operator/status \
+  --surface-app-id io.agorade.ShellPanel \
+  --surface-role panel \
+  --output-name HDMI-A-1 \
+  --require-capture
 ./harness/live/check-native-launch.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-overlay-labels.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-planner-layout.py --output-name HDMI-A-1 --require-capture

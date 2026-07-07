@@ -1,8 +1,7 @@
 [Unit]
 Description=Agora DE compositor bridge
-Wants=network.target event-bus.service
-After=network.target event-bus.service
-Requires=event-bus.service
+Wants=network.target
+After=network.target
 
 [Service]
 Type=simple

@@ -1,7 +1,7 @@
 # Shellui Deployment Testing
 
 This directory contains productization material for running the first
-deployment-testing slice of agora-de shellui on den-k8.
+deployment-testing slice of agora-de shellui on an existing Linux install.
 
 It does not contain product source. Build the binary from `go/cmd/shellui` and
 install it into an operator-chosen artifact path.
@@ -23,8 +23,9 @@ tested:
 
 ## User Systemd
 
-For den-k8 deployment testing, prefer a user service. This mirrors the host's
-current user-service style and does not require sudo.
+For existing-Linux deployment testing, prefer user services for shell chrome.
+This mirrors the current tested host's style and does not require sudo for the
+shell surfaces.
 
 Suggested install paths:
 
@@ -44,24 +45,23 @@ Suggested install paths:
 Install and start:
 
 ```bash
-go build -C go -o ~/.local/bin/agora-de-shellui ./cmd/shellui
-install -D -m 0644 deploy/shellui/agora-de-shellui.user.service ~/.config/systemd/user/agora-de-shellui.service
-install -D -m 0644 deploy/shellui/agora-de-shell-background.user.service ~/.config/systemd/user/agora-de-shell-background.service
-install -D -m 0644 deploy/shellui/agora-de-shell-panel.user.service ~/.config/systemd/user/agora-de-shell-panel.service
-install -D -m 0644 deploy/shellui/agora-de-shell-overlay.user.service ~/.config/systemd/user/agora-de-shell-overlay.service
-install -D -m 0755 chrome/webview-layer-shell/agora-de-gtk4-layer-shell-webview ~/.local/bin/agora-de-gtk4-layer-shell-webview
-install -D -m 0755 chrome/native-overlay/agora-de-native-overlay ~/.local/bin/agora-de-native-overlay
-install -D -m 0755 chrome/panel-supervisor/agora-de-shell-panel-supervisor ~/.local/bin/agora-de-shell-panel-supervisor
-install -D -m 0644 deploy/shellui/shellui.user.env.example ~/.config/agora-de/shellui.env
-systemctl --user daemon-reload
-systemctl --user enable --now agora-de-shellui.service
-systemctl --user enable --now agora-de-shell-background.service
-systemctl --user enable --now agora-de-shell-panel.service
+deploy/shellui/install-user-services --enable --restart
 ```
 
-The user-service example uses `127.0.0.1:17780` to avoid colliding with the
-currently bound predecessor port `7780`. Move it to `7780` once that port is
-free or intentionally replaced.
+Use `--enable-overlay` when the diagnostic overlay should be installed and
+started too:
+
+```bash
+deploy/shellui/install-user-services --enable --enable-overlay --restart
+```
+
+The installer builds `agora-de-shellui`, installs the shell service units and
+chrome helpers, and creates `~/.config/agora-de/shellui.env` with current-user
+defaults only when the file does not already exist. Use `--overwrite-env` only
+when intentionally replacing local settings.
+
+The user-service example uses `127.0.0.1:17780`. This avoids colliding with
+other local services while keeping shell traffic local to the user session.
 
 `agora-de-shell-background.service` launches the background shell and
 `agora-de-shell-panel.service` launches the dock/panel shell through the
@@ -105,7 +105,7 @@ Catalog provider settings:
 
 ```text
 AGORA_DE_SHELLUI_CATALOG_PROVIDER=fixture
-AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS=/usr/share/applications:/home/agent/.local/share/applications
+AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS=/usr/share/applications:$HOME/.local/share/applications
 AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=disabled
 AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=
 ```
@@ -122,7 +122,7 @@ that the structured launcher can safely prepare. See
 `docs/native-launch-boundary-design.md` for the current launchability contract
 and disabled-code vocabulary.
 
-Minimal den-k8 governed native launch settings:
+Minimal governed native launch settings on the current tested host:
 
 ```text
 AGORA_DE_SHELLUI_CATALOG_PROVIDER=desktop_entries
@@ -136,7 +136,7 @@ AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME=/home/agent
 AGORA_DE_SHELLUI_COMPOSITORCTL=/home/agent/.local/bin/agora-de-compositorctl
 ```
 
-For the local den-k8 development install, use
+For a local development install, use
 `AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=*` or
 `~/.local/bin/agora-de-native-launch-config enable-all --restart` to make every
 structured-launchable installed entry clickable.
@@ -153,6 +153,11 @@ install -D -m 0755 deploy/shellui/agora-de-native-launch-config ~/.local/bin/ago
 ~/.local/bin/agora-de-native-launch-config enable-all --restart
 ~/.local/bin/agora-de-native-launch-config disable --restart
 ```
+
+`agora-de-native-launch-config` derives UID, GID, home, desktop-entry roots, and
+the compositorctl path from the current user by default. Override the matching
+`AGORA_DE_SHELLUI_*` environment variables when rehearsing a different user or
+output.
 
 The first launch loop is also shellui-backed: `POST /api/catalog/launch` maps a
 known catalog app to a compositor launch target, and `POST /api/surfaces/action`
@@ -226,15 +231,9 @@ mode.
 Run the installed-service route evidence:
 
 ```bash
-AGORA_DE_LIVE_SHELL_URL=http://127.0.0.1:7780/shell/dist/desktop/?surface=dock \
-AGORA_DE_LIVE_CATALOG_URL=http://127.0.0.1:7780/api/catalog/apps \
-AGORA_DE_LIVE_SURFACES_URL=http://127.0.0.1:7780/api/surfaces \
-AGORA_DE_LIVE_WORK_CONTROLS_URL=http://127.0.0.1:7780/api/work-surface-controls \
-AGORA_DE_LIVE_WORKSPACES_URL=http://127.0.0.1:7780/api/workspaces \
-AGORA_DE_LIVE_OPERATOR_STATUS_URL=http://127.0.0.1:7780/api/operator/status \
-AGORA_DE_LIVE_SURFACE_APP_ID=io.agorade.ShellPanel \
-AGORA_DE_LIVE_SURFACE_ROLE=panel \
-./harness/live/check-den-k8.py
+./harness/live/check-den-k8.py \
+  --output-name HDMI-A-1 \
+  --require-capture
 ```
 
 For route-only testing without systemd/socket checks:
@@ -243,12 +242,12 @@ For route-only testing without systemd/socket checks:
 ./harness/live/check-den-k8.py \
   --systemd-units '' \
   --sockets '' \
-  --shell-url http://127.0.0.1:7780/shell/dist/desktop/?surface=dock \
-  --catalog-url http://127.0.0.1:7780/api/catalog/apps \
-  --surfaces-url http://127.0.0.1:7780/api/surfaces \
-  --work-controls-url http://127.0.0.1:7780/api/work-surface-controls \
-  --workspaces-url http://127.0.0.1:7780/api/workspaces \
-  --operator-status-url http://127.0.0.1:7780/api/operator/status \
+  --shell-url http://127.0.0.1:17780/shell/dist/desktop/?surface=dock \
+  --catalog-url http://127.0.0.1:17780/api/catalog/apps \
+  --surfaces-url http://127.0.0.1:17780/api/surfaces \
+  --work-controls-url http://127.0.0.1:17780/api/work-surface-controls \
+  --workspaces-url http://127.0.0.1:17780/api/workspaces \
+  --operator-status-url http://127.0.0.1:17780/api/operator/status \
   --surface-app-id io.agorade.ShellPanel \
   --surface-role panel
 ```
@@ -263,11 +262,11 @@ To validate the desktop-entry catalog provider without replacing the visible
 fixture launch service, run a sidecar shellui on a temporary port:
 
 ```bash
-cd /home/dev/agora-de/go
+cd go
 go run ./cmd/shellui \
   --listen 127.0.0.1:17782 \
   --catalog-provider desktop_entries \
-  --desktop-entry-roots /usr/share/applications:/home/agent/.local/share/applications \
+  --desktop-entry-roots /usr/share/applications:$HOME/.local/share/applications \
   --surface-provider fixture
 ```
 
@@ -299,34 +298,32 @@ allowlist of desktop-entry ids. That mode expects compositorctl to support the
 structured `--arg` launch contract from `docs/native-launch-boundary-design.md`;
 do not enable it against a bridge that only supports `-cmd` strings.
 
-For den-k8 native-launch and live readback testing, build the agora-de
-compositor control launcher and point shellui at it:
+For native-launch and live readback testing, install the agora-de compositor
+bridge and compositor control launcher:
 
 ```bash
-cd /home/dev/agora-de/go
-go build -trimpath -o /home/agent/.local/bin/agora-de-compositorctl ./cmd/compositorctl
+sudo deploy/compositor/install-compositor-bridge-service.sh
 ```
 
 This repo-owned command now covers the installed shellui readback, focus/close,
 physical output capture, and structured native-launch command surface. It still
-speaks to the currently installed Wayfire bridge service socket until the bridge
-daemon itself is lifted out of the predecessor deployment.
+speaks to the installed Wayfire bridge service socket.
 
-For the den-k8 user-service restart and visibility playbook, see
+For the current tested host's user-service restart and visibility playbook, see
 `docs/den-k8-visible-shell-runbook.md`.
 
 ## Recovery Helper
 
-The live den-k8 compositor path can accumulate stale Wayland, WebKit, or bridge
-state while this successor repo is still replacing the predecessor shell. Install
-the root-owned recovery helper once:
+The live compositor path can accumulate stale Wayland, WebKit, or bridge state
+while developing. Install the root-owned recovery helper once:
 
 ```bash
-sudo deploy/shellui/install-den-k8-recovery-tools
+sudo deploy/shellui/install-recovery-tools
 ```
 
 That installs `/usr/local/sbin/agora-de-kill-all` and a sudoers entry allowing
-the `agent` user to run it without a password:
+the invoking sudo user to run it without a password. Set `AGORA_DE_SUDO_USER`
+when installing for a different desktop user:
 
 ```bash
 sudo /usr/local/sbin/agora-de-kill-all

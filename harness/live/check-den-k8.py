@@ -15,15 +15,11 @@ import zlib
 
 
 DEFAULT_UNITS = [
-    "event-bus.service",
-    "event-bus-web.service",
     "compositor-bridge.service",
     "agora-wayfire.service",
-    "agora-shell-panel.service",
 ]
 
 DEFAULT_SOCKETS = [
-    "/run/agent-os/bus.sock",
     "/run/agent-os/compositor-bridge.sock",
     "/run/agent-os/compositor-control.sock",
 ]
@@ -37,7 +33,7 @@ def main() -> int:
         "--shell-url",
         default=os.environ.get(
             "AGORA_DE_LIVE_SHELL_URL",
-            "http://127.0.0.1:7780/shell/dist/desktop/?surface=dock",
+            "http://127.0.0.1:17780/shell/dist/desktop/?surface=dock",
         ),
         help="Installed shell URL to check.",
     )
@@ -73,12 +69,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--surface-app-id",
-        default=os.environ.get("AGORA_DE_LIVE_SURFACE_APP_ID", ""),
+        default=os.environ.get("AGORA_DE_LIVE_SURFACE_APP_ID", "io.agorade.ShellPanel"),
         help="Optional compositor surface app id expected to be mapped.",
     )
     parser.add_argument(
         "--surface-role",
-        default=os.environ.get("AGORA_DE_LIVE_SURFACE_ROLE", ""),
+        default=os.environ.get("AGORA_DE_LIVE_SURFACE_ROLE", "panel"),
         help="Optional compositor surface role expected with --surface-app-id.",
     )
     parser.add_argument(
@@ -89,27 +85,27 @@ def main() -> int:
     )
     parser.add_argument(
         "--catalog-url",
-        default=os.environ.get("AGORA_DE_LIVE_CATALOG_URL", ""),
+        default=os.environ.get("AGORA_DE_LIVE_CATALOG_URL", "http://127.0.0.1:17780/api/catalog/apps"),
         help="Optional installed app catalog JSON route to validate.",
     )
     parser.add_argument(
         "--surfaces-url",
-        default=os.environ.get("AGORA_DE_LIVE_SURFACES_URL", ""),
+        default=os.environ.get("AGORA_DE_LIVE_SURFACES_URL", "http://127.0.0.1:17780/api/surfaces"),
         help="Optional installed surface lifecycle JSON route to validate.",
     )
     parser.add_argument(
         "--work-controls-url",
-        default=os.environ.get("AGORA_DE_LIVE_WORK_CONTROLS_URL", ""),
+        default=os.environ.get("AGORA_DE_LIVE_WORK_CONTROLS_URL", "http://127.0.0.1:17780/api/work-surface-controls"),
         help="Optional installed work surface controls JSON route to validate.",
     )
     parser.add_argument(
         "--workspaces-url",
-        default=os.environ.get("AGORA_DE_LIVE_WORKSPACES_URL", ""),
+        default=os.environ.get("AGORA_DE_LIVE_WORKSPACES_URL", "http://127.0.0.1:17780/api/workspaces"),
         help="Optional installed workspace JSON route to validate.",
     )
     parser.add_argument(
         "--operator-status-url",
-        default=os.environ.get("AGORA_DE_LIVE_OPERATOR_STATUS_URL", ""),
+        default=os.environ.get("AGORA_DE_LIVE_OPERATOR_STATUS_URL", "http://127.0.0.1:17780/api/operator/status"),
         help="Optional installed operator status JSON route to validate.",
     )
     parser.add_argument(

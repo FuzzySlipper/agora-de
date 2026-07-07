@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
-# Stop all live Agora DE/legacy Agora OS display-session pieces on den-k8.
+# Stop all live Agora DE display-session pieces for an existing Linux install.
 set -u
 
-AGORA_USER=${AGORA_DE_SESSION_USER:-agent}
-AGORA_UID=${AGORA_DE_SESSION_UID:-1001}
+default_user=${SUDO_USER:-${USER:-}}
+if [[ -z "$default_user" || "$default_user" == "root" ]]; then
+  if id agent >/dev/null 2>&1; then
+    default_user=agent
+  fi
+fi
+
+AGORA_USER=${AGORA_DE_SESSION_USER:-$default_user}
+AGORA_UID=${AGORA_DE_SESSION_UID:-$(id -u "$AGORA_USER" 2>/dev/null || printf '1001')}
+AGORA_HOME=${AGORA_DE_SESSION_HOME:-$(getent passwd "$AGORA_USER" 2>/dev/null | cut -d: -f6)}
+AGORA_HOME=${AGORA_HOME:-/home/$AGORA_USER}
 RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$AGORA_UID}
 
 usage() {
   cat <<'USAGE'
 Usage: agora-de-kill-all [--help]
 
-Stop live Agora DE/legacy Agora OS display-session pieces on den-k8.
+Stop live Agora DE display-session pieces for an existing Linux install.
 
 With no arguments, this stops shell/compositor services, terminates lingering
 Wayland/WebKit/Wayfire helper processes, resets failed units, and prints any
@@ -76,10 +85,10 @@ for pattern in \
   '[a]gora-de-shellui' \
   '[n]ative-shell-dock' \
   '[a]gora-shell-panel-supervisor' \
-  '[w]ayfire -c /home/agent/.config/wayfire.ini' \
-  '[d]bus-run-session -- /usr/bin/wayfire -c /home/agent/.config/wayfire.ini' \
-  '[r]unuser -u agent -- /usr/bin/sg seat' \
-  '[r]unuser -u agent -g seat' \
+  "[w]ayfire -c $AGORA_HOME/.config/wayfire.ini" \
+  "[d]bus-run-session -- /usr/bin/wayfire -c $AGORA_HOME/.config/wayfire.ini" \
+  "[r]unuser -u $AGORA_USER -- /usr/bin/sg seat" \
+  "[r]unuser -u $AGORA_USER -g seat" \
   '[o]penvt .*wayfire'
 do
   run pkill -TERM -f "$pattern"
@@ -93,10 +102,10 @@ for pattern in \
   '[a]gora-de-shellui' \
   '[n]ative-shell-dock' \
   '[a]gora-shell-panel-supervisor' \
-  '[w]ayfire -c /home/agent/.config/wayfire.ini' \
-  '[d]bus-run-session -- /usr/bin/wayfire -c /home/agent/.config/wayfire.ini' \
-  '[r]unuser -u agent -- /usr/bin/sg seat' \
-  '[r]unuser -u agent -g seat' \
+  "[w]ayfire -c $AGORA_HOME/.config/wayfire.ini" \
+  "[d]bus-run-session -- /usr/bin/wayfire -c $AGORA_HOME/.config/wayfire.ini" \
+  "[r]unuser -u $AGORA_USER -- /usr/bin/sg seat" \
+  "[r]unuser -u $AGORA_USER -g seat" \
   '[o]penvt .*wayfire'
 do
   run pkill -KILL -f "$pattern"

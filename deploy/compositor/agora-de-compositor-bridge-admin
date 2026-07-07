@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
-# Root helper for den-k8 compositor bridge maintenance.
+# Root helper for Agora DE compositor bridge maintenance.
 set -euo pipefail
 IFS=$'\n\t'
 
-repo_root=/home/dev/agora-de
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source_tree=$(cd -- "$script_dir/../.." 2>/dev/null && pwd || true)
+config_file=${AGORA_DE_COMPOSITOR_ADMIN_ENV:-/etc/agora-de/compositor-bridge-admin.env}
+if [[ -f "$config_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$config_file"
+fi
+repo_root=${AGORA_DE_REPO_ROOT:-${AGORA_DE_REPO_ROOT_CONFIG:-}}
+if [[ -z "$repo_root" && -f "$source_tree/go/go.mod" ]]; then
+  repo_root=$source_tree
+fi
 service_name=compositor-bridge.service
 
 usage() {
@@ -18,14 +28,25 @@ Commands:
 USAGE
 }
 
+command=${1:-}
+case "$command" in
+  "" | -h | --help | help)
+    usage
+    exit 0
+    ;;
+esac
+
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   echo "agora-de-compositor-bridge-admin must run as root" >&2
   exit 1
 fi
 
-command=${1:-}
 case "$command" in
   install-bridge)
+    if [[ -z "$repo_root" || ! -x "$repo_root/deploy/compositor/install-compositor-bridge-service.sh" ]]; then
+      echo "set AGORA_DE_REPO_ROOT or install $config_file with AGORA_DE_REPO_ROOT_CONFIG" >&2
+      exit 1
+    fi
     "$repo_root/deploy/compositor/install-compositor-bridge-service.sh"
     ;;
   restart-bridge)
@@ -38,9 +59,6 @@ case "$command" in
     ;;
   status)
     systemctl status "$service_name" --no-pager
-    ;;
-  "" | -h | --help | help)
-    usage
     ;;
   *)
     usage

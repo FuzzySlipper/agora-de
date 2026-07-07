@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Install Agora DE compositor bridge root helper and sudoers entry.
+set -euo pipefail
+IFS=$'\n\t'
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+sbin_dir=${AGORA_DE_SBINDIR:-/usr/local/sbin}
+sudoers_dir=${AGORA_DE_SUDOERS_DIR:-/etc/sudoers.d}
+config_dir=${AGORA_DE_CONFIG_DIR:-/etc/agora-de}
+visudo_cmd=${AGORA_DE_VISUDO:-visudo}
+install_owner=${AGORA_DE_INSTALL_OWNER:-root}
+install_group=${AGORA_DE_INSTALL_GROUP:-root}
+target_user=${AGORA_DE_SUDO_USER:-${SUDO_USER:-}}
+if [[ -z "$target_user" || "$target_user" == "root" ]]; then
+  if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+    target_user=$(id -un)
+  elif id agent >/dev/null 2>&1; then
+    target_user=agent
+  else
+    echo "set AGORA_DE_SUDO_USER to the desktop user allowed to run the helper" >&2
+    exit 1
+  fi
+fi
+if ! id "$target_user" >/dev/null 2>&1; then
+  echo "unknown AGORA_DE_SUDO_USER: $target_user" >&2
+  exit 1
+fi
+
+install -D -o "$install_owner" -g "$install_group" -m 0755 \
+  "$repo_root/deploy/compositor/agora-de-compositor-bridge-admin" \
+  "$sbin_dir/agora-de-compositor-bridge-admin"
+
+install -d -o "$install_owner" -g "$install_group" -m 0755 "$config_dir"
+printf 'AGORA_DE_REPO_ROOT_CONFIG=%q\n' "$repo_root" > "$config_dir/compositor-bridge-admin.env"
+chmod 0644 "$config_dir/compositor-bridge-admin.env"
+
+install -d -o "$install_owner" -g "$install_group" -m 0755 "$sudoers_dir"
+cat >"$sudoers_dir/agora-de-compositor" <<SUDOERS
+$target_user ALL=(root) NOPASSWD: $sbin_dir/agora-de-compositor-bridge-admin
+SUDOERS
+
+chmod 0440 "$sudoers_dir/agora-de-compositor"
+"$visudo_cmd" -cf "$sudoers_dir/agora-de-compositor"
+
+printf 'installed %s/agora-de-compositor-bridge-admin for sudo user %s\n' "$sbin_dir" "$target_user"
