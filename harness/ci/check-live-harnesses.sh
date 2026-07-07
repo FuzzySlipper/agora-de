@@ -16,7 +16,8 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-daily-wm-workflow.py" \
   "$ROOT/harness/live/check-popup-stability.py" \
   "$ROOT/harness/live/check-theme-switch.py" \
-  "$ROOT/harness/live/check-responsiveness-baseline.py"
+  "$ROOT/harness/live/check-responsiveness-baseline.py" \
+  "$ROOT/harness/live/check-multi-output-workspaces.py"
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -36,6 +37,7 @@ expectations = {
     "harness/live/check-popup-stability.py": "agora-de.popup-stability-live.v1",
     "harness/live/check-theme-switch.py": "agora-de.theme-switch-live.v1",
     "harness/live/check-responsiveness-baseline.py": "agora-de.responsiveness-baseline-live.v1",
+    "harness/live/check-multi-output-workspaces.py": "agora-de.multi-output-workspaces-live.v1",
 }
 for relative, schema in expectations.items():
     text = (root / relative).read_text(encoding="utf-8")
@@ -221,6 +223,26 @@ for required in [
 ]:
     if required not in responsiveness:
         raise SystemExit(f"check-responsiveness-baseline.py missing required evidence hook {required!r}")
+
+multi_output = (root / "harness/live/check-multi-output-workspaces.py").read_text(encoding="utf-8")
+for required in [
+    "/home/agent/.local/bin/agora-de-compositorctl",
+    "agora-de.multi-output-workspaces-live.v1",
+    "/api/operator/status",
+    "/api/workspaces",
+    "/api/workspaces/action",
+    "/api/layout",
+    "/api/surfaces",
+    "\"output\", \"list\"",
+    "\"output\", \"capture\"",
+    "currentOutputId",
+    "outputId",
+    "multi-output-skip",
+    "output-targeted-capture",
+    "cleanup",
+]:
+    if required not in multi_output:
+        raise SystemExit(f"check-multi-output-workspaces.py missing required evidence hook {required!r}")
 
 kill_all = (root / "deploy/shellui/agora-de-kill-all").read_text(encoding="utf-8")
 for required in [
