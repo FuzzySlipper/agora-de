@@ -14,7 +14,8 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-overlay-labels.py" \
   "$ROOT/harness/live/check-auto-tiling-wm.py" \
   "$ROOT/harness/live/check-daily-wm-workflow.py" \
-  "$ROOT/harness/live/check-popup-stability.py"
+  "$ROOT/harness/live/check-popup-stability.py" \
+  "$ROOT/harness/live/check-theme-switch.py"
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -32,6 +33,7 @@ expectations = {
     "harness/live/check-auto-tiling-wm.py": "agora-de.auto-tiling-wm-live.v1",
     "harness/live/check-daily-wm-workflow.py": "agora-de.daily-wm-workflow-live.v1",
     "harness/live/check-popup-stability.py": "agora-de.popup-stability-live.v1",
+    "harness/live/check-theme-switch.py": "agora-de.theme-switch-live.v1",
 }
 for relative, schema in expectations.items():
     text = (root / relative).read_text(encoding="utf-8")
@@ -177,6 +179,23 @@ for required in [
 ]:
     if required not in popup:
         raise SystemExit(f"check-popup-stability.py missing required evidence hook {required!r}")
+
+theme_switch = (root / "harness/live/check-theme-switch.py").read_text(encoding="utf-8")
+for required in [
+    "/home/agent/.local/bin/agora-de-compositorctl",
+    "den-k8-theme-switch",
+    "AGORA_DE_SHELLUI_THEME_ID",
+    "AGORA_DE_SHELLUI_THEME_MANIFEST",
+    "/api/theme",
+    "/shell/dist/desktop/?surface=dock",
+    "agora-ember",
+    "theme-variant-visible-capture",
+    "den-k8-theme-switch-visible",
+    "agora-de.theme-evidence.v1",
+    "systemctl\", \"--user\", \"restart\", \"agora-de-shellui.service",
+]:
+    if required not in theme_switch:
+        raise SystemExit(f"check-theme-switch.py missing required evidence hook {required!r}")
 
 kill_all = (root / "deploy/shellui/agora-de-kill-all").read_text(encoding="utf-8")
 for required in [

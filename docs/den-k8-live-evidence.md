@@ -278,6 +278,25 @@ launchable in `/api/catalog/apps`, launches through `/api/catalog/launch`,
 verifies compositor-backed surface readback and focus, captures the physical
 output, closes the surface, and verifies stale cleanup.
 
+Run the installed shell theme-switch smoke with capture evidence:
+
+```bash
+./harness/live/check-theme-switch.py \
+  --base-url http://127.0.0.1:17780 \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-theme-switch \
+  --require-capture
+```
+
+The theme-switch runner emits `agora-de.theme-switch-live.v1`. It backs up
+`~/.config/agora-de/shellui.env`, switches `AGORA_DE_SHELLUI_THEME_ID` between
+`agora-default` and the bundled `agora-ember` variant, restarts only the shellui
+and shell chrome user services, verifies `/api/theme`, checks that the panel
+HTML contains variant tokens, captures the physical output with the shared
+`agora-de.theme-evidence.v1` classifier, then restores the original env file
+and restarts shell chrome back to its previous setting. This proves theme
+selection does not require compositor or WM changes.
+
 Run the structured layout evidence loop with capture evidence:
 
 ```bash
