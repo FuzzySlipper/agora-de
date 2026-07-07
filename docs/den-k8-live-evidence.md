@@ -278,6 +278,31 @@ launchable in `/api/catalog/apps`, launches through `/api/catalog/launch`,
 verifies compositor-backed surface readback and focus, captures the physical
 output, closes the surface, and verifies stale cleanup.
 
+Run the transient/dialog popup policy loop:
+
+```bash
+./harness/live/check-popup-stability.py \
+  --base-url http://127.0.0.1:17780 \
+  --cycles 1 \
+  --baseline-samples 1 \
+  --open-samples 2 \
+  --closed-samples 1 \
+  --sample-delay-seconds 0.25 \
+  --launch-delay-seconds 0.75 \
+  --cleanup-delay-seconds 0.5 \
+  --samples-output /tmp/agora-de-4660-popup-policy-samples.jsonl
+```
+
+The popup-stability runner emits `agora-de.popup-stability-live.v1`. It uses
+`agora-de-compositorctl`, `/api/surfaces`, and `/api/layout` as structured
+authority, captures optional physical-output evidence when requested, and
+records `policyClass`, `policyReason`, and `parentSurfaceId` for sampled
+surfaces. The Den 4660 closeout run against the installed service passed with
+`10 passed / 0 failed / 1 skipped`, observed shell status and launcher popups
+as stable `policyClass=shell_chrome` chrome surfaces, verified cleanup, and
+skipped only the optional native-dialog probe because no
+`--native-dialog-app-id` was supplied.
+
 Run the installed shell theme-switch smoke with capture evidence:
 
 ```bash

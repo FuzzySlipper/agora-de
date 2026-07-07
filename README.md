@@ -214,7 +214,8 @@ rather than prove the basic architecture again:
 - richer theme development on the centralized token/config path;
 - real multi-monitor soak evidence when a development host exposes more than
   one physical output;
-- deeper transient/dialog policy;
+- host-specific native dialog reproducers for the optional popup-policy live
+  harness;
 - longer-running live-session soak evidence;
 - Smithay/Rust backend evaluation behind the same layout/compositor boundary.
 

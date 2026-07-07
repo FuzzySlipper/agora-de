@@ -1,6 +1,6 @@
 # Transient And Dialog Policy
 
-Status: initial policy and inventory for Den 4570.
+Status: closed policy and evidence record for Den 4570.
 
 This document defines how agora-de treats dialogs, menus, popovers, browser
 prompts, file chooser windows, shell popups, unmanaged helper views, and
@@ -26,34 +26,46 @@ infer transient policy from screenshots or browser bounds.
 
 Bridge classification lives in `go/internal/compositorbridge/lifecycle.go`.
 
-Current bridge rules:
+Current bridge rules and projected policy classes:
 
-- `layer_shell` surfaces become `freeform` + `transient` in the `chrome` zone.
+- `layer_shell` surfaces become `freeform` + `transient` in the `chrome` zone
+  with `policyClass=shell_chrome`.
 - Shell-managed surfaces whose app id starts with `io.agorade.Shell` become
-  `freeform` + `transient` in the `transient` zone unless already layer-shell.
+  `freeform` + `transient` in the `transient` zone unless already layer-shell,
+  with `policyClass=transient`.
 - Explicit floating surfaces are preserved as `freeform` + `floating` in the
-  `transient` zone.
+  `transient` zone with `policyClass=floating_override`.
 - XDG roles containing `dialog`, `modal`, `popup`, `popover`, `menu`,
   `tooltip`, `transient`, or `unmanaged` become `freeform` + `transient` in the
-  `transient` zone.
+  `transient` zone. If a dialog-like role has no backend-reported parent, it
+  projects `policyClass=no_parent`.
 - In `freeform` layout mode, ordinary non-shell work surfaces are classified as
-  `floating`.
+  `floating` participation but keep `policyClass=work`.
 - In tiled layout modes, ordinary non-shell work surfaces become `tiled` and
-  participate in auto-layout.
+  participate in auto-layout with `policyClass=work`.
 
-Shell projection mirrors the same conservative role markers in
-`go/internal/shellui/server/server.go` so the taskbar excludes transient and
-chrome surfaces from normal running-app controls.
+The generated protocol now includes `SurfacePolicyClass` and layout surfaces
+carry `parentSurfaceId`, `policyClass`, and `policyReason`. The Go bridge and
+shell routes expose the same facts through `agora-de-compositorctl`,
+`/api/layout`, and `/api/surfaces`.
+
+Shell projection in `go/internal/shellui/server/server.go` uses the projected
+`policyClass` first, then conservative role and zone fallbacks, so the taskbar
+excludes transient, shell chrome, no-parent, stale, and unsupported surfaces
+from normal running-app controls.
 
 Live evidence currently includes `harness/live/check-popup-stability.py`, which
 checks shell launcher/status popup geometry, work-surface geometry stability,
-closed-popup cleanup, and unmanaged XDG helper classification.
+closed-popup cleanup, policy projection, optional native dialog probing, and
+unmanaged XDG helper classification.
 
 Focused Go coverage currently includes:
 
 - unmanaged XDG helpers stay transient and auto-layout excluded;
 - normal browser/file-manager toplevels tile;
 - shell launcher and `dialog` roles stay freeform/transient;
+- shell chrome, work, parented dialog, no-parent file chooser/menu, explicit
+  floating, and backend-limited unsupported responses project policy classes;
 - explicit `setFloating` moves a normal surface into freeform/floating and can
   return it to tiling.
 
@@ -84,6 +96,7 @@ Expected state:
 - `layoutRole`: `transient`
 - `layoutMode`: `freeform`
 - `zoneId`: `transient`, except layer-shell chrome which uses `chrome`
+- `policyClass`: `transient`, `shell_chrome`, or `no_parent`
 - may receive overlay labels and capture evidence, but does not appear in the
   taskbar work-surface list
 
@@ -123,9 +136,10 @@ Policy target:
 - Closing a parent should not leave stale child dialogs as active work surfaces.
 
 Current limitation: the bridge does not yet expose parent ids or transient
-failure classes. Follow-up implementation should add only backend-reported
-facts or explicit classified outcomes; it should not infer parenthood from
-geometry or titles.
+parent ids when the current Wayfire bridge readback omits them. The policy
+class still distinguishes `no_parent` from work surfaces. Follow-up backend
+work should add only backend-reported parent ids or explicit classified
+outcomes; it should not infer parenthood from geometry or titles.
 
 ## Failure Classes
 
@@ -144,13 +158,23 @@ These classes should appear in action responses, diagnostics, live evidence, or
 documented harness skips. They should not be represented by jittery layout,
 silent tiling, or screenshot-only assertions.
 
+Implemented projection:
+
+- `stale` remains the action/error class for vanished or invisible surfaces.
+- `unsupported` remains the action/error class for unsupported backend
+  requests.
+- `no_parent` is a surface policy class for dialog-like roles without a parent.
+- `backend_limited` is projected on accepted unsupported layout responses when
+  the target surface is valid but backend geometry authority is unavailable.
+
 ## Agent Rules
 
 Agents should use structured state:
 
 - Read `role`, `layoutRole`, `layoutMode`, `zoneId`, `workspaceId`,
-  `outputId`, `focused`, `visible`, and `geometry` from `/api/layout`,
-  `/api/surfaces`, or `agora-de-compositorctl`.
+  `outputId`, `focused`, `visible`, `geometry`, `parentSurfaceId`,
+  `policyClass`, and `policyReason` from `/api/layout`, `/api/surfaces`, or
+  `agora-de-compositorctl`.
 - Treat `layoutRole=transient` as helper chrome/dialog state, not a tiled work
   target.
 - Treat `layoutRole=floating` in `zoneId=transient` as an explicit override that
@@ -162,7 +186,7 @@ Agents should use structured state:
 
 ## Evidence Path
 
-Minimum installed-service evidence for this track:
+Installed-service evidence for this track:
 
 - shell launcher/status popups remain non-exclusive, stable, and cleaned up;
 - unmanaged helper views stay transient and excluded from auto-layout;
@@ -177,6 +201,35 @@ Minimum installed-service evidence for this track:
 If a representative native dialog cannot be produced reliably on den-k8, the
 live harness should record a skip with the missing app capability or backend
 limitation rather than fabricating a screenshot-only proof.
+
+Closeout evidence recorded for Den 4660:
+
+```bash
+./harness/live/check-popup-stability.py \
+  --base-url http://127.0.0.1:17780 \
+  --cycles 1 \
+  --baseline-samples 1 \
+  --open-samples 2 \
+  --closed-samples 1 \
+  --sample-delay-seconds 0.25 \
+  --launch-delay-seconds 0.75 \
+  --cleanup-delay-seconds 0.5 \
+  --samples-output /tmp/agora-de-4660-popup-policy-samples.jsonl
+```
+
+Result on the installed den-k8 service: `10 passed / 0 failed / 1 skipped`.
+The harness observed `io.agorade.ShellStatus` and
+`io.agorade.ShellLauncher` as `policyClass=shell_chrome`, stable,
+non-exclusive layer-shell popups and verified cleanup. The skipped check was
+`native-dialog-capability`, because no representative native dialog app id was
+provided for that run.
+
+Final validation:
+
+- `python3 -m py_compile harness/live/check-popup-stability.py`
+- `./harness/ci/check-live-harnesses.sh`
+- `./harness/ci/check-all.sh`
+- GitHub `Verify Agora DE` for the closeout commits
 
 ## Non-Goals
 
