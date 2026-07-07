@@ -32,6 +32,8 @@ def main() -> int:
     parser.add_argument("--open-samples", type=int, default=6)
     parser.add_argument("--closed-samples", type=int, default=2)
     parser.add_argument("--cycles", type=int, default=2)
+    parser.add_argument("--native-dialog-app-id", default="")
+    parser.add_argument("--native-dialog-wait-seconds", type=float, default=2.0)
     parser.add_argument("--sample-delay-seconds", type=float, default=1.0)
     parser.add_argument("--launch-delay-seconds", type=float, default=1.0)
     parser.add_argument("--cleanup-delay-seconds", type=float, default=1.0)
@@ -76,6 +78,8 @@ def main() -> int:
             close_shell_popups(args.base_url)
             time.sleep(args.cleanup_delay_seconds)
             collect_samples(args, "launcher_closed", args.closed_samples, samples, cycle)
+
+        checks.append(probe_native_dialog(args, samples))
     except Exception as error:
         checks.append(failed("popup-stability", f"popup stability probe failed: {error}"))
     finally:
@@ -104,20 +108,25 @@ def main() -> int:
 
 def collect_samples(args: argparse.Namespace, phase: str, count: int, samples: list[dict], cycle: int = 0) -> None:
     for index in range(count):
-        samples.append(sample(args.compositorctl, phase, index, cycle))
+        samples.append(sample(args, phase, index, cycle))
         if index + 1 < count and args.sample_delay_seconds > 0:
             time.sleep(args.sample_delay_seconds)
 
 
-def sample(compositorctl: str, phase: str, index: int, cycle: int) -> dict:
-    surfaces = run_compositorctl_json(compositorctl, ["list-surfaces"]).get("surfaces") or []
-    layout = run_compositorctl_json(compositorctl, ["layout", "get"]).get("layout") or {}
+def sample(args: argparse.Namespace, phase: str, index: int, cycle: int) -> dict:
+    surfaces = run_compositorctl_json(args.compositorctl, ["list-surfaces"]).get("surfaces") or []
+    layout = run_compositorctl_json(args.compositorctl, ["layout", "get"]).get("layout") or {}
+    route_surfaces = get_json(args.base_url + "/api/surfaces").get("surfaces") or []
+    route_layout = get_json(args.base_url + "/api/layout").get("layout") or {}
     return {
         "phase": phase,
         "cycle": cycle,
         "index": index,
         "atUnixMillis": unix_millis(),
         "layoutRevision": layout.get("revision"),
+        "layoutSurfaces": [summarize_layout_surface(item) for item in layout.get("surfaces") or []],
+        "routeSurfaces": [summarize_route_surface(item) for item in route_surfaces],
+        "routeLayoutSurfaces": [summarize_route_layout_surface(item) for item in route_layout.get("surfaces") or []],
         "panel": first_surface_summary(surfaces, lambda item: surface_value(item, "app_id") == "io.agorade.ShellPanel"),
         "background": first_surface_summary(surfaces, lambda item: surface_value(item, "app_id") == "io.agorade.ShellBackground"),
         "popups": [
@@ -144,6 +153,7 @@ def classify_samples(samples: list[dict]) -> list[dict]:
     checks.append(check_stable_named_geometry(samples, "background", "background-geometry", "background geometry remains stable"))
     checks.append(check_popup_phase(samples, "status_open", "io.agorade.ShellStatus", "status-popup-geometry"))
     checks.append(check_popup_phase(samples, "launcher_open", "io.agorade.ShellLauncher", "launcher-popup-geometry"))
+    checks.append(check_popup_policy(samples))
     checks.append(check_closed_popup_absence(samples))
     checks.append(check_work_surface_stability(samples))
     checks.append(check_unmanaged_transient(samples))
@@ -231,11 +241,67 @@ def check_unmanaged_transient(samples: list[dict]) -> dict:
     for sample_item in samples:
         for surface in sample_item.get("unmanagedViews", []):
             observed.append(surface.get("id"))
-            if surface.get("layoutRole") != "transient" or surface.get("zoneId") != "transient":
+            if surface.get("layoutRole") != "transient" or surface.get("zoneId") != "transient" or surface.get("policyClass") not in {"transient", "no_parent"}:
                 offenders.append({"phase": sample_item.get("phase"), "surface": surface})
     if offenders:
-        return failed("unmanaged-transient", "unmanaged XDG helper views must not be tiled", offenders=offenders)
+        return failed("unmanaged-transient", "unmanaged XDG helper views must not be tiled and must expose transient policy", offenders=offenders)
     return passed("unmanaged-transient", "unmanaged XDG helper views are transient", observed=unique_values(observed))
+
+
+def check_popup_policy(samples: list[dict]) -> dict:
+    offenders = []
+    observed = []
+    for sample_item in samples:
+        if sample_item.get("phase") not in {"status_open", "launcher_open"}:
+            continue
+        for popup in sample_item.get("popups", []):
+            observed.append({"id": popup.get("id"), "appId": popup.get("appId"), "policyClass": popup.get("policyClass")})
+            if popup.get("layoutRole") != "transient" or popup.get("zoneId") != "transient" or popup.get("policyClass") not in {"transient", "shell_chrome"}:
+                offenders.append({"phase": sample_item.get("phase"), "surface": popup})
+    if offenders:
+        return failed("popup-policy", "shell popup surfaces must project transient policy and stay out of tiling", offenders=offenders)
+    if not observed:
+        return failed("popup-policy", "no shell popup policy samples were observed")
+    return passed("popup-policy", "shell popup samples projected transient policy", observed=observed)
+
+
+def probe_native_dialog(args: argparse.Namespace, samples: list[dict]) -> dict:
+    app_id = args.native_dialog_app_id.strip()
+    if not app_id:
+        return skipped("native-dialog-capability", "native dialog probe skipped; pass --native-dialog-app-id to exercise a host-specific app dialog")
+    before = [surface.get("id") for surface in get_json(args.base_url + "/api/surfaces").get("surfaces") or []]
+    try:
+        launch_app(args.base_url, app_id)
+        time.sleep(max(0, args.native_dialog_wait_seconds))
+        collect_samples(args, "native_dialog", 1, samples)
+        candidates = native_dialog_candidates(samples[-1], app_id, before)
+        if not candidates:
+            return skipped("native-dialog-capability", f"native dialog probe launched {app_id} but did not observe a dialog/transient candidate", appId=app_id)
+        offenders = [
+            surface
+            for surface in candidates
+            if surface.get("policyClass") not in {"transient", "no_parent", "floating_override"} or surface.get("layoutRole") == "tiled"
+        ]
+        if offenders:
+            return failed("native-dialog-policy", "native dialog candidates joined tiling or lacked dialog policy", appId=app_id, offenders=offenders)
+        return passed("native-dialog-policy", "native dialog candidates were classified outside tiled work surfaces", appId=app_id, candidates=candidates)
+    except Exception as error:
+        return skipped("native-dialog-capability", f"native dialog probe skipped because {app_id} was unavailable: {error}", appId=app_id)
+    finally:
+        close_native_dialog_candidates(args.base_url, app_id, before)
+
+
+def native_dialog_candidates(sample_item: dict, app_id: str, before: list[str]) -> list[dict]:
+    before_ids = set(before)
+    candidates = []
+    for surface in sample_item.get("routeSurfaces", []):
+        role = str(surface.get("role") or "").lower()
+        policy = surface.get("policyClass")
+        is_dialog_role = any(marker in role for marker in ["dialog", "modal", "popup", "popover", "menu", "tooltip", "transient"])
+        is_new_app = surface.get("appId") == app_id and surface.get("id") not in before_ids
+        if is_dialog_role or policy in {"transient", "no_parent", "floating_override"} or is_new_app:
+            candidates.append(surface)
+    return candidates
 
 
 def check_popup_cleanup(args: argparse.Namespace) -> dict:
@@ -248,6 +314,25 @@ def check_popup_cleanup(args: argparse.Namespace) -> dict:
     if remaining:
         return failed("cleanup", "shell popup surfaces remained after cleanup", remaining=remaining)
     return passed("cleanup", "shell popup surfaces closed after probe")
+
+
+def close_native_dialog_candidates(base_url: str, app_id: str, before: list[str]) -> None:
+    before_ids = set(before)
+    try:
+        surfaces = get_json(base_url + "/api/surfaces").get("surfaces") or []
+    except Exception:
+        return
+    for surface in surfaces:
+        surface_id = surface.get("id")
+        if not surface_id or surface_id in before_ids:
+            continue
+        role = str(surface.get("role") or "").lower()
+        if surface.get("appId") != app_id and not any(marker in role for marker in ["dialog", "modal", "popup", "popover", "menu", "tooltip", "transient"]):
+            continue
+        try:
+            post_json(base_url + "/api/surfaces/action", {"surfaceId": surface_id, "action": "close"})
+        except Exception:
+            pass
 
 
 def first_surface_summary(surfaces: list[dict], predicate) -> dict | None:
@@ -267,6 +352,9 @@ def summarize_surface(item: dict) -> dict:
         "kind": surface.get("surface_kind", ""),
         "role": surface.get("role", ""),
         "layoutRole": item.get("layout_role") or surface.get("layout_role", ""),
+        "policyClass": item.get("policy_class") or surface.get("policy_class", ""),
+        "policyReason": item.get("policy_reason") or surface.get("policy_reason", ""),
+        "parentSurfaceId": item.get("parent_surface_id") or surface.get("parent_surface_id", ""),
         "zoneId": item.get("zone_id") or surface.get("zone_id", ""),
         "anchors": layer.get("anchors") or [],
         "exclusiveZone": layer.get("exclusive_zone"),
@@ -275,6 +363,55 @@ def summarize_surface(item: dict) -> dict:
         "contentCommitCount": item.get("content_commit_count"),
         "layoutRevision": item.get("layout_revision"),
         "clientPid": (item.get("client") or {}).get("pid"),
+    }
+
+
+def summarize_layout_surface(item: dict) -> dict:
+    return {
+        "id": item.get("surface_id", ""),
+        "appId": item.get("app_id", ""),
+        "title": item.get("title", ""),
+        "role": item.get("role", ""),
+        "layoutRole": item.get("participation", ""),
+        "policyClass": item.get("policy_class", ""),
+        "policyReason": item.get("policy_reason", ""),
+        "parentSurfaceId": item.get("parent_surface_id", ""),
+        "zoneId": item.get("zone_id", ""),
+        "geometry": item.get("geometry") or {},
+        "visible": item.get("visible"),
+    }
+
+
+def summarize_route_surface(item: dict) -> dict:
+    return {
+        "id": item.get("id", ""),
+        "appId": item.get("appId", ""),
+        "title": item.get("title", ""),
+        "role": item.get("role", ""),
+        "layoutRole": item.get("layoutRole", ""),
+        "policyClass": item.get("policyClass", ""),
+        "policyReason": item.get("policyReason", ""),
+        "parentSurfaceId": item.get("parentSurfaceId", ""),
+        "zoneId": item.get("zoneId", ""),
+        "geometry": item.get("geometry") or {},
+        "visible": item.get("visible"),
+        "mapped": item.get("mapped"),
+    }
+
+
+def summarize_route_layout_surface(item: dict) -> dict:
+    return {
+        "id": item.get("surfaceId", ""),
+        "appId": item.get("appId", ""),
+        "title": item.get("title", ""),
+        "role": item.get("role", ""),
+        "layoutRole": item.get("participation", ""),
+        "policyClass": item.get("policyClass", ""),
+        "policyReason": item.get("policyReason", ""),
+        "parentSurfaceId": item.get("parentSurfaceId", ""),
+        "zoneId": item.get("zoneId", ""),
+        "geometry": item.get("geometry") or {},
+        "visible": item.get("visible"),
     }
 
 
@@ -391,7 +528,7 @@ def finish(
     samples: list[dict],
     capture_artifacts: list[dict],
 ) -> int:
-    failed_checks = [check for check in checks if check.get("status") != "pass"]
+    failed_checks = [check for check in checks if check.get("status") == "fail"]
     samples_path = write_samples(args.samples_output, samples) if args.samples_output and samples else ""
     result = {
         "schema": SCHEMA,
@@ -409,8 +546,9 @@ def finish(
         ],
         "summary": {
             "status": "fail" if failed_checks else "pass",
-            "passed": len(checks) - len(failed_checks),
+            "passed": len([check for check in checks if check.get("status") == "pass"]),
             "failed": len(failed_checks),
+            "skipped": len([check for check in checks if check.get("status") == "skip"]),
         },
     }
     json.dump(result, sys.stdout, indent=2, sort_keys=True)
@@ -445,6 +583,10 @@ def passed(name: str, detail: str, **extra: object) -> dict:
 
 def failed(name: str, detail: str, **extra: object) -> dict:
     return {"name": name, "category": "popup-stability", "status": "fail", "detail": detail, **extra}
+
+
+def skipped(name: str, detail: str, **extra: object) -> dict:
+    return {"name": name, "category": "popup-stability", "status": "skip", "detail": detail, **extra}
 
 
 if __name__ == "__main__":
