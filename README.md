@@ -166,6 +166,7 @@ Supporting harnesses:
 ./harness/live/check-popup-stability.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-responsiveness-baseline.py
 ./harness/live/check-multi-output-workspaces.py
+./harness/live/check-live-session-soak.py --artifact-dir /tmp/agora-de-live-session-soak
 ```
 
 Default installed-service proof:

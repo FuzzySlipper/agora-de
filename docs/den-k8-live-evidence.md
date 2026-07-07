@@ -303,6 +303,37 @@ as stable `policyClass=shell_chrome` chrome surfaces, verified cleanup, and
 skipped only the optional native-dialog probe because no
 `--native-dialog-app-id` was supplied.
 
+Run the bounded live-session soak:
+
+```bash
+./harness/live/check-live-session-soak.py \
+  --base-url http://127.0.0.1:17780 \
+  --cycles 2 \
+  --output-name HDMI-A-1 \
+  --output-capture-session den-k8-live-session-soak \
+  --require-capture \
+  --artifact-dir /tmp/agora-de-live-session-soak
+```
+
+The live-session soak runner emits `agora-de.live-session-soak.v1`. It repeats
+native launch/focus/minimize/restore/close, launcher/status popup cycles,
+workspace activation, overlay route/surface health checks, optional explicit
+restart probes, process/memory sampling, surface/layout drift checks, journal
+tail collection, cleanup verification, and optional physical output capture.
+It is an intentional installed-session evidence harness, not a normal CI gate.
+For scenario design, artifact layout, and failure boundaries, see
+`docs/live-session-soak.md`.
+
+Task 4571 live evidence ran the capture-backed one-cycle soak with
+`10 passed / 0 failed`. Artifacts were written under
+`/tmp/agora-de-live-session-soak-4571-capture`, including
+`summary.json`, `samples.jsonl`, journal logs, and `capture-packets.json`.
+The physical output capture at
+`/run/agent-os/artifacts/den-k8-live-session-soak-4571/output-capture-1783465385672928500-1/output-capture-1783465385672928500-1.png`
+classified as `capture_visible` with expected shell pixels. Recurring bridge
+broken-pipe journal noise and longer-run memory threshold interpretation were
+split to Den follow-up tasks 4751 and 4752.
+
 Run the installed shell theme-switch smoke with capture evidence:
 
 ```bash

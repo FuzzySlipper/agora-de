@@ -17,7 +17,8 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-popup-stability.py" \
   "$ROOT/harness/live/check-theme-switch.py" \
   "$ROOT/harness/live/check-responsiveness-baseline.py" \
-  "$ROOT/harness/live/check-multi-output-workspaces.py"
+  "$ROOT/harness/live/check-multi-output-workspaces.py" \
+  "$ROOT/harness/live/check-live-session-soak.py"
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -38,6 +39,7 @@ expectations = {
     "harness/live/check-theme-switch.py": "agora-de.theme-switch-live.v1",
     "harness/live/check-responsiveness-baseline.py": "agora-de.responsiveness-baseline-live.v1",
     "harness/live/check-multi-output-workspaces.py": "agora-de.multi-output-workspaces-live.v1",
+    "harness/live/check-live-session-soak.py": "agora-de.live-session-soak.v1",
 }
 for relative, schema in expectations.items():
     text = (root / relative).read_text(encoding="utf-8")
@@ -247,6 +249,34 @@ for required in [
 ]:
     if required not in multi_output:
         raise SystemExit(f"check-multi-output-workspaces.py missing required evidence hook {required!r}")
+
+soak = (root / "harness/live/check-live-session-soak.py").read_text(encoding="utf-8")
+for required in [
+    "/home/agent/.local/bin/agora-de-compositorctl",
+    "den-k8-live-session-soak",
+    "/api/catalog/apps",
+    "/api/catalog/launch",
+    "/api/surfaces",
+    "/api/surfaces/action",
+    "/api/layout",
+    "/api/workspaces",
+    "/api/workspaces/action",
+    "/api/operator/status",
+    "/shell/dist/desktop/?surface=overlay",
+    "shell-status",
+    "shell-launcher",
+    "Alacritty.desktop",
+    "minimize",
+    "restore",
+    "restart-command",
+    "journalctl",
+    "samples.jsonl",
+    "capture-packets.json",
+    "state-drift",
+    "cleanup",
+]:
+    if required not in soak:
+        raise SystemExit(f"check-live-session-soak.py missing required evidence hook {required!r}")
 
 kill_all = (root / "deploy/shellui/agora-de-kill-all").read_text(encoding="utf-8")
 for required in [
