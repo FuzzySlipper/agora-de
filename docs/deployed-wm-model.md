@@ -58,6 +58,10 @@ Known current limitations:
   currently proves single-output stability only because the host reports one
   physical output; true multi-monitor behavior still needs soak evidence on a
   host with multiple outputs;
+- transient/dialog policy is conservative: shell chrome, dialogs, menus,
+  popovers, unmanaged helper views, and explicit floating overrides stay out of
+  deterministic tiling. The current policy and remaining parent/failure-class
+  gaps are recorded in `docs/transient-dialog-policy.md`;
 - fullscreen, maximize, and minimize are compositor-backed in the installed
   Wayfire adapter through `set_surface_state`, and shell-facing routes accept
   explicit enable/disable state for reversible checks; future adapters must
