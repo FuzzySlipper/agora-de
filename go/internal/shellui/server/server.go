@@ -552,22 +552,25 @@ type compositorctlListSurfacesResponse struct {
 
 type compositorctlTrackedSurface struct {
 	Surface struct {
-		ID          string                 `json:"id"`
-		Label       string                 `json:"label"`
-		AppID       string                 `json:"app_id"`
-		Title       string                 `json:"title"`
-		Role        string                 `json:"role"`
-		SurfaceKind string                 `json:"surface_kind"`
-		Visible     bool                   `json:"visible"`
-		Fullscreen  bool                   `json:"fullscreen"`
-		Maximized   bool                   `json:"maximized"`
-		Minimized   bool                   `json:"minimized"`
-		OutputID    string                 `json:"output_id"`
-		WorkspaceID string                 `json:"workspace_id"`
-		ZoneID      string                 `json:"zone_id"`
-		LayoutMode  string                 `json:"layout_mode"`
-		LayoutRole  string                 `json:"layout_role"`
-		Geometry    *surfaces.GeometryView `json:"geometry"`
+		ID              string                 `json:"id"`
+		Label           string                 `json:"label"`
+		AppID           string                 `json:"app_id"`
+		Title           string                 `json:"title"`
+		Role            string                 `json:"role"`
+		SurfaceKind     string                 `json:"surface_kind"`
+		ParentSurfaceID string                 `json:"parent_surface_id"`
+		Visible         bool                   `json:"visible"`
+		Fullscreen      bool                   `json:"fullscreen"`
+		Maximized       bool                   `json:"maximized"`
+		Minimized       bool                   `json:"minimized"`
+		OutputID        string                 `json:"output_id"`
+		WorkspaceID     string                 `json:"workspace_id"`
+		ZoneID          string                 `json:"zone_id"`
+		LayoutMode      string                 `json:"layout_mode"`
+		LayoutRole      string                 `json:"layout_role"`
+		PolicyClass     string                 `json:"policy_class"`
+		PolicyReason    string                 `json:"policy_reason"`
+		Geometry        *surfaces.GeometryView `json:"geometry"`
 	} `json:"surface"`
 	Client struct {
 		PID int `json:"pid"`
@@ -582,6 +585,9 @@ type compositorctlTrackedSurface struct {
 	ZoneID             string                 `json:"zone_id"`
 	LayoutMode         string                 `json:"layout_mode"`
 	LayoutRole         string                 `json:"layout_role"`
+	PolicyClass        string                 `json:"policy_class"`
+	PolicyReason       string                 `json:"policy_reason"`
+	ParentSurfaceID    string                 `json:"parent_surface_id"`
 	Geometry           *surfaces.GeometryView `json:"geometry"`
 	FrameCount         int                    `json:"frame_count"`
 	ContentCommitCount int                    `json:"content_commit_count"`
@@ -609,6 +615,7 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 			Role:               tracked.Surface.Role,
 			SurfaceKind:        tracked.Surface.SurfaceKind,
 			LaunchID:           tracked.LaunchID,
+			ParentSurfaceID:    firstNonEmpty(tracked.ParentSurfaceID, tracked.Surface.ParentSurfaceID),
 			OwnerUID:           tracked.Client.UID,
 			Mapped:             mapped,
 			Focused:            tracked.Focused,
@@ -621,6 +628,8 @@ func decodeCompositorctlSurfaces(payload []byte) ([]surfaces.SurfaceView, error)
 			ZoneID:             firstNonEmpty(tracked.ZoneID, tracked.Surface.ZoneID),
 			LayoutMode:         firstNonEmpty(tracked.LayoutMode, tracked.Surface.LayoutMode),
 			LayoutRole:         firstNonEmpty(tracked.LayoutRole, tracked.Surface.LayoutRole),
+			PolicyClass:        firstNonEmpty(tracked.PolicyClass, tracked.Surface.PolicyClass),
+			PolicyReason:       firstNonEmpty(tracked.PolicyReason, tracked.Surface.PolicyReason),
 			Geometry:           firstGeometryView(tracked.Geometry, tracked.Surface.Geometry),
 			InputDeniedCount:   0,
 			FrameCount:         tracked.FrameCount,
@@ -3310,11 +3319,23 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
         .some((marker) => role === marker || role.indexOf(marker) >= 0);
     }
 
+    function surfacePolicyClass(surface, layout) {
+      return lowerText(text(layout && layout.policyClass, text(surface && surface.policyClass, "")));
+    }
+
+    function isTaskbarTransientPolicy(policyClass) {
+      return ["transient", "shell_chrome", "no_parent", "stale", "unsupported"]
+        .some((policy) => policy === policyClass);
+    }
+
     function isTaskbarWorkSurface(surface) {
       if (!surface || !surface.mapped) {
         return false;
       }
       const layout = layoutSurface(surface.id) || {};
+      if (isTaskbarTransientPolicy(surfacePolicyClass(surface, layout))) {
+        return false;
+      }
       if (surface.surfaceKind === "layer_shell" || isShellManagedSurface(surface)) {
         return false;
       }
@@ -3329,6 +3350,12 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
         return false;
       }
       return surfaceWorkspaceId(surface) === activeWorkspaceId();
+    }
+
+    function surfacePolicyLabel(surface, layout) {
+      const policy = text(layout && layout.policyClass, text(surface && surface.policyClass, "work"));
+      const reason = text(layout && layout.policyReason, text(surface && surface.policyReason, ""));
+      return reason ? policy + " / " + reason : policy;
     }
 
     function appIconLabel(surface, layout) {
@@ -3577,7 +3604,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
         focusButton.appendChild(icon);
         focusButton.appendChild(name);
         const area = surfaceAreaLabel(layout, zone);
-        focusButton.title = taskLabel + " / " + area + (minimized ? " / click to restore" : "");
+        focusButton.title = taskLabel + " / " + area + " / " + surfacePolicyLabel(surface, layout) + (minimized ? " / click to restore" : "");
         group.appendChild(focusButton);
         return group;
       }, 8);

@@ -30,6 +30,9 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	if !strings.Contains(body, "--agora-bg") || !strings.Contains(body, "var(--agora-evidence-accent)") {
 		t.Fatalf("shell body = %q, want centralized theme tokens", body)
 	}
+	if !strings.Contains(body, "surfacePolicyClass") || !strings.Contains(body, "policyClass") {
+		t.Fatalf("shell body should include surface policy projection helpers")
+	}
 	for _, want := range []string{
 		`class="panel taskbar"`,
 		`class="taskbar-start"`,
@@ -482,7 +485,7 @@ func TestHandlerCanUseCompositorctlSurfaceProvider(t *testing.T) {
 	}
 	command := filepath.Join(t.TempDir(), "compositorctl-fixture")
 	script := `#!/usr/bin/env sh
-printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client":{"uid":60010},"last_event":"content_committed","focused":true,"frame_count":0,"content_commit_count":3}]}'
+printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true,"role":"file-chooser-dialog","parent_surface_id":"view-parent","layout_role":"transient","policy_class":"transient","policy_reason":"transient surface follows parent view-parent"},"client":{"uid":60010},"last_event":"content_committed","focused":true,"frame_count":0,"content_commit_count":3}]}'
 `
 	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -503,6 +506,11 @@ printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client
 			OwnerUID           int    `json:"ownerUid"`
 			Mapped             bool   `json:"mapped"`
 			Focused            bool   `json:"focused"`
+			Role               string `json:"role"`
+			ParentSurfaceID    string `json:"parentSurfaceId"`
+			LayoutRole         string `json:"layoutRole"`
+			PolicyClass        string `json:"policyClass"`
+			PolicyReason       string `json:"policyReason"`
 			ContentCommitCount int    `json:"contentCommitCount"`
 		} `json:"surfaces"`
 	}
@@ -513,6 +521,9 @@ printf '%s\n' '{"surfaces":[{"surface":{"id":"view-live","visible":true},"client
 	surface := response.Surfaces[0]
 	if surface.ID != "view-live" || surface.OwnerUID != 60010 || !surface.Mapped || !surface.Focused || surface.ContentCommitCount != 3 {
 		t.Fatalf("unexpected live surface response: %+v", surface)
+	}
+	if surface.Role != "file-chooser-dialog" || surface.ParentSurfaceID != "view-parent" || surface.LayoutRole != "transient" || surface.PolicyClass != "transient" || surface.PolicyReason == "" {
+		t.Fatalf("surface policy metadata not preserved: %+v", surface)
 	}
 }
 
@@ -527,7 +538,7 @@ func TestHandlerExposesLayoutViaCompositorctl(t *testing.T) {
 printf '%s\n' "$*" >> "$CALL_LOG"
 case "$1 $2" in
   "layout get")
-    printf '%s\n' '{"layout":{"mode":"zones","revision":7,"settings":{"rule":"master_stack","mode":"zones","gaps":{"outer_horizontal":4,"outer_vertical":2,"inner_horizontal":8,"inner_vertical":6},"master_count":2,"master_ratio":0.6,"smart_gaps":true},"surfaces":[{"surface_id":"view-live","label":"1","app_id":"foot","title":"foot","output_id":"HDMI-A-1","workspace_id":"workspace-1","zone_id":"primary","mode":"zones","participation":"tiled","focused":true,"visible":true,"geometry":{"x":1,"y":2,"width":300,"height":200},"order":0}],"workspaces":[{"id":"workspace-1","name":"workspace 1","output_id":"HDMI-A-1","active":true,"zones":[{"id":"primary","name":"Primary","kind":"work","surface_ids":["view-live"]}],"surface_order":["view-live"]}]}}'
+    printf '%s\n' '{"layout":{"mode":"zones","revision":7,"settings":{"rule":"master_stack","mode":"zones","gaps":{"outer_horizontal":4,"outer_vertical":2,"inner_horizontal":8,"inner_vertical":6},"master_count":2,"master_ratio":0.6,"smart_gaps":true},"surfaces":[{"surface_id":"view-live","label":"1","app_id":"foot","title":"foot","output_id":"HDMI-A-1","workspace_id":"workspace-1","zone_id":"primary","mode":"zones","participation":"tiled","policy_class":"work","policy_reason":"normal work surface","focused":true,"visible":true,"geometry":{"x":1,"y":2,"width":300,"height":200},"order":0}],"workspaces":[{"id":"workspace-1","name":"workspace 1","output_id":"HDMI-A-1","active":true,"zones":[{"id":"primary","name":"Primary","kind":"work","surface_ids":["view-live"]}],"surface_order":["view-live"]}]}}'
     ;;
   "layout set-mode")
     printf '%s\n' '{"decision":"accepted"}'
@@ -566,10 +577,12 @@ esac
 			Mode     string `json:"mode"`
 			Revision uint64 `json:"revision"`
 			Surfaces []struct {
-				SurfaceID string `json:"surfaceId"`
-				AppID     string `json:"appId"`
-				ZoneID    string `json:"zoneId"`
-				Geometry  struct {
+				SurfaceID    string `json:"surfaceId"`
+				AppID        string `json:"appId"`
+				ZoneID       string `json:"zoneId"`
+				PolicyClass  string `json:"policyClass"`
+				PolicyReason string `json:"policyReason"`
+				Geometry     struct {
 					Width int `json:"width"`
 				} `json:"geometry"`
 			} `json:"surfaces"`
@@ -593,6 +606,9 @@ esac
 	}
 	if layoutResponse.Layout.Surfaces[0].SurfaceID != "view-live" || layoutResponse.Layout.Surfaces[0].AppID != "foot" || layoutResponse.Layout.Surfaces[0].ZoneID != "primary" || layoutResponse.Layout.Surfaces[0].Geometry.Width != 300 {
 		t.Fatalf("unexpected layout surface projection: %+v", layoutResponse.Layout.Surfaces[0])
+	}
+	if layoutResponse.Layout.Surfaces[0].PolicyClass != "work" || layoutResponse.Layout.Surfaces[0].PolicyReason == "" {
+		t.Fatalf("layout surface policy projection missing: %+v", layoutResponse.Layout.Surfaces[0])
 	}
 	if layoutResponse.Layout.Settings.Rule != "master_stack" || layoutResponse.Layout.Settings.MasterCount != 2 || layoutResponse.Layout.Settings.MasterRatio != 0.6 || layoutResponse.Layout.Settings.Gaps.InnerHorizontal != 8 {
 		t.Fatalf("unexpected layout settings projection: %+v", layoutResponse.Layout.Settings)

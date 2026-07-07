@@ -41,6 +41,22 @@ func TestLayoutFallsBackToSurfaceProjectionWhenBackendUnsupported(t *testing.T) 
 				OwnerUID:    1001,
 			},
 			{
+				ID:          "view-dialog",
+				Label:       "D",
+				AppID:       "Alacritty",
+				Title:       "Open File",
+				Role:        "file-chooser-dialog",
+				Mapped:      true,
+				Visible:     true,
+				WorkspaceID: "workspace-1",
+				ZoneID:      "transient",
+				LayoutMode:  "freeform",
+				LayoutRole:  "transient",
+				SurfaceKind: "xdg_toplevel",
+				OutputID:    "HDMI-A-1",
+				OwnerUID:    1001,
+			},
+			{
 				ID:          "layer-1",
 				AppID:       "io.agorade.ShellOverlay",
 				Mapped:      true,
@@ -65,7 +81,7 @@ func TestLayoutFallsBackToSurfaceProjectionWhenBackendUnsupported(t *testing.T) 
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Layout.Mode != "freeform" || len(response.Layout.Surfaces) != 1 {
+	if response.Layout.Mode != "freeform" || len(response.Layout.Surfaces) != 2 {
 		t.Fatalf("unexpected layout response: %+v", response)
 	}
 	surface := response.Layout.Surfaces[0]
@@ -74,6 +90,13 @@ func TestLayoutFallsBackToSurfaceProjectionWhenBackendUnsupported(t *testing.T) 
 	}
 	if surface.Geometry.X != 24 || surface.Geometry.Width != 800 {
 		t.Fatalf("unexpected fallback geometry: %+v", surface.Geometry)
+	}
+	if surface.PolicyClass != "work" || surface.PolicyReason == "" {
+		t.Fatalf("fallback work surface policy = %+v", surface)
+	}
+	dialog := response.Layout.Surfaces[1]
+	if dialog.SurfaceID != "view-dialog" || dialog.Participation != "transient" || dialog.PolicyClass != "no_parent" || dialog.PolicyReason == "" {
+		t.Fatalf("fallback dialog policy = %+v", dialog)
 	}
 }
 

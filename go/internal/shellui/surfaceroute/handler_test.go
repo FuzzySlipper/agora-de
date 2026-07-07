@@ -14,9 +14,13 @@ func TestHandlerServesSurfaceViews(t *testing.T) {
 	handler := New(func(*http.Request) ([]surfaces.SurfaceView, error) {
 		return []surfaces.SurfaceView{{
 			ID:               "view-42",
+			ParentSurfaceID:  "view-parent",
 			OwnerUID:         60001,
 			Mapped:           true,
 			Focused:          true,
+			LayoutRole:       "transient",
+			PolicyClass:      "transient",
+			PolicyReason:     "transient surface follows parent view-parent",
 			InputDeniedCount: 1,
 		}}, nil
 	})
@@ -43,6 +47,9 @@ func TestHandlerServesSurfaceViews(t *testing.T) {
 	surface := response.Surfaces[0]
 	if surface.ID != "view-42" || surface.OwnerUID != 60001 || !surface.Mapped || !surface.Focused || surface.InputDeniedCount != 1 {
 		t.Fatalf("unexpected surface response: %+v", surface)
+	}
+	if surface.ParentSurfaceID != "view-parent" || surface.LayoutRole != "transient" || surface.PolicyClass != "transient" || surface.PolicyReason == "" {
+		t.Fatalf("surface policy metadata not exposed: %+v", surface)
 	}
 }
 
