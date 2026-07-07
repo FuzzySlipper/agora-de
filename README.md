@@ -226,6 +226,7 @@ rather than prove the basic architecture again:
 - [Backend-agnostic layout planner](docs/backend-agnostic-layout-planner.md)
 - [Compositor backend decision](docs/compositor-backend-decision.md)
 - [Structured window handling](docs/structured-window-handling.md)
+- [Multi-output workspace policy](docs/multi-output-workspace-policy.md)
 - [Theme boundary](docs/theme-boundary.md)
 - [Native launch policy](docs/native-launch-policy.md)
 - [Performance and responsiveness](docs/performance-responsiveness.md)

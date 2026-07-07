@@ -55,7 +55,8 @@ Known current limitations:
 
 - multi-workspace compositor placement is implemented for backend-owned
   workspaces on the current output; richer multi-output workspace policy is
-  still future work;
+  recorded in `docs/multi-output-workspace-policy.md` and remains an
+  implementation track;
 - fullscreen, maximize, and minimize are compositor-backed in the installed
   Wayfire adapter through `set_surface_state`, and shell-facing routes accept
   explicit enable/disable state for reversible checks; future adapters must
