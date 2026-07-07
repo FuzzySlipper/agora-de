@@ -79,7 +79,7 @@ func isTransientSurfaceRole(role string) bool {
 	if role == "" {
 		return false
 	}
-	for _, marker := range []string{"dialog", "modal", "popup", "popover", "menu", "tooltip", "transient"} {
+	for _, marker := range []string{"dialog", "modal", "popup", "popover", "menu", "tooltip", "transient", "unmanaged"} {
 		if strings.Contains(role, marker) {
 			return true
 		}

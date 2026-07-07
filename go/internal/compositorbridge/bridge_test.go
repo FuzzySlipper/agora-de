@@ -1091,6 +1091,115 @@ func TestReservedBottomUsesLayerShellWorkAreaReadback(t *testing.T) {
 	bridge.mu.RUnlock()
 }
 
+func TestAutoLayoutUsesStableLayerShellOutputBounds(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	for _, event := range []pluginEvent{
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "layer-panel",
+				SurfaceKind: SurfaceKindLayer,
+				Role:        "panel",
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 2560, Height: 96},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "layer-background",
+				SurfaceKind: SurfaceKindLayer,
+				Role:        "background",
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{Width: 2560, Height: 1344},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-a",
+				SurfaceKind: SurfaceKindXDG,
+				Role:        "toplevel",
+				Label:       "1",
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{X: 0, Y: 0, Width: 1318, Height: 1331},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+		{
+			Type:  PluginSurfaceEvent,
+			Event: EventMapped,
+			Surface: CompositorSurface{
+				ID:          "view-b",
+				SurfaceKind: SurfaceKindXDG,
+				Role:        "toplevel",
+				Label:       "2",
+				Visible:     &visible,
+				Geometry:    &SurfaceGeometry{X: 1318, Y: 0, Width: 1318, Height: 665},
+				OutputID:    "HDMI-A-1",
+			},
+		},
+	} {
+		bridge.handleSurfaceEvent(event)
+	}
+	bridge.mu.Lock()
+	bridge.plugin = &pluginSession{}
+	bridge.layoutMode = LayoutModeColumns
+	bridge.layoutSettings = DefaultLayoutSettings()
+	bridge.layoutSettings.Mode = LayoutModeColumns
+	bridge.mu.Unlock()
+
+	outputs := bridge.ListOutputs()
+	if len(outputs) != 1 || outputs[0].PhysicalWidth != 2560 || outputs[0].PhysicalHeight != 1344 {
+		t.Fatalf("outputs = %+v, want stable 2560x1344 layer-shell bounds", outputs)
+	}
+
+	placements := bridge.autoLayoutPlan()
+	if len(placements) != 2 {
+		t.Fatalf("placements = %+v, want two placements", placements)
+	}
+	if placements[0].Geometry != (SurfaceGeometry{X: 0, Y: 0, Width: 1280, Height: 1344}) {
+		t.Fatalf("master placement = %+v, want stable 1280x1344 half of 2560", placements[0].Geometry)
+	}
+	if placements[1].Geometry != (SurfaceGeometry{X: 1280, Y: 0, Width: 1280, Height: 1344}) {
+		t.Fatalf("stack placement = %+v, want stable 1280x1344 half of 2560", placements[1].Geometry)
+	}
+}
+
+func TestUnmanagedXDGSurfaceIsTransientAndExcludedFromAutoLayout(t *testing.T) {
+	bridge := New(Config{})
+	visible := true
+	bridge.handleSurfaceEvent(pluginEvent{
+		Type:  PluginSurfaceEvent,
+		Event: EventMapped,
+		Surface: CompositorSurface{
+			ID:          "view-unmanaged",
+			SurfaceKind: SurfaceKindXDG,
+			Role:        "unmanaged",
+			Visible:     &visible,
+			Geometry:    &SurfaceGeometry{X: 138, Y: 1394, Width: 70, Height: 33},
+			OutputID:    "HDMI-A-1",
+		},
+	})
+
+	surfaces := bridge.ListSurfaces()
+	if len(surfaces) != 1 {
+		t.Fatalf("surfaces = %+v, want unmanaged helper surface", surfaces)
+	}
+	if surfaces[0].LayoutRole != string(SurfaceLayoutRoleTransient) || surfaces[0].ZoneID != zoneTransient {
+		t.Fatalf("unmanaged surface classification = role %q zone %q, want transient", surfaces[0].LayoutRole, surfaces[0].ZoneID)
+	}
+	if isAutoTileSurface(surfaces[0]) {
+		t.Fatalf("unmanaged surface should not be auto-tile eligible: %+v", surfaces[0])
+	}
+}
+
 func TestAutoLayoutKeepsStableOrderOnCompositorFocus(t *testing.T) {
 	bridge := New(Config{})
 	pluginClient, pluginServer := net.Pipe()

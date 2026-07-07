@@ -1591,6 +1591,8 @@ func (bridge *Bridge) handleSurfaceStateResponse(event pluginEvent) {
 
 func (bridge *Bridge) outputsLocked() map[string]LogicalOutput {
 	outputs := map[string]LogicalOutput{}
+	stableWidths := map[string]int{}
+	stableWorkHeights := map[string]int{}
 	for _, surface := range bridge.surfaces {
 		name := surface.OutputID
 		if name == "" {
@@ -1612,6 +1614,12 @@ func (bridge *Bridge) outputsLocked() map[string]LogicalOutput {
 		if geom != nil {
 			width := geom.X + geom.Width
 			height := geom.Y + geom.Height
+			if stableLayerOutputWidth(surface) && geom.Width > stableWidths[name] {
+				stableWidths[name] = geom.Width
+			}
+			if stableLayerWorkAreaHeight(surface) && geom.Height > stableWorkHeights[name] {
+				stableWorkHeights[name] = geom.Height
+			}
 			if geom.Width > out.Width {
 				out.Width = geom.Width
 			}
@@ -1640,10 +1648,44 @@ func (bridge *Bridge) outputsLocked() map[string]LogicalOutput {
 		outputs[name] = out
 	}
 	for name, output := range outputs {
+		if width := stableWidths[name]; width > 0 {
+			output.Width = width
+			output.PhysicalWidth = width
+		}
+		if height := stableWorkHeights[name]; height > 0 {
+			output.Height = height
+			output.PhysicalHeight = height
+		}
 		sort.Strings(output.Surfaces)
 		outputs[name] = output
 	}
 	return outputs
+}
+
+func stableLayerOutputWidth(surface TrackedSurface) bool {
+	if surface.Surface.SurfaceKind != SurfaceKindLayer {
+		return false
+	}
+	switch firstNonEmpty(surface.Surface.Role, surface.LayoutRole, layerShellRole(surface)) {
+	case "panel", "background":
+		return true
+	default:
+		return false
+	}
+}
+
+func stableLayerWorkAreaHeight(surface TrackedSurface) bool {
+	if surface.Surface.SurfaceKind != SurfaceKindLayer {
+		return false
+	}
+	return firstNonEmpty(surface.Surface.Role, surface.LayoutRole, layerShellRole(surface)) == "background"
+}
+
+func layerShellRole(surface TrackedSurface) string {
+	if surface.Surface.LayerShell == nil {
+		return ""
+	}
+	return firstNonEmpty(surface.Surface.LayerShell.EffectiveRole, surface.Surface.LayerShell.HelperRole)
 }
 
 func (bridge *Bridge) layoutLocked() LayoutState {
