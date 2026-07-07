@@ -53,10 +53,11 @@ does not compute placement policy.
 
 Known current limitations:
 
-- multi-workspace compositor placement is implemented for backend-owned
-  workspaces on the current output; richer multi-output workspace policy is
-  recorded in `docs/multi-output-workspace-policy.md` and remains an
-  implementation track;
+- output-aware workspace state and shell controls are implemented, including
+  optional output selectors for workspace activation. Live evidence on den-k8
+  currently proves single-output stability only because the host reports one
+  physical output; true multi-monitor behavior still needs soak evidence on a
+  host with multiple outputs;
 - fullscreen, maximize, and minimize are compositor-backed in the installed
   Wayfire adapter through `set_surface_state`, and shell-facing routes accept
   explicit enable/disable state for reversible checks; future adapters must
@@ -229,6 +230,7 @@ Useful supporting live harnesses:
 ./harness/live/check-native-launch.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-overlay-labels.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-planner-layout.py --output-name HDMI-A-1 --require-capture
+./harness/live/check-multi-output-workspaces.py
 ```
 
 The live harnesses target the installed service on the host. They do not create

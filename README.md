@@ -32,6 +32,9 @@ and CI-backed live harnesses.
 
 - Deterministic auto-tiling with `zones`, `columns`, and backend-owned
   workspaces.
+- Output-aware workspace state in the bridge and shell controls: workspaces and
+  surfaces carry `outputId` when the backend reports it, and workspace
+  activation can include an output selector.
 - Master/stack layout planning through Rust fixtures and compositor bridge
   acknowledgement.
 - Native launch from desktop entries through structured shell/catalog routes.
@@ -162,6 +165,7 @@ Supporting harnesses:
 ./harness/live/check-overlay-labels.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-popup-stability.py --output-name HDMI-A-1 --require-capture
 ./harness/live/check-responsiveness-baseline.py
+./harness/live/check-multi-output-workspaces.py
 ```
 
 Default installed-service proof:
@@ -208,7 +212,8 @@ rather than prove the basic architecture again:
 
 - taskbar polish and minimized-window restore affordances;
 - richer theme development on the centralized token/config path;
-- multi-output workspace policy;
+- real multi-monitor soak evidence when a development host exposes more than
+  one physical output;
 - deeper transient/dialog policy;
 - longer-running live-session soak evidence;
 - Smithay/Rust backend evaluation behind the same layout/compositor boundary.

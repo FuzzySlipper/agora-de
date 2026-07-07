@@ -1,6 +1,6 @@
 # Multi-Output Workspace Policy
 
-Status: initial policy for Den 4569.
+Status: implemented policy and closeout evidence for Den 4569.
 
 This document defines how agora-de should model workspaces when more than one
 physical output is present. It keeps the current den-k8 single-output behavior
@@ -125,15 +125,19 @@ Existing fields already needed for the policy:
 - `LogicalOutput.name`
 - output capture by output name
 
-Likely extensions:
+Implemented extensions:
 
-- `/api/workspaces` should expose output identity for each workspace and, when
-  useful, the currently focused/current output id.
-- workspace actions may need an optional output selector only if backend
-  workspace ids are not globally unique.
-- live harnesses should classify true multi-output assertions as skipped when
-  the installed host exposes one output, while still proving output discovery
-  and single-output stability.
+- `/api/workspaces` exposes output identity for each workspace when known and
+  reports `currentOutputId` when available.
+- workspace actions accept an optional `outputId` selector in shellui and
+  `output_id` / `--output` through the bridge and compositorctl.
+- the bridge tracks active workspace by output when a workspace has an owning
+  output, while preserving the old outputless single-output activation path.
+- shellui renders compact output labels only when more than one output is
+  present and sends the backend-reported output id back on activation.
+- `harness/live/check-multi-output-workspaces.py` classifies true multi-output
+  assertions as skipped when the installed host exposes one output, while still
+  proving output discovery and single-output stability.
 
 Avoid adding hand-written protocol mirrors. If generated protocol output needs
 new fields, extend the Rust contract/codegen path and regenerate.
@@ -158,6 +162,40 @@ Additional evidence when multiple outputs are available:
 - a moved surface reports the new `outputId`, `workspaceId`, zone, and
   post-placement geometry;
 - capture can target each physical output by name.
+
+## Closeout Evidence
+
+Den 4569 landed in four implementation slices:
+
+- policy and contract boundary in this document;
+- bridge/API behavior for output-scoped workspaces and optional output-targeted
+  activation;
+- shellui rendering and activation controls that preserve output identity;
+- installed-service live evidence through
+  `harness/live/check-multi-output-workspaces.py`.
+
+Validation run during closeout:
+
+```bash
+go test -count=1 ./internal/compositorbridge ./internal/shellui/server ./cmd/compositorctl
+go test -count=1 ./internal/shellui/server
+./harness/ci/check-go.sh
+./harness/ci/check-ts.sh
+./harness/ci/check-live-harnesses.sh
+./harness/live/check-multi-output-workspaces.py --base-url http://127.0.0.1:17780
+./harness/ci/check-all.sh
+```
+
+The live run against `http://127.0.0.1:17780` reported one physical output,
+`HDMI-A-1`. It passed output discovery, `/api/operator/status`, workspace state,
+layout workspace projection, workspace activation for `workspace-1`, targeted
+output capture for `HDMI-A-1`, and cleanup with no work surfaces before or
+after the harness. It skipped multi-output-only assertions because den-k8
+currently exposes one output.
+
+Remaining limitation: true multi-monitor behavior is implemented by contract
+and covered by focused Go tests, but still needs live soak evidence on hardware
+or a host session that actually exposes more than one physical output.
 
 ## Non-Goals
 
