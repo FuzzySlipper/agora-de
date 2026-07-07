@@ -1809,18 +1809,16 @@ func writeOperatorHTML(response http.ResponseWriter) {
       width: 36px;
     }
     .overall {
-      border: 2px solid var(--agora-border);
-      border-radius: var(--agora-radius-control);
+      color: var(--agora-text-muted);
       margin-left: auto;
-      min-width: 96px;
-      padding: 10px 14px;
-      text-align: center;
+      padding: 0 2px;
+      text-align: right;
     }
     .overall.ok {
-      border-color: var(--agora-accent);
+      color: var(--agora-accent);
     }
     .overall.warn {
-      border-color: var(--agora-warning);
+      color: var(--agora-warning);
     }
     .close {
       background: var(--agora-surface-raised);
@@ -1882,7 +1880,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
   <header>
     <span class="mark"></span>
     <h1>agora-de shell status</h1>
-    <span class="overall warn" id="overall">loading</span>
+    <span class="overall warn" id="overall">status: loading</span>
     <button class="close" id="close-button" type="button">OK</button>
   </header>
   <section class="grid" aria-label="Status summaries">
@@ -1969,7 +1967,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
       }
       const status = await response.json();
       const overall = document.getElementById("overall");
-      overall.textContent = status.overall || "unknown";
+      overall.textContent = "status: " + (status.overall || "unknown");
       overall.className = "overall " + (status.overall === "ok" ? "ok" : "warn");
 
       renderRows("services", status.services, (service) => row(service.name, service.scope, service.state), 3);
@@ -2036,7 +2034,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
           return;
         }
       } catch (error) {
-        document.getElementById("overall").textContent = "close failed";
+        document.getElementById("overall").textContent = "status: close failed";
         document.getElementById("overall").className = "overall warn";
       }
       window.close();
@@ -2049,7 +2047,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
       }
     });
     refresh().catch((error) => {
-      document.getElementById("overall").textContent = "offline";
+      document.getElementById("overall").textContent = "status: offline";
       document.getElementById("overall").className = "overall warn";
     });
     setInterval(refresh, 5000);
@@ -2889,16 +2887,8 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       if (layout) {
         return layout;
       }
-      const surface = state.surfaces.find((candidate) =>
-        candidate.mapped &&
-        candidate.surfaceKind !== "layer_shell" &&
-        candidate.appId !== "io.agorade.ShellLauncher" &&
-        candidate.focused
-      ) || state.surfaces.find((candidate) =>
-        candidate.mapped &&
-        candidate.surfaceKind !== "layer_shell" &&
-        candidate.appId !== "io.agorade.ShellLauncher"
-      );
+      const surface = state.surfaces.find((candidate) => isTaskbarWorkSurface(candidate) && candidate.focused) ||
+        state.surfaces.find((candidate) => isTaskbarWorkSurface(candidate));
       return surface ? {surfaceId: surface.id, appId: surface.appId, title: surface.title, zoneId: surface.zoneId, focused: surface.focused, floating: surface.layoutRole === "floating"} : null;
     }
 
@@ -2965,6 +2955,42 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     function surfaceWorkspaceId(surface) {
       const layout = layoutSurface(surface.id) || {};
       return text(layout.workspaceId, text(surface.workspaceId, activeWorkspaceId()));
+    }
+
+    function lowerText(value) {
+      return text(value, "").toLowerCase();
+    }
+
+    function isShellManagedSurface(surface) {
+      const appId = text(surface && surface.appId, "");
+      return appId.indexOf("io.agorade.Shell") === 0;
+    }
+
+    function isTransientSurfaceRole(value) {
+      const role = lowerText(value);
+      return ["dialog", "modal", "popup", "popover", "menu", "tooltip", "transient", "unmanaged"]
+        .some((marker) => role === marker || role.indexOf(marker) >= 0);
+    }
+
+    function isTaskbarWorkSurface(surface) {
+      if (!surface || !surface.mapped) {
+        return false;
+      }
+      const layout = layoutSurface(surface.id) || {};
+      if (surface.surfaceKind === "layer_shell" || isShellManagedSurface(surface)) {
+        return false;
+      }
+      if (isTransientSurfaceRole(surface.role) ||
+        isTransientSurfaceRole(surface.layoutRole) ||
+        isTransientSurfaceRole(layout.role) ||
+        isTransientSurfaceRole(layout.participation)) {
+        return false;
+      }
+      const zone = lowerText(text(layout.zoneId, surface.zoneId));
+      if (zone === "chrome" || zone === "transient") {
+        return false;
+      }
+      return surfaceWorkspaceId(surface) === activeWorkspaceId();
     }
 
     function appIconLabel(surface, layout) {
@@ -3151,12 +3177,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       appsButton.title = showingApps ? "Close applications" : state.apps.length + " apps";
       appsButton.setAttribute("aria-pressed", showingApps ? "true" : "false");
       renderWorkspaces();
-      const workSurfaces = state.surfaces.filter((surface) =>
-        surface.mapped &&
-        surface.surfaceKind !== "layer_shell" &&
-        surface.appId !== "io.agorade.ShellLauncher" &&
-        surfaceWorkspaceId(surface) === activeWorkspaceId()
-      );
+      const workSurfaces = state.surfaces.filter(isTaskbarWorkSurface);
       renderList("running-list", "no running apps", workSurfaces, (surface) => {
         const group = document.createElement("span");
         group.className = "surface-actions";
