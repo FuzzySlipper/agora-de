@@ -256,13 +256,25 @@ def check_popup_policy(samples: list[dict]) -> dict:
             continue
         for popup in sample_item.get("popups", []):
             observed.append({"id": popup.get("id"), "appId": popup.get("appId"), "policyClass": popup.get("policyClass")})
-            if popup.get("layoutRole") != "transient" or popup.get("zoneId") != "transient" or popup.get("policyClass") not in {"transient", "shell_chrome"}:
+            if not valid_popup_policy(popup):
                 offenders.append({"phase": sample_item.get("phase"), "surface": popup})
     if offenders:
         return failed("popup-policy", "shell popup surfaces must project transient policy and stay out of tiling", offenders=offenders)
     if not observed:
         return failed("popup-policy", "no shell popup policy samples were observed")
     return passed("popup-policy", "shell popup samples projected transient policy", observed=observed)
+
+
+def valid_popup_policy(surface: dict) -> bool:
+    if surface.get("layoutRole") != "transient":
+        return False
+    policy = surface.get("policyClass")
+    zone = surface.get("zoneId")
+    if policy == "shell_chrome":
+        return zone == "chrome"
+    if policy == "transient":
+        return zone == "transient"
+    return False
 
 
 def probe_native_dialog(args: argparse.Namespace, samples: list[dict]) -> dict:
