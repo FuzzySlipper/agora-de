@@ -15,7 +15,8 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-auto-tiling-wm.py" \
   "$ROOT/harness/live/check-daily-wm-workflow.py" \
   "$ROOT/harness/live/check-popup-stability.py" \
-  "$ROOT/harness/live/check-theme-switch.py"
+  "$ROOT/harness/live/check-theme-switch.py" \
+  "$ROOT/harness/live/check-responsiveness-baseline.py"
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -34,6 +35,7 @@ expectations = {
     "harness/live/check-daily-wm-workflow.py": "agora-de.daily-wm-workflow-live.v1",
     "harness/live/check-popup-stability.py": "agora-de.popup-stability-live.v1",
     "harness/live/check-theme-switch.py": "agora-de.theme-switch-live.v1",
+    "harness/live/check-responsiveness-baseline.py": "agora-de.responsiveness-baseline-live.v1",
 }
 for relative, schema in expectations.items():
     text = (root / relative).read_text(encoding="utf-8")
@@ -196,6 +198,29 @@ for required in [
 ]:
     if required not in theme_switch:
         raise SystemExit(f"check-theme-switch.py missing required evidence hook {required!r}")
+
+responsiveness = (root / "harness/live/check-responsiveness-baseline.py").read_text(encoding="utf-8")
+for required in [
+    "/home/agent/.local/bin/agora-de-compositorctl",
+    "/api/theme",
+    "/api/catalog/apps",
+    "/api/catalog/launch",
+    "/api/surfaces",
+    "/api/surfaces/action",
+    "/api/layout",
+    "/api/workspaces",
+    "/api/workspaces/action",
+    "/api/operator/status",
+    "shell-status",
+    "shell-launcher",
+    "Alacritty.desktop",
+    "launch-to-observed",
+    "p50Ms",
+    "p95Ms",
+    "cleanup",
+]:
+    if required not in responsiveness:
+        raise SystemExit(f"check-responsiveness-baseline.py missing required evidence hook {required!r}")
 
 kill_all = (root / "deploy/shellui/agora-de-kill-all").read_text(encoding="utf-8")
 for required in [
