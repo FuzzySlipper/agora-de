@@ -2769,6 +2769,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
       background: var(--agora-surface-raised);
       cursor: pointer;
       font: inherit;
+      gap: 5px;
       min-width: 42px;
       position: relative;
     }
@@ -2789,6 +2790,11 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
       margin-left: 5px;
       min-width: 16px;
       padding: 0 4px;
+    }
+    .workspace-output {
+      color: var(--agora-text-muted);
+      font: 700 10px var(--agora-font-family);
+      text-transform: uppercase;
     }
     .layout-status {
       background: var(--agora-surface-raised);
@@ -3089,6 +3095,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
       apps: [],
       surfaces: [],
       layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
+      workspaceState: {currentWorkspaceId: "workspace-1", currentOutputId: "", workspaces: []},
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
       feedback: {label: "", className: "", until: 0},
       surface: %q
@@ -3181,7 +3188,9 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
 
     function activeLayoutWorkspace() {
       const workspaces = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
-      return workspaces.find((workspace) => workspace.active) ||
+      const currentId = text(state.workspaceState.currentWorkspaceId, "");
+      return (currentId ? workspaces.find((workspace) => workspace.id === currentId) : null) ||
+        workspaces.find((workspace) => workspace.active) ||
         workspaces.find((workspace) => workspace.id === state.workspace.id) ||
         workspaces[0] ||
         {zones: []};
@@ -3194,9 +3203,10 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
 
     function allWorkspaces() {
       const fromLayout = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
+      const fromWorkspaceState = Array.isArray(state.workspaceState.workspaces) ? state.workspaceState.workspaces : [];
       const fromState = state.workspace && state.workspace.id ? [state.workspace] : [];
       const byId = new Map();
-      fromLayout.concat(fromState).forEach((workspace) => {
+      fromLayout.concat(fromWorkspaceState, fromState).forEach((workspace) => {
         const id = text(workspace && workspace.id, "");
         if (!id || byId.has(id)) {
           return;
@@ -3210,7 +3220,27 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
     }
 
     function activeWorkspaceId() {
-      return text(state.workspace.id, text(activeLayoutWorkspace().id, "workspace-1"));
+      return text(state.workspaceState.currentWorkspaceId, text(state.workspace.id, text(activeLayoutWorkspace().id, "workspace-1")));
+    }
+
+    function workspaceById(workspaceId) {
+      return allWorkspaces().find((workspace) => text(workspace.id, "") === workspaceId) || null;
+    }
+
+    function workspaceOutputId(workspace) {
+      return text(workspace && workspace.outputId, "");
+    }
+
+    function workspaceOutputShortName(outputId) {
+      const value = text(outputId, "");
+      if (!value) {
+        return "";
+      }
+      const parts = value.split("-");
+      if (parts.length >= 3) {
+        return parts[0][0] + parts[1][0] + parts[parts.length - 1];
+      }
+      return value.length > 5 ? value.slice(0, 5) : value;
     }
 
     function workspaceShortName(workspace) {
@@ -3573,19 +3603,32 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
     function renderWorkspaces() {
       const target = document.getElementById("workspace-list");
       const activeId = activeWorkspaceId();
+      const workspaces = allWorkspaces();
+      const outputIds = new Set(workspaces.map(workspaceOutputId).filter(Boolean));
+      const showOutputs = outputIds.size > 1;
       target.replaceChildren();
-      allWorkspaces().forEach((workspace) => {
+      workspaces.forEach((workspace) => {
         const workspaceId = text(workspace.id, "workspace-1");
+        const outputId = workspaceOutputId(workspace);
         const button = document.createElement("button");
         button.type = "button";
         button.className = "workspace" + (workspaceId === activeId || workspace.active ? " active" : "");
         button.dataset.workspaceId = workspaceId;
+        if (outputId) {
+          button.dataset.outputId = outputId;
+        }
         if (workspaceId === activeId) {
           button.id = "workspace-label";
         }
         const label = document.createElement("span");
         label.textContent = workspaceShortName(workspace);
         button.appendChild(label);
+        if (showOutputs && outputId) {
+          const output = document.createElement("span");
+          output.className = "workspace-output";
+          output.textContent = workspaceOutputShortName(outputId);
+          button.appendChild(output);
+        }
         const count = workspaceSurfaceCount(workspace);
         if (count) {
           const badge = document.createElement("span");
@@ -3593,7 +3636,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
           badge.textContent = String(count);
           button.appendChild(badge);
         }
-        button.title = workspaceId + (count ? " / " + count + " surfaces" : "");
+        button.title = workspaceId + (outputId ? " / " + outputId : "") + (count ? " / " + count + " surfaces" : "");
         target.appendChild(button);
       });
       const nextButton = document.createElement("button");
@@ -3625,7 +3668,14 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
         state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
         state.layout = layout.layout || state.layout;
         if (Array.isArray(workspaces.workspaces) && workspaces.workspaces.length) {
-          state.workspace = workspaces.workspaces.find((workspace) => workspace.active) || workspaces.workspaces[0];
+          state.workspaceState = {
+            currentWorkspaceId: text(workspaces.currentWorkspaceId, ""),
+            currentOutputId: text(workspaces.currentOutputId, ""),
+            workspaces: workspaces.workspaces
+          };
+          state.workspace = workspaces.workspaces.find((workspace) => workspace.id === state.workspaceState.currentWorkspaceId) ||
+            workspaces.workspaces.find((workspace) => workspace.active) ||
+            workspaces.workspaces[0];
         }
         render();
       } catch (error) {
@@ -3791,7 +3841,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
       await setLayoutSettings({smartGaps: !settings.smartGaps});
     }
 
-    async function activateWorkspace(workspaceId) {
+    async function activateWorkspace(workspaceId, outputId) {
       const status = document.getElementById("status-label");
       status.textContent = "workspace";
       status.className = "status ready";
@@ -3800,7 +3850,12 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
         if (state.layout.mode !== "zones") {
           await setLayoutMode("zones");
         }
-        const result = await postJSON("/api/workspaces/action", {workspaceId: targetWorkspaceId, action: "activate"});
+        const targetOutputId = text(outputId, workspaceOutputId(workspaceById(targetWorkspaceId)));
+        const body = {workspaceId: targetWorkspaceId, action: "activate"};
+        if (targetOutputId) {
+          body.outputId = targetOutputId;
+        }
+        const result = await postJSON("/api/workspaces/action", body);
         await refresh();
         setFeedback(text(result.currentWorkspaceId, targetWorkspaceId), "ready");
         render();
@@ -3932,7 +3987,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
     document.getElementById("workspace-list").addEventListener("click", (event) => {
       const target = event.target.closest("button[data-workspace-id]");
       if (target) {
-        activateWorkspace(target.dataset.workspaceId);
+        activateWorkspace(target.dataset.workspaceId, target.dataset.outputId);
       }
     });
     document.getElementById("layout-mode-button").addEventListener("click", () => setLayoutMode(nextLayoutMode(text(state.layout.mode, "freeform"))));
