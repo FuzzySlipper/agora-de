@@ -17,6 +17,8 @@ func main() {
 	listen := flag.String("listen", env("AGORA_DE_SHELLUI_LISTEN", server.DefaultListenAddress), "HTTP listen address")
 	staticRoot := flag.String("static-root", os.Getenv("AGORA_DE_SHELLUI_STATIC_ROOT"), "optional shell static asset root")
 	fixtureProviders := flag.Bool("fixture-providers", envBool("AGORA_DE_SHELLUI_FIXTURE_PROVIDERS", true), "serve deterministic deployment-testing providers")
+	themeID := flag.String("theme-id", env("AGORA_DE_SHELLUI_THEME_ID", ""), "bundled shell theme id, empty for default")
+	themeManifest := flag.String("theme-manifest", env("AGORA_DE_SHELLUI_THEME_MANIFEST", ""), "optional shell theme manifest path")
 	catalogProvider := flag.String("catalog-provider", env("AGORA_DE_SHELLUI_CATALOG_PROVIDER", server.CatalogProviderFixture), "catalog provider: fixture or desktop_entries")
 	desktopEntryRoots := flag.String("desktop-entry-roots", env("AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS", ""), "desktop entry roots for desktop_entries catalog provider")
 	iconThemeRoots := flag.String("icon-theme-roots", env("AGORA_DE_SHELLUI_ICON_THEME_ROOTS", ""), "optional icon theme roots for desktop entry icon resolution")
@@ -36,6 +38,8 @@ func main() {
 	handler, err := server.NewHandler(server.Config{
 		StaticRoot:               *staticRoot,
 		FixtureProviders:         *fixtureProviders,
+		ThemeID:                  *themeID,
+		ThemeManifestPath:        *themeManifest,
 		CatalogProvider:          *catalogProvider,
 		DesktopEntryRoots:        splitPathList(*desktopEntryRoots),
 		IconThemeRoots:           splitPathList(*iconThemeRoots),

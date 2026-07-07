@@ -1,0 +1,29 @@
+{
+  "id": "agora-ember",
+  "name": "Agora Ember",
+  "tokens": {
+    "--agora-accent": "#fb923c",
+    "--agora-bg": "#12100f",
+    "--agora-border": "#78716c",
+    "--agora-border-subtle": "#44403c",
+    "--agora-control-height": "44px",
+    "--agora-evidence-accent": "#00d1b2",
+    "--agora-evidence-bg": "#0f172a",
+    "--agora-evidence-strong": "#020617",
+    "--agora-fg": "#f1f5f9",
+    "--agora-font-background": "600 22px var(--agora-font-family)",
+    "--agora-font-code": "600 13px ui-monospace, SFMono-Regular, Menlo, monospace",
+    "--agora-font-family": "system-ui, sans-serif",
+    "--agora-font-panel": "600 18px var(--agora-font-family)",
+    "--agora-font-status": "600 16px var(--agora-font-family)",
+    "--agora-panel-gap": "14px",
+    "--agora-panel-height": "96px",
+    "--agora-panel-padding-x": "22px",
+    "--agora-radius-control": "4px",
+    "--agora-surface": "#1c1917",
+    "--agora-surface-raised": "#292524",
+    "--agora-surface-strong": "#0c0a09",
+    "--agora-text-muted": "#a8a29e",
+    "--agora-warning": "#fde047"
+  }
+}

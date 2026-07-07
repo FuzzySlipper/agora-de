@@ -79,7 +79,7 @@ func DefaultTokens() map[string]string {
 
 func DefaultManifest() Manifest {
 	return Manifest{
-		ID:     "agora-default",
+		ID:     DefaultThemeID,
 		Name:   "Agora Observatory",
 		Tokens: DefaultTokens(),
 	}

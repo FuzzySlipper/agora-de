@@ -13,11 +13,17 @@ The token contract is intentionally narrow:
 
 ## Authoritative Tokens
 
-The default dark manifest is represented by `theme.DefaultTokenDefinitions()`
-and `harness/fixtures/theme/agora-default-theme.json`. Go-rendered
-fallback/live shell HTML injects `theme.MustDefaultTokenCSS()` and consumes
+The default dark manifest is represented by `theme.DefaultTokenDefinitions()`,
+`theme.DefaultThemeID` (`agora-default`), and
+`harness/fixtures/theme/agora-default-theme.json`. Go-rendered fallback/live
+shell HTML resolves a `theme.Selection` at shellui handler startup and consumes
 `var(--agora-*)` tokens rather than owning colors, radii, and panel dimensions
 directly.
+
+Bundled variants live in `go/internal/shellui/theme` alongside fixtures under
+`harness/fixtures/theme/`. `agora-ember` is the first bundled variant. It keeps
+the same evidence markers and layout dimensions while changing presentation
+colors.
 
 TypeScript feature libraries consume the same token vocabulary through
 `@agora-de/theme`. Feature packages may expose component-specific token maps,
@@ -39,10 +45,24 @@ recognize light or dark text presentation. Normal theme iteration can change
 necessarily changing the classifier, but evidence token changes require
 updating the live evidence classifier and fixtures together.
 
+## Selection Path
+
+Shellui accepts two theme selection knobs:
+
+- `AGORA_DE_SHELLUI_THEME_ID` / `--theme-id` selects a bundled theme id. Empty
+  means `agora-default`.
+- `AGORA_DE_SHELLUI_THEME_MANIFEST` / `--theme-manifest` loads a JSON manifest
+  from disk. A manifest path takes precedence over a bundled id.
+
+User manifests are validated with `DecodeManifest`, overlaid onto the default
+token set, and rendered with `SafeTokenCSS`. This lets users change a small
+number of tokens without copying the whole bundled manifest, while preserving
+safe default values for required shell dimensions and evidence markers.
+
 ## Customization Path
 
-Later user-facing theme customization should validate manifests through
-`go/internal/shellui/theme.DecodeManifest` and generate CSS with
+User-facing theme customization validates manifests through
+`go/internal/shellui/theme.DecodeManifest` and generates CSS with
 `SafeTokenCSS`. The sanitizer accepts only `--agora-*` token declarations and
 rejects layout/exfiltration-oriented CSS fragments. This keeps visual
 customization separate from compositor, session, launch, and governance

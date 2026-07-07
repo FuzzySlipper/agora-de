@@ -122,6 +122,20 @@ that the structured launcher can safely prepare. See
 `docs/native-launch-boundary-design.md` for the current launchability contract
 and disabled-code vocabulary.
 
+Theme settings:
+
+```text
+AGORA_DE_SHELLUI_THEME_ID=agora-default
+AGORA_DE_SHELLUI_THEME_MANIFEST=
+```
+
+`AGORA_DE_SHELLUI_THEME_ID` selects a bundled theme. Empty or
+`agora-default` uses the default dark theme; `agora-ember` selects the first
+bundled variant. `AGORA_DE_SHELLUI_THEME_MANIFEST` points to a JSON manifest
+and takes precedence over the bundled id. Theme manifests are validated and
+converted to safe `--agora-*` token CSS by `go/internal/shellui/theme`; they do
+not change compositor or WM behavior.
+
 Minimal governed native launch settings on the current tested host:
 
 ```text

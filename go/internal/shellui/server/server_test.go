@@ -375,6 +375,33 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	}
 }
 
+func TestHandlerUsesSelectedTheme(t *testing.T) {
+	handler, err := NewHandler(Config{
+		FixtureProviders: true,
+		ThemeID:          "agora-ember",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := responseBody(t, handler, "/shell/dist/desktop/?surface=dock")
+	if !strings.Contains(body, "--agora-accent: #fb923c;") {
+		t.Fatalf("shell body missing selected theme accent: %s", body)
+	}
+	if !strings.Contains(body, "--agora-bg: #12100f;") {
+		t.Fatalf("shell body missing selected theme background: %s", body)
+	}
+}
+
+func TestHandlerRejectsInvalidThemeSelection(t *testing.T) {
+	_, err := NewHandler(Config{
+		FixtureProviders: true,
+		ThemeID:          "missing-theme",
+	})
+	if err == nil {
+		t.Fatal("NewHandler accepted missing theme")
+	}
+}
+
 func TestHandlerFailsWithoutProviderMode(t *testing.T) {
 	_, err := NewHandler(Config{})
 	if err == nil {

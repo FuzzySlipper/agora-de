@@ -57,6 +57,8 @@ const (
 type Config struct {
 	StaticRoot               string
 	FixtureProviders         bool
+	ThemeID                  string
+	ThemeManifestPath        string
 	CatalogProvider          string
 	DesktopEntryRoots        []string
 	IconThemeRoots           []string
@@ -75,6 +77,13 @@ type Config struct {
 
 func NewHandler(config Config) (http.Handler, error) {
 	catalogProvider, launchProvider, surfaceProvider, iconFiles, err := providers(config)
+	if err != nil {
+		return nil, err
+	}
+	themeSelection, err := theme.Select(theme.SelectionOptions{
+		ID:           config.ThemeID,
+		ManifestPath: config.ThemeManifestPath,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +112,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	}
 	mux.Handle(WorkspacesPath, workspacesHandler(workspaceConfig))
 	mux.Handle(WorkspaceActionPath, workspaceActionHandler(workspaceConfig))
-	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot))
+	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot, themeSelection.CSS))
 	return noStore(mux), nil
 }
 
@@ -1329,7 +1338,7 @@ func setNoStore(response http.ResponseWriter) {
 	response.Header().Set("Expires", "0")
 }
 
-func shellAssetHandler(root string) http.Handler {
+func shellAssetHandler(root string, themeCSS string) http.Handler {
 	var resolver staticserve.Resolver
 	var hasRoot bool
 	if strings.TrimSpace(root) != "" {
@@ -1364,36 +1373,36 @@ func shellAssetHandler(root string) http.Handler {
 			}
 		}
 
-		writeShellHTML(response, request)
+		writeShellHTML(response, request, themeCSS)
 	})
 }
 
-func writeShellHTML(response http.ResponseWriter, request *http.Request) {
+func writeShellHTML(response http.ResponseWriter, request *http.Request, themeCSS string) {
 	surface := strings.TrimSpace(request.URL.Query().Get("surface"))
 	if surface == "" {
 		surface = "desktop"
 	}
 	response.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if surface == "dock" || surface == "panel" {
-		writePanelHTML(response, surface)
+		writePanelHTML(response, surface, themeCSS)
 		return
 	}
 	if surface == "launcher" {
-		writeLauncherHTML(response)
+		writeLauncherHTML(response, themeCSS)
 		return
 	}
 	if surface == "operator" {
-		writeOperatorHTML(response)
+		writeOperatorHTML(response, themeCSS)
 		return
 	}
 	if surface == "overlay" {
-		writeOverlayHTML(response)
+		writeOverlayHTML(response, themeCSS)
 		return
 	}
-	writeBackgroundHTML(response, surface, surface == "background-fallback")
+	writeBackgroundHTML(response, surface, surface == "background-fallback", themeCSS)
 }
 
-func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTaskbar bool) {
+func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTaskbar bool, themeCSS string) {
 	escapedSurface := html.EscapeString(surface)
 	bodyClass := "background"
 	rows := "1fr"
@@ -1479,10 +1488,10 @@ func writeBackgroundHTML(response http.ResponseWriter, surface string, includeTa
     <span>agora-de shell: %s</span>
   </main>%s
 </body>
-</html>`, theme.MustDefaultTokenCSS(), rows, bodyClass, escapedSurface, escapedSurface, taskbarHTML)
+</html>`, themeCSS, rows, bodyClass, escapedSurface, escapedSurface, taskbarHTML)
 }
 
-func writeOverlayHTML(response http.ResponseWriter) {
+func writeOverlayHTML(response http.ResponseWriter, themeCSS string) {
 	fmt.Fprintf(response, `<!doctype html>
 <html>
 <head>
@@ -1820,10 +1829,10 @@ func writeOverlayHTML(response http.ResponseWriter) {
     setInterval(refresh, 1000);
   </script>
 </body>
-</html>`, theme.MustDefaultTokenCSS())
+</html>`, themeCSS)
 }
 
-func writeOperatorHTML(response http.ResponseWriter) {
+func writeOperatorHTML(response http.ResponseWriter, themeCSS string) {
 	fmt.Fprintf(response, `<!doctype html>
 <html>
 <head>
@@ -2120,10 +2129,10 @@ func writeOperatorHTML(response http.ResponseWriter) {
     setInterval(refresh, 5000);
   </script>
 </body>
-</html>`, theme.MustDefaultTokenCSS())
+</html>`, themeCSS)
 }
 
-func writeLauncherHTML(response http.ResponseWriter) {
+func writeLauncherHTML(response http.ResponseWriter, themeCSS string) {
 	fmt.Fprintf(response, `<!doctype html>
 <html>
 <head>
@@ -2555,10 +2564,10 @@ func writeLauncherHTML(response http.ResponseWriter) {
     refresh().then(() => document.getElementById("app-search").focus());
   </script>
 </body>
-</html>`, theme.MustDefaultTokenCSS())
+</html>`, themeCSS)
 }
 
-func writePanelHTML(response http.ResponseWriter, surface string) {
+func writePanelHTML(response http.ResponseWriter, surface string, themeCSS string) {
 	escapedSurface := html.EscapeString(surface)
 	fmt.Fprintf(response, `<!doctype html>
 <html>
@@ -3876,5 +3885,5 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     setInterval(refresh, 3000);
   </script>
 </body>
-</html>`, theme.MustDefaultTokenCSS(), escapedSurface, escapedSurface)
+</html>`, themeCSS, escapedSurface, escapedSurface)
 }
