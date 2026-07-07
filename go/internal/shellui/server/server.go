@@ -2564,7 +2564,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
 <html>
 <head>
   <title>agora-de shell panel</title>
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark">
   <style>
 %s
     html,
@@ -2581,10 +2581,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       background: transparent;
       box-sizing: border-box;
       display: flex;
-      font: var(--agora-font-panel);
+      font: 600 14px var(--agora-font-family);
       overflow: hidden;
     }
     .panel {
+      --taskbar-control-height: 38px;
       align-items: center;
       background: var(--agora-surface);
       background: color-mix(in srgb, var(--agora-surface) 92%%, var(--agora-bg));
@@ -2593,12 +2594,12 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       box-shadow: inset 0 1px 0 var(--agora-border-subtle), 0 -10px 26px rgba(0, 0, 0, 0.28);
       box-sizing: border-box;
       display: grid;
-      gap: 12px;
-      grid-template-columns: auto minmax(240px, 1fr) auto auto auto auto;
+      gap: 8px;
+      grid-template-columns: auto minmax(220px, 1fr) auto auto auto auto;
       height: var(--agora-panel-height);
       left: 0;
       min-height: var(--agora-panel-height);
-      padding: 10px var(--agora-panel-padding-x);
+      padding: 8px var(--agora-panel-padding-x);
       position: fixed;
       right: 0;
       width: 100vw;
@@ -2614,7 +2615,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     .workspace-strip {
       align-items: center;
       display: inline-flex;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
     }
     .start-button,
@@ -2626,10 +2627,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       align-items: center;
       border-radius: var(--agora-radius-control);
       display: inline-flex;
-      height: var(--agora-control-height);
+      box-sizing: border-box;
+      height: var(--taskbar-control-height);
       justify-content: center;
       min-width: 44px;
-      padding: 0 12px;
+      padding: 0 10px;
       white-space: nowrap;
     }
     .start-button {
@@ -2638,7 +2640,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       color: var(--agora-fg);
       cursor: pointer;
       font-weight: 800;
-      min-width: 96px;
+      min-width: 86px;
     }
     .start-button[aria-pressed="true"] {
       background: var(--agora-accent);
@@ -2649,7 +2651,24 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border: 2px solid var(--agora-border);
       color: var(--agora-fg);
       cursor: pointer;
-      font-weight: 800;
+      min-width: var(--taskbar-control-height);
+      padding: 0;
+      width: var(--taskbar-control-height);
+    }
+    .taskbar-button-icon {
+      display: block;
+      height: 18px;
+      pointer-events: none;
+      width: 18px;
+    }
+    .visually-hidden {
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%%);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
     }
     .taskbar-icon-button:hover,
     .workspace:hover,
@@ -2669,7 +2688,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       background: var(--agora-surface-raised);
       cursor: pointer;
       font: inherit;
-      min-width: 48px;
+      min-width: 42px;
       position: relative;
     }
     .workspace.active {
@@ -2684,24 +2703,35 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       color: var(--agora-bg);
       display: inline-flex;
       font: 800 12px var(--agora-font-family);
-      height: 18px;
+      height: 16px;
       justify-content: center;
-      margin-left: 6px;
-      min-width: 18px;
-      padding: 0 5px;
+      margin-left: 5px;
+      min-width: 16px;
+      padding: 0 4px;
     }
     .layout-status {
       background: var(--agora-surface-raised);
       cursor: pointer;
       font: inherit;
+      max-width: 116px;
       min-width: 92px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .taskbar-tasks {
       align-items: center;
       display: flex;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+    .taskbar-tasks::-webkit-scrollbar {
+      height: 5px;
+    }
+    .taskbar-tasks::-webkit-scrollbar-thumb {
+      background: var(--agora-border-subtle);
     }
     .task-button,
     .dock-item {
@@ -2711,34 +2741,40 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border-radius: var(--agora-radius-control);
       color: var(--agora-fg);
       display: inline-flex;
-      gap: 10px;
-      height: var(--agora-control-height);
+      gap: 8px;
+      height: var(--taskbar-control-height);
       min-width: 0;
       overflow: hidden;
-      padding: 0 12px;
+      padding: 0 10px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .task-button {
       cursor: pointer;
-      flex: 0 1 220px;
-      max-width: 240px;
-      min-width: 118px;
+      flex: 1 1 168px;
+      max-width: 230px;
+      min-width: 104px;
+      position: relative;
     }
     .task-button.focused {
       background: var(--agora-surface-strong);
       border-color: var(--agora-accent);
-      box-shadow: inset 0 -4px 0 var(--agora-accent);
+      box-shadow: inset 0 -3px 0 var(--agora-accent);
     }
     .task-button.minimized {
-      border-color: var(--agora-warning);
+      background: color-mix(in srgb, var(--agora-surface-raised) 74%%, var(--agora-bg));
+      border-color: color-mix(in srgb, var(--agora-warning) 74%%, var(--agora-border));
       color: var(--agora-text-muted);
     }
     .task-button.minimized .task-label::after {
+      border: 1px solid var(--agora-warning);
+      border-radius: var(--agora-radius-control);
       color: var(--agora-warning);
-      content: " minimized";
-      font-size: 12px;
-      margin-left: 8px;
+      content: "min";
+      font: 800 10px var(--agora-font-family);
+      margin-left: 7px;
+      padding: 1px 4px;
+      text-transform: uppercase;
     }
     .task-icon {
       align-items: center;
@@ -2749,10 +2785,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       display: inline-flex;
       flex: 0 0 28px;
       font: 800 14px var(--agora-font-family);
-      height: 28px;
+      height: 26px;
       justify-content: center;
       overflow: hidden;
-      width: 28px;
+      width: 26px;
     }
     .task-icon img {
       display: block;
@@ -2792,7 +2828,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border: 2px solid var(--agora-border);
       border-radius: var(--agora-radius-control);
       color: var(--agora-fg);
-      height: var(--agora-control-height);
+      height: var(--taskbar-control-height);
       min-width: 58px;
       padding: 0 10px;
     }
@@ -2808,10 +2844,10 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       color: var(--agora-fg);
       cursor: pointer;
       display: inline-flex;
-      height: var(--agora-control-height);
+      height: var(--taskbar-control-height);
       justify-content: center;
       list-style: none;
-      min-width: 64px;
+      min-width: 54px;
       padding: 0 12px;
       white-space: nowrap;
     }
@@ -2843,7 +2879,7 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
       border-radius: var(--agora-radius-control);
       color: var(--agora-fg);
       flex: 0 0 auto;
-      height: var(--agora-control-height);
+      height: var(--taskbar-control-height);
       min-width: 54px;
       padding: 0 10px;
     }
@@ -2873,7 +2909,14 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
     }
     .status {
       background: var(--agora-surface-strong);
-      min-width: 96px;
+      max-width: 126px;
+      min-width: 92px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .clock {
+      min-width: 68px;
+      width: 68px;
     }
     .status.ready {
       border-color: var(--agora-accent);
@@ -2895,11 +2938,11 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
         display: none;
       }
       .taskbar-icon-button {
-        min-width: 40px;
-        padding: 0 10px;
+        min-width: var(--taskbar-control-height);
+        padding: 0;
       }
       .start-button {
-        min-width: 76px;
+        min-width: 72px;
       }
     }
   </style>
@@ -2908,8 +2951,23 @@ func writePanelHTML(response http.ResponseWriter, surface string) {
   <main class="panel taskbar" aria-label="Agora DE shell panel">
     <section class="taskbar-start" aria-label="Shell controls">
       <button class="start-button" id="apps-button" type="button" aria-pressed="false">Start</button>
-      <button class="taskbar-icon-button" id="refresh-button" type="button" title="Refresh">R</button>
-      <button class="taskbar-icon-button" id="operator-button" type="button" title="Status">S</button>
+      <button class="taskbar-icon-button" id="refresh-button" type="button" aria-label="Refresh" title="Refresh">
+        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          <path d="M20 4v4h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          <path d="M20 12a8 8 0 0 1-13.7 5.7L4 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          <path d="M4 20v-4h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+        </svg>
+        <span class="visually-hidden">Refresh</span>
+      </button>
+      <button class="taskbar-icon-button" id="operator-button" type="button" aria-label="Status" title="Status">
+        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          <path d="M12 8h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3"></path>
+          <path d="M11 12h1v5h1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+        </svg>
+        <span class="visually-hidden">Status</span>
+      </button>
     </section>
     <section class="taskbar-tasks running" id="running-list" aria-label="Running surfaces">
       <span class="dock-item muted">loading surfaces</span>
