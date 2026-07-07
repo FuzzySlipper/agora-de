@@ -102,9 +102,9 @@ func TestRunLaunchWebviewURLStartsWithoutNativeSessionFlags(t *testing.T) {
 	if response.Status != "launched_without_surface" || response.SessionTokenPresent {
 		t.Fatalf("response = %+v", response)
 	}
-	waitForFile(t, argsPath)
-	args := string(mustReadFile(t, argsPath))
-	for _, want := range []string{"--url", "surface=operator", "--title", "Agora Status", "--app-id", "io.agorade.ShellStatus"} {
+	wantedArgs := []string{"--url", "surface=operator", "--title", "Agora Status", "--app-id", "io.agorade.ShellStatus"}
+	args := waitForFileContaining(t, argsPath, wantedArgs...)
+	for _, want := range wantedArgs {
 		if !strings.Contains(args, want) {
 			t.Fatalf("webview argv missing %q: %s", want, args)
 		}
@@ -581,6 +581,31 @@ func waitForFile(t *testing.T, path string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", path)
+}
+
+func waitForFileContaining(t *testing.T, path string, wants ...string) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		got, err := os.ReadFile(path)
+		if err == nil {
+			last = string(got)
+			missing := false
+			for _, want := range wants {
+				if !strings.Contains(last, want) {
+					missing = true
+					break
+				}
+			}
+			if !missing {
+				return last
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s to contain %q; last content: %s", path, wants, last)
+	return ""
 }
 
 func shellQuote(value string) string {
