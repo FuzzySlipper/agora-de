@@ -1769,18 +1769,22 @@ func writeOperatorHTML(response http.ResponseWriter) {
       background: var(--agora-bg);
       color: var(--agora-fg);
       font: var(--agora-font-status);
+      height: 100%%;
       margin: 0;
-      min-height: 100%%;
+      overflow: hidden;
+      width: 100%%;
     }
     body {
       box-sizing: border-box;
       display: grid;
       gap: 24px;
+      grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
       padding: 32px;
     }
     header,
     section {
       max-width: 1120px;
+      min-height: 0;
       width: 100%%;
     }
     header {
@@ -1818,6 +1822,21 @@ func writeOperatorHTML(response http.ResponseWriter) {
     .overall.warn {
       border-color: var(--agora-warning);
     }
+    .close {
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      cursor: pointer;
+      font: inherit;
+      height: var(--agora-control-height);
+      min-width: 76px;
+      padding: 0 14px;
+    }
+    .close:hover,
+    .close:focus-visible {
+      border-color: var(--agora-accent);
+    }
     table {
       border-collapse: collapse;
       width: 100%%;
@@ -1848,6 +1867,11 @@ func writeOperatorHTML(response http.ResponseWriter) {
       display: grid;
       gap: 18px;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      overflow: hidden;
+    }
+    .grid > section,
+    section[aria-label="Recovery"] {
+      overflow: auto;
     }
     .muted {
       color: var(--agora-text-muted);
@@ -1859,6 +1883,7 @@ func writeOperatorHTML(response http.ResponseWriter) {
     <span class="mark"></span>
     <h1>agora-de shell status</h1>
     <span class="overall warn" id="overall">loading</span>
+    <button class="close" id="close-button" type="button">OK</button>
   </header>
   <section class="grid" aria-label="Status summaries">
     <section>
@@ -1983,6 +2008,46 @@ func writeOperatorHTML(response http.ResponseWriter) {
       }
     }
 
+    async function postJSON(path, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function closeStatus() {
+      try {
+        const response = await fetch("/api/surfaces", {cache: "no-store"});
+        if (!response.ok) {
+          throw new Error("surfaces returned " + response.status);
+        }
+        const payload = await response.json();
+        const surfaces = Array.isArray(payload.surfaces) ? payload.surfaces : [];
+        const surface = surfaces.find((candidate) =>
+          candidate.mapped && candidate.appId === "io.agorade.ShellStatus"
+        ) || surfaces.find((candidate) => candidate.appId === "io.agorade.ShellStatus");
+        if (surface && surface.id) {
+          await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "close"});
+          return;
+        }
+      } catch (error) {
+        document.getElementById("overall").textContent = "close failed";
+        document.getElementById("overall").className = "overall warn";
+      }
+      window.close();
+    }
+
+    document.getElementById("close-button").addEventListener("click", closeStatus);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeStatus();
+      }
+    });
     refresh().catch((error) => {
       document.getElementById("overall").textContent = "offline";
       document.getElementById("overall").className = "overall warn";

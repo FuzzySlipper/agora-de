@@ -148,7 +148,13 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	for _, want := range []string{
 		"agora-de shell status",
 		`id="overall"`,
+		`id="close-button"`,
 		`/api/operator/status`,
+		`/api/surfaces/action`,
+		`io.agorade.ShellStatus`,
+		`closeStatus`,
+		`height: 100%`,
+		`overflow: hidden`,
 		"Recovery",
 	} {
 		if !strings.Contains(operator, want) {
