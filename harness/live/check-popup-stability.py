@@ -31,6 +31,7 @@ def main() -> int:
     parser.add_argument("--baseline-samples", type=int, default=3)
     parser.add_argument("--open-samples", type=int, default=6)
     parser.add_argument("--closed-samples", type=int, default=2)
+    parser.add_argument("--cycles", type=int, default=2)
     parser.add_argument("--sample-delay-seconds", type=float, default=1.0)
     parser.add_argument("--launch-delay-seconds", type=float, default=1.0)
     parser.add_argument("--cleanup-delay-seconds", type=float, default=1.0)
@@ -52,25 +53,29 @@ def main() -> int:
         time.sleep(args.cleanup_delay_seconds)
         collect_samples(args, "baseline", args.baseline_samples, samples)
 
-        launch_app(args.base_url, "shell-status")
-        time.sleep(args.launch_delay_seconds)
-        collect_samples(args, "status_open", args.open_samples, samples)
-        capture_artifact = capture_output(args, "status")
-        if capture_artifact:
-            capture_artifacts.append(capture_artifact)
-        close_shell_popups(args.base_url)
-        time.sleep(args.cleanup_delay_seconds)
-        collect_samples(args, "status_closed", args.closed_samples, samples)
+        cycles = max(1, args.cycles)
+        for cycle in range(1, cycles + 1):
+            launch_app(args.base_url, "shell-status")
+            time.sleep(args.launch_delay_seconds)
+            collect_samples(args, "status_open", args.open_samples, samples, cycle)
+            if cycle == 1:
+                capture_artifact = capture_output(args, "status")
+                if capture_artifact:
+                    capture_artifacts.append(capture_artifact)
+            close_shell_popups(args.base_url)
+            time.sleep(args.cleanup_delay_seconds)
+            collect_samples(args, "status_closed", args.closed_samples, samples, cycle)
 
-        launch_app(args.base_url, "shell-launcher")
-        time.sleep(args.launch_delay_seconds)
-        collect_samples(args, "launcher_open", args.open_samples, samples)
-        capture_artifact = capture_output(args, "launcher")
-        if capture_artifact:
-            capture_artifacts.append(capture_artifact)
-        close_shell_popups(args.base_url)
-        time.sleep(args.cleanup_delay_seconds)
-        collect_samples(args, "launcher_closed", args.closed_samples, samples)
+            launch_app(args.base_url, "shell-launcher")
+            time.sleep(args.launch_delay_seconds)
+            collect_samples(args, "launcher_open", args.open_samples, samples, cycle)
+            if cycle == 1:
+                capture_artifact = capture_output(args, "launcher")
+                if capture_artifact:
+                    capture_artifacts.append(capture_artifact)
+            close_shell_popups(args.base_url)
+            time.sleep(args.cleanup_delay_seconds)
+            collect_samples(args, "launcher_closed", args.closed_samples, samples, cycle)
     except Exception as error:
         checks.append(failed("popup-stability", f"popup stability probe failed: {error}"))
     finally:
@@ -97,18 +102,19 @@ def main() -> int:
     return finish(args, checked_at, checks, evidence_packets, samples, capture_artifacts)
 
 
-def collect_samples(args: argparse.Namespace, phase: str, count: int, samples: list[dict]) -> None:
+def collect_samples(args: argparse.Namespace, phase: str, count: int, samples: list[dict], cycle: int = 0) -> None:
     for index in range(count):
-        samples.append(sample(args.compositorctl, phase, index))
+        samples.append(sample(args.compositorctl, phase, index, cycle))
         if index + 1 < count and args.sample_delay_seconds > 0:
             time.sleep(args.sample_delay_seconds)
 
 
-def sample(compositorctl: str, phase: str, index: int) -> dict:
+def sample(compositorctl: str, phase: str, index: int, cycle: int) -> dict:
     surfaces = run_compositorctl_json(compositorctl, ["list-surfaces"]).get("surfaces") or []
     layout = run_compositorctl_json(compositorctl, ["layout", "get"]).get("layout") or {}
     return {
         "phase": phase,
+        "cycle": cycle,
         "index": index,
         "atUnixMillis": unix_millis(),
         "layoutRevision": layout.get("revision"),
@@ -138,6 +144,7 @@ def classify_samples(samples: list[dict]) -> list[dict]:
     checks.append(check_stable_named_geometry(samples, "background", "background-geometry", "background geometry remains stable"))
     checks.append(check_popup_phase(samples, "status_open", "io.agorade.ShellStatus", "status-popup-geometry"))
     checks.append(check_popup_phase(samples, "launcher_open", "io.agorade.ShellLauncher", "launcher-popup-geometry"))
+    checks.append(check_closed_popup_absence(samples))
     checks.append(check_work_surface_stability(samples))
     checks.append(check_unmanaged_transient(samples))
     return checks
@@ -198,6 +205,24 @@ def check_work_surface_stability(samples: list[dict]) -> dict:
     if changes:
         return failed("work-surface-geometry", "work surface geometry changed while shell popups opened or closed", changes=changes)
     return passed("work-surface-geometry", "baseline work surface geometry stayed stable across popup phases", surfaces=baseline_geometries)
+
+
+def check_closed_popup_absence(samples: list[dict]) -> dict:
+    offenders = []
+    for sample_item in samples:
+        if sample_item.get("phase") not in {"status_closed", "launcher_closed"}:
+            continue
+        for popup in sample_item.get("popups", []):
+            offenders.append({
+                "phase": sample_item.get("phase"),
+                "cycle": sample_item.get("cycle"),
+                "index": sample_item.get("index"),
+                "surface": popup,
+            })
+    if offenders:
+        return failed("closed-popup-cleanup", "closed popup phases retained shell popup surfaces", offenders=offenders)
+    cycles = unique_values(sample.get("cycle") for sample in samples if sample.get("cycle"))
+    return passed("closed-popup-cleanup", "closed popup phases stayed clear after repeated cycles", cycles=cycles)
 
 
 def check_unmanaged_transient(samples: list[dict]) -> dict:
