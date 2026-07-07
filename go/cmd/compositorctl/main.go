@@ -541,6 +541,7 @@ func runWorkspace(args []string, stdout io.Writer, pretty bool) error {
 		fs := flag.NewFlagSet("workspace activate", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		workspaceID := fs.String("workspace", "", "workspace id")
+		outputID := fs.String("output", "", "owning output id")
 		timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -548,7 +549,7 @@ func runWorkspace(args []string, stdout io.Writer, pretty bool) error {
 		if *workspaceID == "" {
 			return errors.New("--workspace is required")
 		}
-		return callAndPrint(methodActivateWorkspace, workspaceRequest{WorkspaceID: *workspaceID, WaitTimeoutMs: *timeoutMs}, stdout, pretty)
+		return callAndPrint(methodActivateWorkspace, workspaceRequest{WorkspaceID: *workspaceID, OutputID: *outputID, WaitTimeoutMs: *timeoutMs}, stdout, pretty)
 	default:
 		return fmt.Errorf("unknown workspace subcommand %q", args[0])
 	}
@@ -907,6 +908,7 @@ type surfaceLayoutRequest struct {
 
 type workspaceRequest struct {
 	WorkspaceID   string `json:"workspace_id"`
+	OutputID      string `json:"output_id,omitempty"`
 	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
 }
 

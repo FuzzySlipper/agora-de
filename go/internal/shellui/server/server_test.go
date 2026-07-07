@@ -653,9 +653,9 @@ case "$1 $2" in
   "layout get")
     current="$(cat "$ACTIVE_WORKSPACE")"
     if [ "$current" = "workspace-2" ]; then
-      printf '%s\n' '{"layout":{"surfaces":[{"surface_id":"view-a","workspace_id":"workspace-1","visible":false},{"surface_id":"view-b","workspace_id":"workspace-2","visible":true}],"workspaces":[{"id":"workspace-1","name":"workspace 1","active":false,"surface_order":["view-a"]},{"id":"workspace-2","name":"workspace 2","active":true,"surface_order":["view-b"]}]}}'
+      printf '%s\n' '{"layout":{"surfaces":[{"surface_id":"view-a","output_id":"HDMI-A-1","workspace_id":"workspace-1","visible":false},{"surface_id":"view-b","output_id":"DP-1","workspace_id":"workspace-2","visible":true}],"workspaces":[{"id":"workspace-1","name":"workspace 1","output_id":"HDMI-A-1","active":false,"surface_order":["view-a"]},{"id":"workspace-2","name":"workspace 2","output_id":"DP-1","active":true,"surface_order":["view-b"]}]}}'
     else
-      printf '%s\n' '{"layout":{"surfaces":[{"surface_id":"view-a","workspace_id":"workspace-1","visible":true},{"surface_id":"view-b","workspace_id":"workspace-2","visible":false}],"workspaces":[{"id":"workspace-1","name":"workspace 1","active":true,"surface_order":["view-a"]},{"id":"workspace-2","name":"workspace 2","active":false,"surface_order":["view-b"]}]}}'
+      printf '%s\n' '{"layout":{"surfaces":[{"surface_id":"view-a","output_id":"HDMI-A-1","workspace_id":"workspace-1","visible":true},{"surface_id":"view-b","output_id":"DP-1","workspace_id":"workspace-2","visible":false}],"workspaces":[{"id":"workspace-1","name":"workspace 1","output_id":"HDMI-A-1","active":true,"surface_order":["view-a"]},{"id":"workspace-2","name":"workspace 2","output_id":"DP-1","active":false,"surface_order":["view-b"]}]}}'
     fi
     ;;
   "workspace activate")
@@ -696,12 +696,12 @@ esac
 
 	var state workspacesResponse
 	decodeRoute(t, handler, WorkspacesPath, &state)
-	if state.CurrentWorkspaceID != "workspace-1" || len(state.Workspaces) != 2 || !state.Workspaces[0].Active || state.Workspaces[1].SurfaceCount != 1 {
+	if state.CurrentWorkspaceID != "workspace-1" || state.CurrentOutputID != "HDMI-A-1" || len(state.Workspaces) != 2 || !state.Workspaces[0].Active || state.Workspaces[1].SurfaceCount != 1 || state.Workspaces[1].OutputID != "DP-1" {
 		t.Fatalf("workspace state = %+v", state)
 	}
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, WorkspaceActionPath, strings.NewReader(`{"workspaceId":"workspace-2","action":"activate"}`)))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, WorkspaceActionPath, strings.NewReader(`{"workspaceId":"workspace-2","outputId":"DP-1","action":"activate"}`)))
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("workspace activate status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
 	}
@@ -709,14 +709,14 @@ esac
 	if err := json.Unmarshal(recorder.Body.Bytes(), &action); err != nil {
 		t.Fatal(err)
 	}
-	if action.CurrentWorkspaceID != "workspace-2" || !action.Workspace.Active || action.Workspace.SurfaceCount != 1 {
+	if action.CurrentWorkspaceID != "workspace-2" || action.CurrentOutputID != "DP-1" || action.Workspace.OutputID != "DP-1" || !action.Workspace.Active || action.Workspace.SurfaceCount != 1 {
 		t.Fatalf("workspace action = %+v", action)
 	}
 	calls, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(calls), "workspace activate --workspace workspace-2 --timeout-ms 2000") {
+	if !strings.Contains(string(calls), "workspace activate --workspace workspace-2 --output DP-1 --timeout-ms 2000") {
 		t.Fatalf("workspace activation call missing: %s", calls)
 	}
 }

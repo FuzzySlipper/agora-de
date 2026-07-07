@@ -557,6 +557,69 @@ func TestActivateWorkspaceCreatesIndependentWorkspaceState(t *testing.T) {
 	}
 }
 
+func TestActivateWorkspaceScopesVisibilityToOwningOutput(t *testing.T) {
+	bridge := New(Config{})
+	bridge.handlePluginEvent(pluginEvent{
+		Type: PluginLayoutState,
+		Layout: LayoutState{
+			Mode:     LayoutModeZones,
+			Revision: 11,
+			Surfaces: []LayoutSurface{
+				{
+					SurfaceID:     "view-left",
+					OutputID:      "HDMI-A-1",
+					WorkspaceID:   "workspace-1",
+					ZoneID:        zoneMaster,
+					Mode:          LayoutModeZones,
+					Participation: SurfaceLayoutRoleTiled,
+					Visible:       true,
+					Geometry:      &SurfaceGeometry{Width: 800, Height: 600},
+				},
+				{
+					SurfaceID:     "view-right",
+					OutputID:      "DP-1",
+					WorkspaceID:   "workspace-2",
+					ZoneID:        zoneMaster,
+					Mode:          LayoutModeZones,
+					Participation: SurfaceLayoutRoleTiled,
+					Visible:       true,
+					Geometry:      &SurfaceGeometry{X: 800, Width: 800, Height: 600},
+				},
+			},
+			Workspaces: []LayoutWorkspace{
+				{ID: "workspace-1", Name: "workspace 1", OutputID: "HDMI-A-1", Active: true, SurfaceOrder: []string{"view-left"}},
+				{ID: "workspace-2", Name: "workspace 2", OutputID: "DP-1", Active: true, SurfaceOrder: []string{"view-right"}},
+			},
+		},
+	})
+
+	layout := bridge.GetLayout().Layout
+	if !workspaceByID(layout, "workspace-1").Active || !workspaceByID(layout, "workspace-2").Active {
+		t.Fatalf("initial active workspace state = %+v", layout.Workspaces)
+	}
+	if surfaceByID(layout, "view-left").OutputID != "HDMI-A-1" || surfaceByID(layout, "view-right").OutputID != "DP-1" {
+		t.Fatalf("surface output identity missing: %+v", layout.Surfaces)
+	}
+
+	response, err := bridge.ActivateWorkspace(WorkspaceActionRequest{WorkspaceID: "workspace-3", OutputID: "DP-1"})
+	if err != nil {
+		t.Fatalf("activate workspace-3 on DP-1: %v", err)
+	}
+	if response.Decision != DecisionAccepted || response.WorkspaceID != "workspace-3" {
+		t.Fatalf("activation response = %+v", response)
+	}
+	layout = bridge.GetLayout().Layout
+	if !workspaceByID(layout, "workspace-1").Active || workspaceByID(layout, "workspace-2").Active || !workspaceByID(layout, "workspace-3").Active {
+		t.Fatalf("output-scoped active workspace state = %+v", layout.Workspaces)
+	}
+	if workspaceByID(layout, "workspace-3").OutputID != "DP-1" {
+		t.Fatalf("workspace-3 output identity = %+v", workspaceByID(layout, "workspace-3"))
+	}
+	if !surfaceByID(layout, "view-left").Visible || surfaceByID(layout, "view-right").Visible {
+		t.Fatalf("activation should only hide surfaces on DP-1: %+v", layout.Surfaces)
+	}
+}
+
 func TestGetLayoutUsesBackendLayoutStateWhenPluginProvidesIt(t *testing.T) {
 	bridge := New(Config{})
 	visible := true

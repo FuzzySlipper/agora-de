@@ -502,7 +502,7 @@ func TestRunWorkspaceActivateCallsCompositorControlSocket(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	err := run([]string{"workspace", "activate", "--workspace", "workspace-1", "--timeout-ms", "99"}, &stdout, &bytes.Buffer{})
+	err := run([]string{"workspace", "activate", "--workspace", "workspace-1", "--output", "HDMI-A-1", "--timeout-ms", "99"}, &stdout, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("run workspace activate error = %v", err)
 	}
@@ -514,7 +514,7 @@ func TestRunWorkspaceActivateCallsCompositorControlSocket(t *testing.T) {
 	if err := json.Unmarshal(request.Body, &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if body.WorkspaceID != "workspace-1" || body.WaitTimeoutMs != 99 {
+	if body.WorkspaceID != "workspace-1" || body.OutputID != "HDMI-A-1" || body.WaitTimeoutMs != 99 {
 		t.Fatalf("body = %+v", body)
 	}
 }

@@ -211,6 +211,7 @@ type SurfaceLayoutActionRequest struct {
 
 type WorkspaceActionRequest struct {
 	WorkspaceID   string `json:"workspace_id"`
+	OutputID      string `json:"output_id,omitempty"`
 	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
 }
 

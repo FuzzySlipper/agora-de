@@ -80,30 +80,31 @@ type Config struct {
 type Bridge struct {
 	allowedPluginUID uint32
 
-	mu                 sync.RWMutex
-	plugin             *pluginSession
-	pluginSeq          uint64
-	surfaces           map[string]TrackedSurface
-	stale              map[string]time.Time
-	focusSeq           uint64
-	focusWaiters       map[string]chan pluginResponse
-	focusWaiterSession map[string]uint64
-	placeSeq           uint64
-	placeWaiters       map[string]chan pluginResponse
-	placeWaiterSession map[string]uint64
-	stateSeq           uint64
-	stateWaiters       map[string]chan pluginResponse
-	stateWaiterSession map[string]uint64
-	captureSeq         uint64
-	layoutSeq          uint64
-	layoutMode         LayoutMode
-	layoutSettings     LayoutSettings
-	layoutSettingsPath string
-	backendLayout      *LayoutState
-	promotedSurfaceID  string
-	activeWorkspaceID  string
-	workspaces         map[string]workspaceRecord
-	workspaceOrder     []string
+	mu                      sync.RWMutex
+	plugin                  *pluginSession
+	pluginSeq               uint64
+	surfaces                map[string]TrackedSurface
+	stale                   map[string]time.Time
+	focusSeq                uint64
+	focusWaiters            map[string]chan pluginResponse
+	focusWaiterSession      map[string]uint64
+	placeSeq                uint64
+	placeWaiters            map[string]chan pluginResponse
+	placeWaiterSession      map[string]uint64
+	stateSeq                uint64
+	stateWaiters            map[string]chan pluginResponse
+	stateWaiterSession      map[string]uint64
+	captureSeq              uint64
+	layoutSeq               uint64
+	layoutMode              LayoutMode
+	layoutSettings          LayoutSettings
+	layoutSettingsPath      string
+	backendLayout           *LayoutState
+	promotedSurfaceID       string
+	activeWorkspaceID       string
+	activeWorkspaceByOutput map[string]string
+	workspaces              map[string]workspaceRecord
+	workspaceOrder          []string
 
 	autoLayoutSeq     uint64
 	autoLayoutRunning bool
@@ -122,19 +123,20 @@ func New(config Config) *Bridge {
 		settings = DefaultLayoutSettings()
 	}
 	return &Bridge{
-		allowedPluginUID:   config.AllowedPluginUID,
-		surfaces:           map[string]TrackedSurface{},
-		stale:              map[string]time.Time{},
-		focusWaiters:       map[string]chan pluginResponse{},
-		focusWaiterSession: map[string]uint64{},
-		placeWaiters:       map[string]chan pluginResponse{},
-		placeWaiterSession: map[string]uint64{},
-		stateWaiters:       map[string]chan pluginResponse{},
-		stateWaiterSession: map[string]uint64{},
-		layoutMode:         settings.Mode,
-		layoutSettings:     settings,
-		layoutSettingsPath: config.LayoutSettingsPath,
-		activeWorkspaceID:  defaultWorkspaceID,
+		allowedPluginUID:        config.AllowedPluginUID,
+		surfaces:                map[string]TrackedSurface{},
+		stale:                   map[string]time.Time{},
+		focusWaiters:            map[string]chan pluginResponse{},
+		focusWaiterSession:      map[string]uint64{},
+		placeWaiters:            map[string]chan pluginResponse{},
+		placeWaiterSession:      map[string]uint64{},
+		stateWaiters:            map[string]chan pluginResponse{},
+		stateWaiterSession:      map[string]uint64{},
+		layoutMode:              settings.Mode,
+		layoutSettings:          settings,
+		layoutSettingsPath:      config.LayoutSettingsPath,
+		activeWorkspaceID:       defaultWorkspaceID,
+		activeWorkspaceByOutput: map[string]string{},
 		workspaces: map[string]workspaceRecord{
 			defaultWorkspaceID: {ID: defaultWorkspaceID, Name: workspaceDisplayName(defaultWorkspaceID)},
 		},
@@ -673,6 +675,7 @@ func (bridge *Bridge) ActivateWorkspace(request WorkspaceActionRequest) (LayoutA
 	if workspaceID == "" {
 		return LayoutActionResponse{}, fmt.Errorf("workspace_id is required")
 	}
+	outputID := strings.TrimSpace(request.OutputID)
 	type workspaceVisibilityTarget struct {
 		SurfaceID string
 		Minimized bool
@@ -680,7 +683,12 @@ func (bridge *Bridge) ActivateWorkspace(request WorkspaceActionRequest) (LayoutA
 	targets := []workspaceVisibilityTarget{}
 	var session *pluginSession
 	bridge.mu.Lock()
-	bridge.ensureWorkspaceLocked(workspaceID)
+	record := bridge.ensureWorkspaceOnOutputLocked(workspaceID, outputID)
+	outputID = firstNonEmpty(outputID, record.OutputID, bridge.outputForWorkspaceLocked(workspaceID))
+	if outputID != "" {
+		bridge.ensureWorkspaceOnOutputLocked(workspaceID, outputID)
+		bridge.setActiveWorkspaceForOutputLocked(outputID, workspaceID)
+	}
 	bridge.activeWorkspaceID = workspaceID
 	for id, tracked := range bridge.surfaces {
 		if tracked.Surface.SurfaceKind == SurfaceKindLayer {
@@ -689,7 +697,8 @@ func (bridge *Bridge) ActivateWorkspace(request WorkspaceActionRequest) (LayoutA
 		surfaceWorkspaceID := firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
 		tracked.WorkspaceID = surfaceWorkspaceID
 		tracked.Surface.WorkspaceID = surfaceWorkspaceID
-		active := surfaceWorkspaceID == workspaceID
+		surfaceOutputID := firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID)
+		active := bridge.workspaceActiveOnOutputLocked(surfaceWorkspaceID, surfaceOutputID)
 		tracked.Visible = active
 		visible := active
 		tracked.Surface.Visible = &visible
@@ -1321,10 +1330,16 @@ func (bridge *Bridge) handleLayoutState(layout LayoutState) {
 		if layout.Surfaces[index].WorkspaceID == "" {
 			layout.Surfaces[index].WorkspaceID = bridge.activeWorkspaceIDLocked()
 		}
-		bridge.ensureWorkspaceLocked(layout.Surfaces[index].WorkspaceID)
+		bridge.ensureWorkspaceOnOutputLocked(layout.Surfaces[index].WorkspaceID, layout.Surfaces[index].OutputID)
 	}
 	for _, workspace := range layout.Workspaces {
-		bridge.ensureWorkspaceLocked(workspace.ID)
+		record := bridge.ensureWorkspaceOnOutputLocked(workspace.ID, workspace.OutputID)
+		if workspace.Active {
+			bridge.activeWorkspaceID = record.ID
+			if record.OutputID != "" {
+				bridge.setActiveWorkspaceForOutputLocked(record.OutputID, record.ID)
+			}
+		}
 	}
 	bridge.applyWorkspaceAuthorityToLayoutLocked(&layout)
 	bridge.layoutMode = layout.Mode
@@ -1442,10 +1457,10 @@ func (bridge *Bridge) handleSurfaceEvent(event pluginEvent) {
 		mergeSurfaceReadback(&tracked, previous, event.Event, now)
 	}
 	if tracked.WorkspaceID == "" {
-		tracked.WorkspaceID = bridge.activeWorkspaceIDLocked()
+		tracked.WorkspaceID = bridge.activeWorkspaceIDForOutputLocked(tracked.OutputID)
 		tracked.Surface.WorkspaceID = tracked.WorkspaceID
 	}
-	bridge.ensureWorkspaceLocked(tracked.WorkspaceID)
+	bridge.ensureWorkspaceOnOutputLocked(tracked.WorkspaceID, tracked.OutputID)
 	applyLayoutDefaults(&tracked)
 	bridge.applyLifecycleClassificationLocked(&tracked)
 	if event.Event == EventFrameDone {
@@ -1707,7 +1722,9 @@ func (bridge *Bridge) layoutFromTrackedLocked() LayoutState {
 		if surface.Surface.SurfaceKind == SurfaceKindLayer {
 			continue
 		}
-		bridge.ensureWorkspaceLocked(firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked()))
+		outputID := firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDForOutputLocked(outputID))
+		bridge.ensureWorkspaceOnOutputLocked(workspaceID, outputID)
 		surfaces = append(surfaces, surface)
 	}
 	workspaceRank := bridge.workspaceRankLocked()
@@ -1737,7 +1754,7 @@ func (bridge *Bridge) layoutFromTrackedLocked() LayoutState {
 	workspaceOrder := bridge.workspaceOrderLocked()
 	for _, workspaceID := range workspaceOrder {
 		record := bridge.ensureWorkspaceLocked(workspaceID)
-		builders[workspaceID] = newWorkspaceBuilder(record, bridge.activeWorkspaceIDLocked())
+		builders[workspaceID] = newWorkspaceBuilder(record, bridge.workspaceActiveOnOutputLocked(record.ID, record.OutputID))
 	}
 	layoutSurfaces := make([]LayoutSurface, 0, len(surfaces))
 	mode := bridge.layoutMode
@@ -1746,11 +1763,12 @@ func (bridge *Bridge) layoutFromTrackedLocked() LayoutState {
 	}
 	activeWorkspaceID := bridge.activeWorkspaceIDLocked()
 	for index, surface := range surfaces {
-		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, activeWorkspaceID)
-		record := bridge.ensureWorkspaceLocked(workspaceID)
+		outputID := firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDForOutputLocked(outputID), activeWorkspaceID)
+		record := bridge.ensureWorkspaceOnOutputLocked(workspaceID, outputID)
 		builder := builders[workspaceID]
 		if builder == nil {
-			builder = newWorkspaceBuilder(record, activeWorkspaceID)
+			builder = newWorkspaceBuilder(record, bridge.workspaceActiveOnOutputLocked(record.ID, record.OutputID))
 			builders[workspaceID] = builder
 			workspaceOrder = append(workspaceOrder, workspaceID)
 		}
@@ -1762,8 +1780,9 @@ func (bridge *Bridge) layoutFromTrackedLocked() LayoutState {
 		builder.zones[zoneID].SurfaceIDs = append(builder.zones[zoneID].SurfaceIDs, surface.Surface.ID)
 		builder.workspace.SurfaceOrder = append(builder.workspace.SurfaceOrder, surface.Surface.ID)
 		if builder.workspace.OutputID == "" {
-			builder.workspace.OutputID = firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+			builder.workspace.OutputID = outputID
 		}
+		builder.workspace.Active = bridge.workspaceActiveOnOutputLocked(workspaceID, builder.workspace.OutputID)
 		if surface.LayoutMode != "" && validLayoutMode(LayoutMode(surface.LayoutMode)) {
 			mode = LayoutMode(surface.LayoutMode)
 		}
@@ -1775,14 +1794,14 @@ func (bridge *Bridge) layoutFromTrackedLocked() LayoutState {
 		if label == "" {
 			label = fmt.Sprintf("%d", index+1)
 		}
-		active := workspaceID == activeWorkspaceID
+		active := bridge.workspaceActiveOnOutputLocked(workspaceID, outputID)
 		layoutSurfaces = append(layoutSurfaces, LayoutSurface{
 			SurfaceID:     surface.Surface.ID,
 			Label:         label,
 			AppID:         surface.Surface.AppID,
 			Title:         surface.Surface.Title,
 			Role:          surface.Surface.Role,
-			OutputID:      firstNonEmpty(surface.OutputID, surface.Surface.OutputID),
+			OutputID:      outputID,
 			WorkspaceID:   workspaceID,
 			ZoneID:        zoneID,
 			Mode:          mode,
@@ -1858,6 +1877,41 @@ func (bridge *Bridge) activeWorkspaceIDLocked() string {
 	return bridge.activeWorkspaceID
 }
 
+func (bridge *Bridge) activeWorkspaceIDForOutputLocked(outputID string) string {
+	outputID = strings.TrimSpace(outputID)
+	if outputID != "" {
+		if bridge.activeWorkspaceByOutput == nil {
+			bridge.activeWorkspaceByOutput = map[string]string{}
+		}
+		if workspaceID := strings.TrimSpace(bridge.activeWorkspaceByOutput[outputID]); workspaceID != "" {
+			bridge.ensureWorkspaceLocked(workspaceID)
+			return workspaceID
+		}
+	}
+	return bridge.activeWorkspaceIDLocked()
+}
+
+func (bridge *Bridge) setActiveWorkspaceForOutputLocked(outputID string, workspaceID string) {
+	outputID = strings.TrimSpace(outputID)
+	workspaceID = strings.TrimSpace(workspaceID)
+	if outputID == "" || workspaceID == "" {
+		return
+	}
+	if bridge.activeWorkspaceByOutput == nil {
+		bridge.activeWorkspaceByOutput = map[string]string{}
+	}
+	bridge.activeWorkspaceByOutput[outputID] = workspaceID
+}
+
+func (bridge *Bridge) workspaceActiveOnOutputLocked(workspaceID string, outputID string) bool {
+	workspaceID = firstNonEmpty(strings.TrimSpace(workspaceID), defaultWorkspaceID)
+	outputID = strings.TrimSpace(outputID)
+	if outputID == "" {
+		return workspaceID == bridge.activeWorkspaceIDLocked()
+	}
+	return workspaceID == bridge.activeWorkspaceIDForOutputLocked(outputID)
+}
+
 func (bridge *Bridge) ensureWorkspaceLocked(workspaceID string) workspaceRecord {
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" {
@@ -1877,6 +1931,45 @@ func (bridge *Bridge) ensureWorkspaceLocked(workspaceID string) workspaceRecord 
 	bridge.workspaces[workspaceID] = record
 	bridge.workspaceOrder = append(bridge.workspaceOrder, workspaceID)
 	return record
+}
+
+func (bridge *Bridge) ensureWorkspaceOnOutputLocked(workspaceID string, outputID string) workspaceRecord {
+	record := bridge.ensureWorkspaceLocked(workspaceID)
+	outputID = strings.TrimSpace(outputID)
+	if outputID == "" || record.OutputID != "" {
+		return record
+	}
+	record.OutputID = outputID
+	bridge.workspaces[record.ID] = record
+	return record
+}
+
+func (bridge *Bridge) outputForWorkspaceLocked(workspaceID string) string {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return ""
+	}
+	if record, ok := bridge.workspaces[workspaceID]; ok && record.OutputID != "" {
+		return record.OutputID
+	}
+	for _, tracked := range bridge.surfaces {
+		if firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID) == workspaceID {
+			return firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID)
+		}
+	}
+	if bridge.backendLayout != nil {
+		for _, workspace := range bridge.backendLayout.Workspaces {
+			if workspace.ID == workspaceID && workspace.OutputID != "" {
+				return workspace.OutputID
+			}
+		}
+		for _, surface := range bridge.backendLayout.Surfaces {
+			if surface.WorkspaceID == workspaceID && surface.OutputID != "" {
+				return surface.OutputID
+			}
+		}
+	}
+	return ""
 }
 
 func (bridge *Bridge) workspaceOrderLocked() []string {
@@ -1928,13 +2021,13 @@ type layoutWorkspaceBuilder struct {
 	zoneOrder []string
 }
 
-func newWorkspaceBuilder(record workspaceRecord, activeWorkspaceID string) *layoutWorkspaceBuilder {
+func newWorkspaceBuilder(record workspaceRecord, active bool) *layoutWorkspaceBuilder {
 	return &layoutWorkspaceBuilder{
 		workspace: LayoutWorkspace{
 			ID:           record.ID,
 			Name:         firstNonEmpty(record.Name, workspaceDisplayName(record.ID)),
 			OutputID:     record.OutputID,
-			Active:       record.ID == activeWorkspaceID,
+			Active:       active,
 			SurfaceOrder: []string{},
 		},
 		zones: map[string]*LayoutZone{
@@ -1969,21 +2062,28 @@ func (bridge *Bridge) applyWorkspaceAuthorityToLayoutLocked(layout *LayoutState)
 		if surface.Surface.SurfaceKind == SurfaceKindLayer {
 			continue
 		}
-		bridge.ensureWorkspaceLocked(firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, activeWorkspaceID))
+		outputID := firstNonEmpty(surface.OutputID, surface.Surface.OutputID)
+		workspaceID := firstNonEmpty(surface.WorkspaceID, surface.Surface.WorkspaceID, bridge.activeWorkspaceIDForOutputLocked(outputID), activeWorkspaceID)
+		bridge.ensureWorkspaceOnOutputLocked(workspaceID, outputID)
 	}
 	for index := range layout.Surfaces {
 		surface := &layout.Surfaces[index]
 		if surface.WorkspaceID == "" {
-			surface.WorkspaceID = activeWorkspaceID
+			surface.WorkspaceID = bridge.activeWorkspaceIDForOutputLocked(surface.OutputID)
 		}
-		bridge.ensureWorkspaceLocked(surface.WorkspaceID)
+		bridge.ensureWorkspaceOnOutputLocked(surface.WorkspaceID, surface.OutputID)
 		if tracked, ok := bridge.surfaces[surface.SurfaceID]; ok {
 			surface.WorkspaceID = firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, surface.WorkspaceID)
-			surface.Visible = tracked.Visible && surface.WorkspaceID == activeWorkspaceID
-			surface.Focused = surface.WorkspaceID == activeWorkspaceID && bridge.layoutFocusedLocked(tracked)
+			if surface.OutputID == "" {
+				surface.OutputID = firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID)
+			}
+			surfaceActive := bridge.workspaceActiveOnOutputLocked(surface.WorkspaceID, surface.OutputID)
+			surface.Visible = tracked.Visible && surfaceActive
+			surface.Focused = surfaceActive && bridge.layoutFocusedLocked(tracked)
 		} else {
-			surface.Visible = surface.Visible && surface.WorkspaceID == activeWorkspaceID
-			surface.Focused = surface.Focused && surface.WorkspaceID == activeWorkspaceID
+			surfaceActive := bridge.workspaceActiveOnOutputLocked(surface.WorkspaceID, surface.OutputID)
+			surface.Visible = surface.Visible && surfaceActive
+			surface.Focused = surface.Focused && surfaceActive
 		}
 	}
 	normalizeLayoutState(layout)
@@ -1993,9 +2093,10 @@ func (bridge *Bridge) applyWorkspaceAuthorityToLayoutLocked(layout *LayoutState)
 	activeSeen := false
 	for index := range layout.Workspaces {
 		workspace := &layout.Workspaces[index]
-		record := bridge.ensureWorkspaceLocked(workspace.ID)
+		record := bridge.ensureWorkspaceOnOutputLocked(workspace.ID, workspace.OutputID)
 		workspace.Name = firstNonEmpty(record.Name, workspace.Name, workspaceDisplayName(workspace.ID))
-		workspace.Active = workspace.ID == activeWorkspaceID
+		workspace.OutputID = firstNonEmpty(record.OutputID, workspace.OutputID)
+		workspace.Active = bridge.workspaceActiveOnOutputLocked(workspace.ID, workspace.OutputID)
 		if workspace.Active {
 			activeSeen = true
 		}

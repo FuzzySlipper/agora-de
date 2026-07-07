@@ -107,7 +107,7 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 		}
 		placed[tracked.Surface.ID] = true
 		workspaceID := firstNonEmpty(placement.WorkspaceID, tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
-		bridge.ensureWorkspaceLocked(workspaceID)
+		bridge.ensureWorkspaceOnOutputLocked(workspaceID, firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID))
 		zoneID := firstNonEmpty(placement.ZoneID, tracked.ZoneID, tracked.Surface.ZoneID, zoneMaster)
 		layoutMode := bridge.tiledLayoutModeLocked()
 		tracked.WorkspaceID = workspaceID
@@ -130,7 +130,7 @@ func (bridge *Bridge) applyAutoLayoutOrder(placements []autoLayoutPlacement) {
 	sort.Slice(remaining, func(i, j int) bool { return remaining[i].Surface.ID < remaining[j].Surface.ID })
 	for _, tracked := range remaining {
 		workspaceID := firstNonEmpty(tracked.WorkspaceID, tracked.Surface.WorkspaceID, bridge.activeWorkspaceIDLocked())
-		bridge.ensureWorkspaceLocked(workspaceID)
+		bridge.ensureWorkspaceOnOutputLocked(workspaceID, firstNonEmpty(tracked.OutputID, tracked.Surface.OutputID))
 		zoneID := firstNonEmpty(tracked.ZoneID, tracked.Surface.ZoneID, zoneTransient)
 		role := SurfaceLayoutRole(tracked.LayoutRole)
 		if role == "" {

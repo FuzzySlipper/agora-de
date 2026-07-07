@@ -867,12 +867,14 @@ func isCloseableShellLayerApp(appID string) bool {
 
 type workspacesResponse struct {
 	CurrentWorkspaceID string          `json:"currentWorkspaceId"`
+	CurrentOutputID    string          `json:"currentOutputId,omitempty"`
 	Workspaces         []workspaceView `json:"workspaces"`
 }
 
 type workspaceView struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
+	OutputID     string `json:"outputId,omitempty"`
 	Active       bool   `json:"active"`
 	SurfaceCount int    `json:"surfaceCount"`
 }
@@ -880,12 +882,14 @@ type workspaceView struct {
 type workspaceActionRequest struct {
 	Action      string `json:"action"`
 	WorkspaceID string `json:"workspaceId"`
+	OutputID    string `json:"outputId,omitempty"`
 }
 
 type workspaceActionResponse struct {
 	Action             string          `json:"action"`
 	WorkspaceID        string          `json:"workspaceId"`
 	CurrentWorkspaceID string          `json:"currentWorkspaceId"`
+	CurrentOutputID    string          `json:"currentOutputId,omitempty"`
 	Status             string          `json:"status"`
 	Workspace          workspaceView   `json:"workspace"`
 	Workspaces         []workspaceView `json:"workspaces"`
@@ -948,6 +952,7 @@ func workspaceActionHandler(config workspaceRouteConfig) http.Handler {
 		}
 		action.Action = strings.TrimSpace(action.Action)
 		action.WorkspaceID = strings.TrimSpace(action.WorkspaceID)
+		action.OutputID = strings.TrimSpace(action.OutputID)
 		if action.Action != "activate" {
 			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "unsupported workspace action"})
 			return
@@ -959,7 +964,11 @@ func workspaceActionHandler(config workspaceRouteConfig) http.Handler {
 		if config.UseCompositorctl {
 			ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 			defer cancel()
-			if output, err := exec.CommandContext(ctx, path, "workspace", "activate", "--workspace", action.WorkspaceID, "--timeout-ms", "2000").CombinedOutput(); err != nil {
+			args := []string{"workspace", "activate", "--workspace", action.WorkspaceID, "--timeout-ms", "2000"}
+			if action.OutputID != "" {
+				args = []string{"workspace", "activate", "--workspace", action.WorkspaceID, "--output", action.OutputID, "--timeout-ms", "2000"}
+			}
+			if output, err := exec.CommandContext(ctx, path, args...).CombinedOutput(); err != nil {
 				writeCompositorctlError(response, output, err)
 				return
 			}
@@ -974,7 +983,7 @@ func workspaceActionHandler(config workspaceRouteConfig) http.Handler {
 				}
 			}
 		}
-		workspace := workspaceView{ID: action.WorkspaceID, Name: workspaceDisplayName(action.WorkspaceID), Active: true}
+		workspace := workspaceView{ID: action.WorkspaceID, Name: workspaceDisplayName(action.WorkspaceID), OutputID: action.OutputID, Active: true}
 		for _, candidate := range state.Workspaces {
 			if candidate.ID == action.WorkspaceID {
 				workspace = candidate
@@ -985,6 +994,7 @@ func workspaceActionHandler(config workspaceRouteConfig) http.Handler {
 			Action:             action.Action,
 			WorkspaceID:        action.WorkspaceID,
 			CurrentWorkspaceID: state.CurrentWorkspaceID,
+			CurrentOutputID:    state.CurrentOutputID,
 			Status:             "accepted",
 			Workspace:          workspace,
 			Workspaces:         state.Workspaces,
@@ -994,12 +1004,16 @@ func workspaceActionHandler(config workspaceRouteConfig) http.Handler {
 
 func collectWorkspaceState(request *http.Request, surfaceProvider surfaceroute.Provider) workspacesResponse {
 	surfaceCounts := map[string]int{"workspace-1": 0}
+	outputByWorkspace := map[string]string{}
 	if surfaceProvider != nil {
 		if views, err := surfaceProvider(request); err == nil {
 			for _, view := range views {
 				if view.Mapped && view.SurfaceKind != "layer_shell" {
 					workspaceID := firstNonEmpty(view.WorkspaceID, "workspace-1")
 					surfaceCounts[workspaceID]++
+					if view.OutputID != "" && outputByWorkspace[workspaceID] == "" {
+						outputByWorkspace[workspaceID] = view.OutputID
+					}
 				}
 			}
 		}
@@ -1014,12 +1028,14 @@ func collectWorkspaceState(request *http.Request, surfaceProvider surfaceroute.P
 		workspaces = append(workspaces, workspaceView{
 			ID:           workspaceID,
 			Name:         workspaceDisplayName(workspaceID),
+			OutputID:     outputByWorkspace[workspaceID],
 			Active:       workspaceID == "workspace-1",
 			SurfaceCount: surfaceCounts[workspaceID],
 		})
 	}
 	return workspacesResponse{
 		CurrentWorkspaceID: "workspace-1",
+		CurrentOutputID:    outputByWorkspace["workspace-1"],
 		Workspaces:         workspaces,
 	}
 }
@@ -1029,12 +1045,14 @@ func workspaceStateFromCompositorctlLayout(payload []byte) (workspacesResponse, 
 		Layout struct {
 			Surfaces []struct {
 				SurfaceID   string `json:"surface_id"`
+				OutputID    string `json:"output_id"`
 				WorkspaceID string `json:"workspace_id"`
 				Visible     bool   `json:"visible"`
 			} `json:"surfaces"`
 			Workspaces []struct {
 				ID           string   `json:"id"`
 				Name         string   `json:"name"`
+				OutputID     string   `json:"output_id"`
 				Active       bool     `json:"active"`
 				SurfaceOrder []string `json:"surface_order"`
 			} `json:"workspaces"`
@@ -1044,15 +1062,21 @@ func workspaceStateFromCompositorctlLayout(payload []byte) (workspacesResponse, 
 		return workspacesResponse{}, fmt.Errorf("decode compositorctl workspace layout: %w", err)
 	}
 	counts := map[string]int{}
+	outputByWorkspace := map[string]string{}
 	for _, surface := range response.Layout.Surfaces {
 		workspaceID := firstNonEmpty(surface.WorkspaceID, "workspace-1")
 		counts[workspaceID]++
+		if surface.OutputID != "" && outputByWorkspace[workspaceID] == "" {
+			outputByWorkspace[workspaceID] = surface.OutputID
+		}
 	}
 	workspaces := make([]workspaceView, 0, len(response.Layout.Workspaces))
 	current := ""
+	currentOutputID := ""
 	seen := map[string]bool{}
 	for _, workspace := range response.Layout.Workspaces {
 		workspaceID := firstNonEmpty(workspace.ID, "workspace-1")
+		outputID := firstNonEmpty(workspace.OutputID, outputByWorkspace[workspaceID])
 		count := counts[workspaceID]
 		if count == 0 && len(workspace.SurfaceOrder) > 0 {
 			count = len(workspace.SurfaceOrder)
@@ -1060,12 +1084,14 @@ func workspaceStateFromCompositorctlLayout(payload []byte) (workspacesResponse, 
 		workspaces = append(workspaces, workspaceView{
 			ID:           workspaceID,
 			Name:         firstNonEmpty(workspace.Name, workspaceDisplayName(workspaceID)),
+			OutputID:     outputID,
 			Active:       workspace.Active,
 			SurfaceCount: count,
 		})
 		seen[workspaceID] = true
 		if workspace.Active {
 			current = workspaceID
+			currentOutputID = outputID
 		}
 	}
 	for workspaceID, count := range counts {
@@ -1075,6 +1101,7 @@ func workspaceStateFromCompositorctlLayout(payload []byte) (workspacesResponse, 
 		workspaces = append(workspaces, workspaceView{
 			ID:           workspaceID,
 			Name:         workspaceDisplayName(workspaceID),
+			OutputID:     outputByWorkspace[workspaceID],
 			SurfaceCount: count,
 		})
 	}
@@ -1091,6 +1118,7 @@ func workspaceStateFromCompositorctlLayout(payload []byte) (workspacesResponse, 
 	}
 	if current == "" {
 		current = workspaces[0].ID
+		currentOutputID = workspaces[0].OutputID
 		workspaces[0].Active = true
 	}
 	sort.SliceStable(workspaces, func(i, j int) bool {
@@ -1099,7 +1127,7 @@ func workspaceStateFromCompositorctlLayout(payload []byte) (workspacesResponse, 
 		}
 		return workspaces[i].ID < workspaces[j].ID
 	})
-	return workspacesResponse{CurrentWorkspaceID: current, Workspaces: workspaces}, nil
+	return workspacesResponse{CurrentWorkspaceID: current, CurrentOutputID: currentOutputID, Workspaces: workspaces}, nil
 }
 
 func sortWorkspaceIDs(workspaceIDs []string) {
