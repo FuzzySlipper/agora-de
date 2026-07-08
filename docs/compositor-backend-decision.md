@@ -32,6 +32,13 @@ contract.
 | Geometry control | Keep in the custom backend core. The standard probe found no protocol granting DE-owned per-surface move/resize authority. |
 | Structured layout authority | Keep in the Rust-owned backend contract. Wayfire may remain the first implementation only if a narrow plugin proof emits truthful post-layout geometry, focus/order, workspace/zone state, and command results without shell inference or synthetic shortcuts. |
 
+Post-northstar capability updates are tracked in the matrix after Den task 4572.
+The deployed WM contract now also includes workspace state, shell chrome and
+transient policy, native launch visibility, live capture evidence, agent
+control affordances, and deployment/recovery operations. The matrix includes a
+Smithay/Rust backend spike entry and keeps it deferred until a nested native
+client proof exists.
+
 ## Backend Shape
 
 Initial product work stays on the Wayfire plugin backend because it covers every
@@ -42,6 +49,14 @@ scoped identity, toplevel listing, and capture transport.
 Smithay or another custom compositor remains a spike until it proves a smaller
 and more governable enforcement core than the Wayfire path. The irreducible core
 today is synchronous input denial plus DE-owned geometry and layout authority.
+
+After the auto-tiling WM northstar, the comparison bar is broader than geometry
+alone. See `docs/post-northstar-smithay-evaluation.md` and
+`compositor/protocol-fixtures/smithay/post-northstar-evaluation-4572.json`.
+Wayfire remains the installed evidence backend because it currently proves the
+full deployed contract: native launch mapping, layout command acknowledgement,
+workspace state, shell chrome/transient classification, live capture,
+agent-facing controls, recovery, and soak evidence.
 
 ## Structured Layout Decision
 

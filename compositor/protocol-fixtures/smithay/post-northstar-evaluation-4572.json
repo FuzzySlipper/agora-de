@@ -1,0 +1,130 @@
+{
+  "schema": "agora-de.smithay-post-northstar-evaluation.v1",
+  "taskId": 4572,
+  "status": "deferred",
+  "decision": "keep-wayfire-installed-backend-start-smithay-only-as-nested-proof",
+  "basis": [
+    "The deployed WM contract now includes native launch visibility, shell chrome/transient policy, output capture, workspace controls, agent affordances, recovery operations, and soak evidence.",
+    "Wayfire is already installed and passes the deployed auto-tiling, popup, overlay, responsiveness, multi-output route, and live-session soak harnesses.",
+    "Smithay remains attractive for Rust-owned compositor authority but has no agora-de runtime proof for native clients, launch mapping, capture, shell chrome, or deployment operations."
+  ],
+  "contractRequirements": [
+    {
+      "id": "layout-state",
+      "requiredBehavior": "Report mode, settings, revision, workspace/zone state, surface order, focus order, participation, policyClass, and acknowledged geometry.",
+      "wayfireEvidence": "Installed /api/layout and compositorctl layout get are exercised by check-auto-tiling-wm and check-live-session-soak.",
+      "smithayEvidence": "Fixture-only; no running Smithay backend emits this contract for native clients.",
+      "smithayReadiness": "prototype"
+    },
+    {
+      "id": "layout-actions",
+      "requiredBehavior": "Apply setMode, assignZone, tile, moveResize, setFloating, focus/promote, state changes, close, and workspace activation with classified command results.",
+      "wayfireEvidence": "Wayfire bridge/plugin handles commands through /api/layout/action, /api/surfaces/action, and agora-de-compositorctl.",
+      "smithayEvidence": "Conceptually straightforward because a Smithay compositor could own configure/placement, but not implemented.",
+      "smithayReadiness": "prototype"
+    },
+    {
+      "id": "native-launch-visibility",
+      "requiredBehavior": "Map structured desktop-entry launch completion to trusted compositor surface ids, mapped/focused state, cleanup, and reuse classifications.",
+      "wayfireEvidence": "Installed native launch harnesses prove launch status and surface visibility against Wayfire.",
+      "smithayEvidence": "Missing; no Smithay socket launch path or launchlife integration exists.",
+      "smithayReadiness": "missing"
+    },
+    {
+      "id": "shell-chrome-transients",
+      "requiredBehavior": "Keep panel, background, overlay, launcher/status popups, dialogs, menus, and unmanaged helpers out of deterministic tiling with explicit policy metadata.",
+      "wayfireEvidence": "Layer-shell chrome and policyClass surfaces are visible in /api/surfaces, /api/layout, and popup stability evidence.",
+      "smithayEvidence": "Design-compatible but not proven with layer-shell shell surfaces.",
+      "smithayReadiness": "prototype"
+    },
+    {
+      "id": "live-capture-evidence",
+      "requiredBehavior": "Produce output capture artifacts with visible classification and expected shell/native pixels.",
+      "wayfireEvidence": "Installed Wayfire output capture produces capture_visible evidence for WM and soak harnesses.",
+      "smithayEvidence": "Missing; no capture path or live artifact exists.",
+      "smithayReadiness": "missing"
+    },
+    {
+      "id": "agent-affordances",
+      "requiredBehavior": "Expose structured state/actions and overlay labels stable enough for coding agents to use without screenshot inference.",
+      "wayfireEvidence": "compositorctl, /api/layout, /api/surfaces, /api/workspaces, and overlay labels are available in the installed session.",
+      "smithayEvidence": "Backend-neutral contract can be reused, but no Smithay adapter or overlay proof exists.",
+      "smithayReadiness": "prototype"
+    },
+    {
+      "id": "deployment-recovery",
+      "requiredBehavior": "Install, update, restart, recover, kill stale clients, and run live soak without VMs or agora-os dependency.",
+      "wayfireEvidence": "Existing den-k8 service scripts and recovery helpers are documented and tested.",
+      "smithayEvidence": "Missing; no nested or installed service path exists.",
+      "smithayReadiness": "missing"
+    }
+  ],
+  "wayfireResponsibilityMap": [
+    {
+      "responsibility": "Wayfire plugin socket and compositor-control socket",
+      "classification": "bridge_transport",
+      "backendNeutralOwner": "Go bridge until replaced by generated Rust/backend transport",
+      "mustNotBecomeProductPolicy": true
+    },
+    {
+      "responsibility": "Surface lifecycle, focus, visibility, geometry, workspace, and output events",
+      "classification": "backend_facts",
+      "backendNeutralOwner": "compositor backend adapter",
+      "mustNotBecomeProductPolicy": false
+    },
+    {
+      "responsibility": "Layout mode, rule settings, zone assignment, surface order, focus order, revisions, and classified command results",
+      "classification": "product_contract",
+      "backendNeutralOwner": "Rust layout model and compositor-backend-api contract",
+      "mustNotBecomeProductPolicy": false
+    },
+    {
+      "responsibility": "Master-stack, zones, gaps, ratios, future dwindle/columns, and layout selection",
+      "classification": "product_behavior",
+      "backendNeutralOwner": "Rust layout planner crates",
+      "mustNotBecomeProductPolicy": false
+    },
+    {
+      "responsibility": "Shell chrome, theme, launcher, taskbar, overlay presentation, and status UI",
+      "classification": "shell_projection",
+      "backendNeutralOwner": "shellui/chrome/theme layers",
+      "mustNotBecomeProductPolicy": true
+    },
+    {
+      "responsibility": "Input denial and transient/dialog tiling exclusion",
+      "classification": "backend_policy_enforcement",
+      "backendNeutralOwner": "policy projection plus backend enforcement",
+      "mustNotBecomeProductPolicy": false
+    },
+    {
+      "responsibility": "Capture transport and pixel classification",
+      "classification": "evidence_transport",
+      "backendNeutralOwner": "backend capture adapter plus live harness classifier",
+      "mustNotBecomeProductPolicy": true
+    }
+  ],
+  "reopenTriggers": [
+    "Wayfire layout actions require synthetic keyboard shortcuts.",
+    "Wayfire geometry or focus must be inferred from shell state, browser rectangles, screenshots, or capture pixels.",
+    "Wayfire plugin scope grows into shell UI, launcher, theme, governance, or layout heuristics.",
+    "A future layout rule cannot be represented as Rust planner output plus backend acknowledgement.",
+    "A nested Smithay proof hosts two native clients, maps governed launch to surface ids, applies the shared layout command fixture, reports workspace/focus/order state, and produces capture-visible evidence with lower backend complexity than Wayfire."
+  ],
+  "nextTasks": [
+    {
+      "title": "Prototype nested Smithay native-client host behind compositor-backend-api",
+      "when": "Only after a reopen trigger or explicit backend research window.",
+      "acceptance": "Nested Smithay hosts Alacritty and foot, emits backend-neutral lifecycle/surface ids, and stays outside the installed Wayfire service."
+    },
+    {
+      "title": "Implement Smithay layout command fixture adapter",
+      "when": "After nested native-client host proof.",
+      "acceptance": "Applies command-semantics fixture behavior and reports classified results without shell inference."
+    },
+    {
+      "title": "Add Smithay capture-visible evidence path",
+      "when": "After layout command adapter proof.",
+      "acceptance": "Produces visible output artifacts and agent-identifiable native surfaces."
+    }
+  ]
+}

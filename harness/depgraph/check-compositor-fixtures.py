@@ -4,7 +4,7 @@ import pathlib
 import sys
 
 
-ALLOWED_SUPPORT = {"native", "standard_protocol", "custom_plugin", "missing"}
+ALLOWED_SUPPORT = {"native", "standard_protocol", "custom_plugin", "prototype", "missing"}
 
 
 def main() -> int:
@@ -17,10 +17,23 @@ def main() -> int:
 
     if matrix.get("schema") != "agora-de.backend-capability-matrix.v1":
         failures.append("capability matrix has unexpected schema")
+    if matrix.get("updatedForTaskId") != 4572:
+        failures.append("capability matrix must record post-northstar task 4572 update")
 
     required = matrix.get("requiredCapabilities", [])
     if not required:
         failures.append("capability matrix must list requiredCapabilities")
+    for capability in [
+        "structured_layout_authority",
+        "workspace_state",
+        "shell_chrome_transient_policy",
+        "native_launch_visibility",
+        "live_capture_evidence",
+        "agent_control_affordances",
+        "deployment_operations",
+    ]:
+        if capability not in required:
+            failures.append(f"capability matrix missing deployed WM capability: {capability}")
 
     backend_ids = set()
     for backend in matrix.get("backends", []):
@@ -51,6 +64,8 @@ def main() -> int:
         failures.append("capability matrix must include wayfire-plugin")
     if "standard-wayland-protocol-probe" not in backend_ids:
         failures.append("capability matrix must include standard-wayland-protocol-probe")
+    if "smithay-rust-backend-spike" not in backend_ids:
+        failures.append("capability matrix must include smithay-rust-backend-spike")
 
     standard = next(
         (backend for backend in matrix.get("backends", []) if backend.get("id") == "standard-wayland-protocol-probe"),
@@ -68,6 +83,20 @@ def main() -> int:
             evidence = entry.get("evidence", "")
             if not evidence.startswith("probe-observations:"):
                 failures.append(f"standard-wayland-protocol-probe.{capability} evidence must cite probe-observations")
+
+    smithay = next(
+        (backend for backend in matrix.get("backends", []) if backend.get("id") == "smithay-rust-backend-spike"),
+        None,
+    )
+    if smithay:
+        if smithay.get("decision") != "deferred_until_nested_native_client_proof":
+            failures.append("Smithay backend decision must remain deferred until nested native client proof")
+        smithay_capabilities = smithay.get("capabilities", {})
+        for capability in ["per_toplevel_capture", "native_launch_visibility", "live_capture_evidence", "deployment_operations"]:
+            if smithay_capabilities.get(capability, {}).get("support") != "missing":
+                failures.append(f"Smithay {capability} must stay missing until live runtime evidence exists")
+        if smithay_capabilities.get("structured_layout_authority", {}).get("support") != "prototype":
+            failures.append("Smithay structured_layout_authority must be prototype-only until runtime proof exists")
 
     validate_standard_probe(probe, standard, required, failures)
 

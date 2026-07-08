@@ -1,42 +1,86 @@
 {
   "schema": "agora-de.backend-capability-matrix.v1",
+  "updatedForTaskId": 4572,
+  "contractBasis": [
+    "docs/deployed-wm-model.md",
+    "docs/compositor-backend-decision.md",
+    "docs/live-session-soak.md",
+    "compositor/protocol-fixtures/layout-authority-closeout-4272.json"
+  ],
   "requiredCapabilities": [
     "kernel_credential_attribution",
     "surface_lifecycle_events",
     "synchronous_input_deny",
     "per_toplevel_capture",
-    "geometry_control"
+    "geometry_control",
+    "structured_layout_authority",
+    "workspace_state",
+    "shell_chrome_transient_policy",
+    "native_launch_visibility",
+    "live_capture_evidence",
+    "agent_control_affordances",
+    "deployment_operations"
   ],
   "backends": [
     {
       "id": "wayfire-plugin",
-      "status": "initial_backend",
+      "status": "installed_evidence_backend",
+      "decision": "current",
       "capabilities": {
         "kernel_credential_attribution": {
           "support": "custom_plugin",
-          "evidence": "wl_client_get_credentials via Wayfire plugin"
+          "evidence": "wl_client_get_credentials via Wayfire plugin and compositor bridge surface tracking"
         },
         "surface_lifecycle_events": {
           "support": "custom_plugin",
-          "evidence": "Wayfire view lifecycle signals via plugin socket"
+          "evidence": "Wayfire view and layer-shell lifecycle events flow through the plugin socket into /api/surfaces and compositorctl list-surfaces"
         },
         "synchronous_input_deny": {
           "support": "custom_plugin",
-          "evidence": "local policy cache in compositor input path"
+          "evidence": "local policy cache remains available in the compositor input path"
         },
         "per_toplevel_capture": {
           "support": "custom_plugin",
-          "evidence": "predecessor GLES readback path"
+          "evidence": "installed den-k8 output capture path produces capture_visible evidence through agora-de-compositorctl output capture"
         },
         "geometry_control": {
           "support": "custom_plugin",
-          "evidence": "Wayfire view control APIs"
+          "evidence": "Wayfire view control APIs apply move/resize, tile, state, focus, and close actions through the agora-de plugin"
+        },
+        "structured_layout_authority": {
+          "support": "custom_plugin",
+          "evidence": "Wayfire adapter applies Rust planner rectangles and reports layout revision, zones, participation, focus/order, and backend acknowledgement through /api/layout"
+        },
+        "workspace_state": {
+          "support": "custom_plugin",
+          "evidence": "compositor bridge reports workspace ids, active workspace, output ids when present, surface order, and workspace activation results"
+        },
+        "shell_chrome_transient_policy": {
+          "support": "custom_plugin",
+          "evidence": "layer-shell chrome, shell popups, dialog/transient policyClass, parentSurfaceId, and tiling exclusion are reported through compositor bridge policy projection"
+        },
+        "native_launch_visibility": {
+          "support": "custom_plugin",
+          "evidence": "structured native launch returns launch status and surface id, then installed surface/layout routes prove mapped/focused app visibility"
+        },
+        "live_capture_evidence": {
+          "support": "custom_plugin",
+          "evidence": "check-auto-tiling-wm, check-popup-stability, check-live-session-soak, and related harnesses produce installed-service pass/fail and capture artifacts"
+        },
+        "agent_control_affordances": {
+          "support": "custom_plugin",
+          "evidence": "agora-de-compositorctl plus /api/layout, /api/surfaces, /api/workspaces, and overlay labels expose stable agent state and actions"
+        },
+        "deployment_operations": {
+          "support": "custom_plugin",
+          "evidence": "den-k8 install, restart, recovery, kill-all, soak, and GitHub Verify Agora DE evidence are documented and exercised against the installed Wayfire path"
         }
       }
     },
     {
       "id": "standard-wayland-protocol-probe",
-      "status": "spike",
+      "status": "partial_protocol_source",
+      "decision": "shrink_custom_surface_only",
       "capabilities": {
         "kernel_credential_attribution": {
           "support": "standard_protocol",
@@ -57,6 +101,89 @@
         "geometry_control": {
           "support": "missing",
           "evidence": "probe-observations: no standard protocol grants DE-controlled per-surface move/resize authority"
+        },
+        "structured_layout_authority": {
+          "support": "missing",
+          "evidence": "probe-observations: standard protocols do not provide DE-owned tiling zones, planner revisions, or backend-acknowledged placement semantics"
+        },
+        "workspace_state": {
+          "support": "missing",
+          "evidence": "probe-observations: standard protocols do not provide Agora DE workspace activation, output-scoped workspace state, and surface_order semantics"
+        },
+        "shell_chrome_transient_policy": {
+          "support": "missing",
+          "evidence": "probe-observations: standard protocols do not classify Agora DE shell chrome, transient/dialog policyClass, or tiling exclusion"
+        },
+        "native_launch_visibility": {
+          "support": "missing",
+          "evidence": "probe-observations: standard protocols do not connect governed desktop-entry launch results to trusted compositor surface ids"
+        },
+        "live_capture_evidence": {
+          "support": "standard_protocol",
+          "evidence": "probe-observations: ext-image-copy-capture-v1 can contribute capture transport where source objects are exposed, but does not by itself satisfy installed Agora DE capture classification"
+        },
+        "agent_control_affordances": {
+          "support": "missing",
+          "evidence": "probe-observations: standard protocols do not provide Agora DE agent command result classes or overlay label semantics"
+        },
+        "deployment_operations": {
+          "support": "missing",
+          "evidence": "probe-observations: standard protocols do not define install, restart, recovery, or soak operations"
+        }
+      }
+    },
+    {
+      "id": "smithay-rust-backend-spike",
+      "status": "post_northstar_spike",
+      "decision": "deferred_until_nested_native_client_proof",
+      "capabilities": {
+        "kernel_credential_attribution": {
+          "support": "prototype",
+          "evidence": "Smithay can own client connection handling in Rust, but agora-de has not yet implemented trusted launch/session attribution in a running Smithay backend"
+        },
+        "surface_lifecycle_events": {
+          "support": "prototype",
+          "evidence": "Smithay can expose xdg-shell/layer-shell lifecycle in compositor state, but current agora-de evidence is fixture-only"
+        },
+        "synchronous_input_deny": {
+          "support": "prototype",
+          "evidence": "A Rust compositor could put input policy in the event path, but no agora-de Smithay input policy proof exists"
+        },
+        "per_toplevel_capture": {
+          "support": "missing",
+          "evidence": "No agora-de Smithay output or per-toplevel capture proof exists"
+        },
+        "geometry_control": {
+          "support": "prototype",
+          "evidence": "A Smithay compositor could own configure/placement geometry directly, but no live native-client proof exists"
+        },
+        "structured_layout_authority": {
+          "support": "prototype",
+          "evidence": "Fixture compositor/protocol-fixtures/smithay/post-northstar-evaluation-4572.json maps the deployed layout contract but does not run native clients"
+        },
+        "workspace_state": {
+          "support": "prototype",
+          "evidence": "Workspace/focus/order state is straightforward to model in Rust but not yet proven by a Smithay runtime"
+        },
+        "shell_chrome_transient_policy": {
+          "support": "prototype",
+          "evidence": "Layer-shell shell chrome and transient classification are design-compatible with Smithay, but no shell chrome runtime proof exists"
+        },
+        "native_launch_visibility": {
+          "support": "missing",
+          "evidence": "No Smithay socket launch path maps desktop-entry launch completion to trusted surface ids"
+        },
+        "live_capture_evidence": {
+          "support": "missing",
+          "evidence": "No Smithay live harness or capture-visible artifact exists"
+        },
+        "agent_control_affordances": {
+          "support": "prototype",
+          "evidence": "The existing backend-neutral contract can be reused, but no Smithay control path implements it yet"
+        },
+        "deployment_operations": {
+          "support": "missing",
+          "evidence": "No nested or installed Smithay deploy/recovery path exists for agora-de"
         }
       }
     }

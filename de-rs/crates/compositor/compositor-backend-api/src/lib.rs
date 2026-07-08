@@ -5,6 +5,13 @@ pub enum BackendCapability {
     SynchronousInputDeny,
     PerToplevelCapture,
     GeometryControl,
+    StructuredLayoutAuthority,
+    WorkspaceState,
+    ShellChromeTransientPolicy,
+    NativeLaunchVisibility,
+    LiveCaptureEvidence,
+    AgentControlAffordances,
+    DeploymentOperations,
 }
 
 impl BackendCapability {
@@ -15,6 +22,13 @@ impl BackendCapability {
             BackendCapability::SynchronousInputDeny => "synchronous_input_deny",
             BackendCapability::PerToplevelCapture => "per_toplevel_capture",
             BackendCapability::GeometryControl => "geometry_control",
+            BackendCapability::StructuredLayoutAuthority => "structured_layout_authority",
+            BackendCapability::WorkspaceState => "workspace_state",
+            BackendCapability::ShellChromeTransientPolicy => "shell_chrome_transient_policy",
+            BackendCapability::NativeLaunchVisibility => "native_launch_visibility",
+            BackendCapability::LiveCaptureEvidence => "live_capture_evidence",
+            BackendCapability::AgentControlAffordances => "agent_control_affordances",
+            BackendCapability::DeploymentOperations => "deployment_operations",
         }
     }
 
@@ -25,6 +39,13 @@ impl BackendCapability {
             BackendCapability::SynchronousInputDeny => "Synchronous input deny",
             BackendCapability::PerToplevelCapture => "Per-toplevel capture",
             BackendCapability::GeometryControl => "Geometry control",
+            BackendCapability::StructuredLayoutAuthority => "Structured layout authority",
+            BackendCapability::WorkspaceState => "Workspace state",
+            BackendCapability::ShellChromeTransientPolicy => "Shell chrome and transient policy",
+            BackendCapability::NativeLaunchVisibility => "Native launch visibility",
+            BackendCapability::LiveCaptureEvidence => "Live capture evidence",
+            BackendCapability::AgentControlAffordances => "Agent control affordances",
+            BackendCapability::DeploymentOperations => "Deployment operations",
         }
     }
 }
@@ -34,6 +55,7 @@ pub enum CapabilitySupport {
     Native,
     StandardProtocol,
     CustomPlugin,
+    Prototype,
     Missing,
 }
 
@@ -43,6 +65,7 @@ impl CapabilitySupport {
             CapabilitySupport::Native => "native",
             CapabilitySupport::StandardProtocol => "standard_protocol",
             CapabilitySupport::CustomPlugin => "custom_plugin",
+            CapabilitySupport::Prototype => "prototype",
             CapabilitySupport::Missing => "missing",
         }
     }

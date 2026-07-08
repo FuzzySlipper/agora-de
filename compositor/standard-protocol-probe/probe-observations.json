@@ -52,6 +52,55 @@
       "support": "missing",
       "protocols": [],
       "finding": "No standard protocol in this probe provides authority for DE-controlled per-surface move/resize geometry."
+    },
+    {
+      "capability": "structured_layout_authority",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe provides Agora DE owned tiling zones, planner revisions, layout rule settings, classified command results, or backend-acknowledged placement semantics."
+    },
+    {
+      "capability": "workspace_state",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe provides Agora DE workspace activation, output-scoped workspace state, stable workspace surface_order, and focus order semantics."
+    },
+    {
+      "capability": "shell_chrome_transient_policy",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe classifies Agora DE shell chrome, shell popups, transient/dialog policyClass, parentSurfaceId, or tiling exclusion policy."
+    },
+    {
+      "capability": "native_launch_visibility",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe connects governed desktop-entry launch results, launch completion classes, and trusted compositor surface ids."
+    },
+    {
+      "capability": "live_capture_evidence",
+      "support": "standard_protocol",
+      "protocols": [
+        {
+          "name": "ext-image-copy-capture-v1",
+          "interface": "ext_image_copy_capture_v1",
+          "stage": "staging",
+          "source": "https://wayland.app/protocols/ext-image-copy-capture-v1"
+        }
+      ],
+      "finding": "Image copy capture can contribute capture transport, but installed Agora DE still needs product-level classification, expected shell/native pixels, artifact paths, and failure taxonomy."
+    },
+    {
+      "capability": "agent_control_affordances",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe provides Agora DE agent action routes, command result classes, layout labels, or overlay label semantics."
+    },
+    {
+      "capability": "deployment_operations",
+      "support": "missing",
+      "protocols": [],
+      "finding": "No standard protocol in this probe defines install, restart, recovery, kill-all, soak, or GitHub-gated verification operations."
     }
   ]
 }

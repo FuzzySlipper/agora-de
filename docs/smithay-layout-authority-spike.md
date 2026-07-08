@@ -3,6 +3,11 @@
 Status: parked after Den tasks 4268 and 4269 passed the Wayfire layout state
 and command proofs.
 
+Post-northstar status after Den task 4572: still deferred as the installed
+backend. The comparison now includes the full deployed WM contract, not only
+layout authority. See `docs/post-northstar-smithay-evaluation.md` and
+`compositor/protocol-fixtures/smithay/post-northstar-evaluation-4572.json`.
+
 This is a comparison spike plan, not permission to start a compositor rewrite.
 The current backend remains Wayfire while it stays inside the Den 4251 churn
 budget and avoids synthetic shortcuts, screenshot-derived geometry, and shell
@@ -93,7 +98,10 @@ Live validation, if the trigger becomes active:
 ## Stop/Go Criteria
 
 Go only if Smithay hosts real native clients and satisfies the same layout
-contract with less backend churn than the Wayfire proof.
+contract with less backend churn than the Wayfire proof. After task 4572, that
+means native launch mapping, workspace/focus/order state, shell
+chrome/transient policy, live capture evidence, agent controls, and
+deployment/recovery must be considered too.
 
 Stop if the spike requires a full shell rewrite, cannot host real native
 clients on den-k8, cannot produce capture-visible evidence, or starts absorbing
