@@ -5,6 +5,69 @@
   <meta name="color-scheme" content="dark">
   <style>
 __AGORA_THEME_CSS__
+    button {
+      font: inherit;
+    }
+    button:disabled {
+      opacity: 0.55;
+    }
+    .visually-hidden {
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+    .agora-control {
+      align-items: center;
+      border-radius: var(--agora-radius-control);
+      box-sizing: border-box;
+      display: inline-flex;
+      font: var(--agora-font-body);
+      height: var(--agora-control-height);
+      justify-content: center;
+      line-height: var(--agora-line-height-tight);
+      padding: 0 var(--agora-space-3);
+      transition: border-color var(--agora-duration) var(--agora-ease),
+        background var(--agora-duration) var(--agora-ease),
+        color var(--agora-duration) var(--agora-ease);
+    }
+    .agora-control:disabled {
+      opacity: 0.55;
+    }
+    .chip,
+    .badge {
+      align-items: center;
+      background: var(--agora-surface-strong);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      display: inline-flex;
+      font: var(--agora-font-caption);
+      gap: var(--agora-space-2);
+      height: var(--agora-control-height);
+      justify-content: center;
+      line-height: var(--agora-line-height-tight);
+      padding: 0 var(--agora-space-4);
+    }
+    .surface,
+    .card {
+      background: var(--agora-surface);
+      border: 2px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
+      box-shadow: var(--agora-elevation-1);
+      box-sizing: border-box;
+      font: var(--agora-font-body);
+      line-height: var(--agora-line-height-normal);
+    }
+    .agora-popup {
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      box-shadow: var(--agora-elevation-3);
+      box-sizing: border-box;
+    }
     html,
     body {
       background: var(--agora-bg);
@@ -203,7 +266,7 @@ __AGORA_THEME_CSS__
       <span class="mark"></span>
       <span class="title">Applications</span>
       <input class="search" id="app-search" type="search" aria-label="Search apps" placeholder="Search">
-      <button class="close" id="close-button" type="button">Close</button>
+      <button class="close" id="close-button" type="button" aria-label="Close"><svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"></path></svg><span class="visually-hidden">Close</span></button>
     </header>
     <section class="launcher-body">
       <nav class="categories" id="categories" aria-label="Application categories"></nav>
@@ -261,7 +324,7 @@ __AGORA_THEME_CSS__
       icon.title = title || "";
       const fallback = document.createElement("span");
       fallback.className = "icon-fallback";
-      fallback.textContent = label;
+      fallback.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><rect x="2" y="2" width="20" height="20" rx="4" fill="#1f2937" stroke="#64748b" stroke-width="1.5"/><circle cx="8" cy="8" r="1.6" fill="#94a3b8"/><circle cx="16" cy="8" r="1.6" fill="#94a3b8"/><circle cx="8" cy="16" r="1.6" fill="#94a3b8"/><circle cx="16" cy="16" r="1.6" fill="#94a3b8"/></svg>';
       if (iconUrl) {
         icon.classList.add("has-image");
         const image = document.createElement("img");

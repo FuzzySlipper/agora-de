@@ -2,7 +2,9 @@
 // Auto-generated one-time port from go/internal/shellui/server/server.go inline writers.
 // This file is the rendering authority for shell surface HTML. The Go shellAssetHandler
 // serves these templates (or a StaticRoot override) and substitutes __AGORA_THEME_CSS__
-// and __AGORA_SURFACE__ placeholders at runtime.
+// and __AGORA_SURFACE__ placeholders at runtime, and inlines the shared component CSS.
+
+import { appFallbackIconSVG, componentCSS, shellIconSVG } from '@agora-de/components';
 
 export const overlayHTML: string = `<!doctype html>
 <html>
@@ -11,6 +13,7 @@ export const overlayHTML: string = `<!doctype html>
   <meta name="color-scheme" content="dark">
   <style>
 __AGORA_THEME_CSS__
+${componentCSS}
     html,
     body {
       background: transparent !important;
@@ -350,6 +353,7 @@ export const operatorHTML: string = `<!doctype html>
   <meta name="color-scheme" content="light">
   <style>
 __AGORA_THEME_CSS__
+${componentCSS}
     html,
     body {
       background: var(--agora-bg);
@@ -648,6 +652,7 @@ export const settingsHTML: string = `<!doctype html>
   <meta name="color-scheme" content="dark">
   <style>
 __AGORA_THEME_CSS__
+${componentCSS}
     html,
     body {
       background: var(--agora-bg);
@@ -790,7 +795,7 @@ __AGORA_THEME_CSS__
   <header>
     <span class="mark"></span>
     <h1>Settings</h1>
-    <button class="close" id="close-button" type="button">Close</button>
+    <button class="close" id="close-button" type="button" aria-label="Close">${shellIconSVG('close', 'taskbar-button-icon')}<span class="visually-hidden">Close</span></button>
   </header>
   <main class="settings" aria-label="Settings">
     <section class="setting-row">
@@ -927,6 +932,7 @@ export const launcherHTML: string = `<!doctype html>
   <meta name="color-scheme" content="dark">
   <style>
 __AGORA_THEME_CSS__
+${componentCSS}
     html,
     body {
       background: var(--agora-bg);
@@ -1125,7 +1131,7 @@ __AGORA_THEME_CSS__
       <span class="mark"></span>
       <span class="title">Applications</span>
       <input class="search" id="app-search" type="search" aria-label="Search apps" placeholder="Search">
-      <button class="close" id="close-button" type="button">Close</button>
+      <button class="close" id="close-button" type="button" aria-label="Close">${shellIconSVG('close', 'taskbar-button-icon')}<span class="visually-hidden">Close</span></button>
     </header>
     <section class="launcher-body">
       <nav class="categories" id="categories" aria-label="Application categories"></nav>
@@ -1183,7 +1189,7 @@ __AGORA_THEME_CSS__
       icon.title = title || "";
       const fallback = document.createElement("span");
       fallback.className = "icon-fallback";
-      fallback.textContent = label;
+      fallback.innerHTML = '${appFallbackIconSVG}';
       if (iconUrl) {
         icon.classList.add("has-image");
         const image = document.createElement("img");
@@ -1360,6 +1366,7 @@ export const panelHTML: string = `<!doctype html>
   <meta name="color-scheme" content="dark">
   <style>
 __AGORA_THEME_CSS__
+${componentCSS}
     html,
     body {
       background: transparent !important;
@@ -1395,12 +1402,6 @@ __AGORA_THEME_CSS__
       position: fixed;
       right: 0;
       width: 100vw;
-    }
-    button {
-      font: inherit;
-    }
-    button:disabled {
-      opacity: 0.55;
     }
     .taskbar-start,
     .taskbar-tray,
@@ -1452,15 +1453,6 @@ __AGORA_THEME_CSS__
       height: 18px;
       pointer-events: none;
       width: 18px;
-    }
-    .visually-hidden {
-      clip: rect(0 0 0 0);
-      clip-path: inset(50%);
-      height: 1px;
-      overflow: hidden;
-      position: absolute;
-      white-space: nowrap;
-      width: 1px;
     }
     .taskbar-icon-button:hover,
     .workspace:hover,
@@ -1750,27 +1742,15 @@ __AGORA_THEME_CSS__
     <section class="taskbar-start" aria-label="Shell controls">
       <button class="start-button" id="apps-button" type="button" aria-pressed="false">Start</button>
       <button class="taskbar-icon-button" id="refresh-button" type="button" aria-label="Refresh" title="Refresh">
-        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
-          <path d="M20 4v4h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
-          <path d="M20 12a8 8 0 0 1-13.7 5.7L4 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
-          <path d="M4 20v-4h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
-        </svg>
+        ${shellIconSVG('refresh', 'taskbar-button-icon')}
         <span class="visually-hidden">Refresh</span>
       </button>
       <button class="taskbar-icon-button" id="operator-button" type="button" aria-label="Status" title="Status">
-        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"></circle>
-          <path d="M12 8h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3"></path>
-          <path d="M11 12h1v5h1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
-        </svg>
+        ${shellIconSVG('status', 'taskbar-button-icon')}
         <span class="visually-hidden">Status</span>
       </button>
       <button class="taskbar-icon-button" id="settings-button" type="button" aria-label="Settings" title="Settings">
-        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
-          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.3 7A2 2 0 1 1 7.1 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="2"></path>
-        </svg>
+        ${shellIconSVG('settings', 'taskbar-button-icon')}
         <span class="visually-hidden">Settings</span>
       </button>
     </section>
@@ -2002,7 +1982,7 @@ __AGORA_THEME_CSS__
       icon.title = title || "";
       const fallback = document.createElement("span");
       fallback.className = "icon-fallback";
-      fallback.textContent = label;
+      fallback.innerHTML = '${appFallbackIconSVG}';
       if (iconUrl) {
         icon.classList.add("has-image");
         const image = document.createElement("img");
@@ -2771,6 +2751,7 @@ export function backgroundHTML(options: BackgroundHTMLOptions): string {
   <title>agora-de shell</title>
   <style>
 __AGORA_THEME_CSS__
+${componentCSS}
     html,
     body {
       background: var(--agora-bg);

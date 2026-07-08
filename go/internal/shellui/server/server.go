@@ -34,6 +34,9 @@ import (
 //go:embed shellassets/*.html
 var embeddedShellAssets embed.FS
 
+//go:embed iconassets/app-fallback.svg
+var appFallbackIcon []byte
+
 const (
 	DefaultListenAddress  = "127.0.0.1:7780"
 	LayoutPath            = layoutroute.LayoutPath
@@ -315,7 +318,8 @@ func catalogIconHandler(files map[string]string) http.Handler {
 		key, _, _ := strings.Cut(rest, "/")
 		path, ok := files[key]
 		if !ok || path == "" {
-			http.NotFound(response, request)
+			response.Header().Set("Content-Type", "image/svg+xml")
+			_, _ = response.Write(appFallbackIcon)
 			return
 		}
 		http.ServeFile(response, request, path)

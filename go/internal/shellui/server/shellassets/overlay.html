@@ -5,6 +5,69 @@
   <meta name="color-scheme" content="dark">
   <style>
 __AGORA_THEME_CSS__
+    button {
+      font: inherit;
+    }
+    button:disabled {
+      opacity: 0.55;
+    }
+    .visually-hidden {
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+    .agora-control {
+      align-items: center;
+      border-radius: var(--agora-radius-control);
+      box-sizing: border-box;
+      display: inline-flex;
+      font: var(--agora-font-body);
+      height: var(--agora-control-height);
+      justify-content: center;
+      line-height: var(--agora-line-height-tight);
+      padding: 0 var(--agora-space-3);
+      transition: border-color var(--agora-duration) var(--agora-ease),
+        background var(--agora-duration) var(--agora-ease),
+        color var(--agora-duration) var(--agora-ease);
+    }
+    .agora-control:disabled {
+      opacity: 0.55;
+    }
+    .chip,
+    .badge {
+      align-items: center;
+      background: var(--agora-surface-strong);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      display: inline-flex;
+      font: var(--agora-font-caption);
+      gap: var(--agora-space-2);
+      height: var(--agora-control-height);
+      justify-content: center;
+      line-height: var(--agora-line-height-tight);
+      padding: 0 var(--agora-space-4);
+    }
+    .surface,
+    .card {
+      background: var(--agora-surface);
+      border: 2px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
+      box-shadow: var(--agora-elevation-1);
+      box-sizing: border-box;
+      font: var(--agora-font-body);
+      line-height: var(--agora-line-height-normal);
+    }
+    .agora-popup {
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      box-shadow: var(--agora-elevation-3);
+      box-sizing: border-box;
+    }
     html,
     body {
       background: transparent !important;
