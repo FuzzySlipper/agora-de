@@ -39,6 +39,7 @@ const (
 	OperatorStatusPath    = "/api/operator/status"
 	TimingDiagnosticsPath = "/api/diagnostics/timing"
 	ThemePath             = "/api/theme"
+	SettingsPath          = "/api/settings"
 	WorkspacesPath        = "/api/workspaces"
 	WorkspaceActionPath   = "/api/workspaces/action"
 	CatalogIconPathPrefix = "/api/catalog/icons/"
@@ -67,6 +68,7 @@ type Config struct {
 	IconPixmapRoots          []string
 	SurfaceProvider          string
 	CompositorctlPath        string
+	SystemctlPath            string
 	NativeLaunchProvider     string
 	NativeLaunchAllowlist    []string
 	NativeLaunchRequesterUID int
@@ -108,6 +110,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider, timings))
 	mux.Handle(TimingDiagnosticsPath, timingDiagnosticsHandler(timings))
 	mux.Handle(ThemePath, themeHandler(themeSelection))
+	mux.Handle(SettingsPath, settingsHandler(config))
 	workspaceConfig := workspaceRouteConfig{
 		CompositorctlPath: config.CompositorctlPath,
 		UseCompositorctl:  useCompositorctl,
@@ -142,6 +145,104 @@ func themeHandler(selection theme.Selection) http.Handler {
 			FallbackReason: selection.FallbackReason,
 		})
 	})
+}
+
+type settingsResponse struct {
+	GeneratedAtUnixMillis    int64               `json:"generatedAtUnixMillis"`
+	DiagnosticOverlayEnabled bool                `json:"diagnosticOverlayEnabled"`
+	DiagnosticOverlay        shellServiceSetting `json:"diagnosticOverlay"`
+}
+
+type shellServiceSetting struct {
+	Name         string `json:"name"`
+	Scope        string `json:"scope"`
+	EnabledState string `json:"enabledState"`
+	ActiveState  string `json:"activeState"`
+	Enabled      bool   `json:"enabled"`
+	Active       bool   `json:"active"`
+}
+
+type settingsUpdateRequest struct {
+	DiagnosticOverlayEnabled *bool `json:"diagnosticOverlayEnabled,omitempty"`
+}
+
+func settingsHandler(config Config) http.Handler {
+	systemctl := strings.TrimSpace(config.SystemctlPath)
+	if systemctl == "" {
+		systemctl = "systemctl"
+	}
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != SettingsPath {
+			http.NotFound(response, request)
+			return
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+		defer cancel()
+		switch request.Method {
+		case http.MethodGet:
+			writeJSON(response, http.StatusOK, collectSettings(ctx, systemctl, time.Now()))
+		case http.MethodPost:
+			var update settingsUpdateRequest
+			if err := json.NewDecoder(request.Body).Decode(&update); err != nil {
+				writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid settings request"})
+				return
+			}
+			if update.DiagnosticOverlayEnabled == nil {
+				writeJSON(response, http.StatusBadRequest, map[string]string{"error": "diagnosticOverlayEnabled is required"})
+				return
+			}
+			args := []string{"--user", "disable", "--now", "agora-de-shell-overlay.service"}
+			if *update.DiagnosticOverlayEnabled {
+				args = []string{"--user", "enable", "--now", "agora-de-shell-overlay.service"}
+			}
+			if output, err := exec.CommandContext(ctx, systemctl, args...).CombinedOutput(); err != nil {
+				detail := strings.TrimSpace(string(output))
+				if detail == "" {
+					detail = err.Error()
+				}
+				writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": detail})
+				return
+			}
+			writeJSON(response, http.StatusAccepted, collectSettings(ctx, systemctl, time.Now()))
+		default:
+			response.Header().Set("Allow", "GET, POST")
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		}
+	})
+}
+
+func collectSettings(ctx context.Context, systemctl string, now time.Time) settingsResponse {
+	overlay := checkUserServiceSetting(ctx, systemctl, "agora-de-shell-overlay.service")
+	return settingsResponse{
+		GeneratedAtUnixMillis:    now.UnixMilli(),
+		DiagnosticOverlayEnabled: overlay.Enabled,
+		DiagnosticOverlay:        overlay,
+	}
+}
+
+func checkUserServiceSetting(ctx context.Context, systemctl string, name string) shellServiceSetting {
+	enabledState := systemctlState(ctx, systemctl, "--user", "is-enabled", name)
+	activeState := systemctlState(ctx, systemctl, "--user", "is-active", name)
+	return shellServiceSetting{
+		Name:         name,
+		Scope:        "user",
+		EnabledState: enabledState,
+		ActiveState:  activeState,
+		Enabled:      enabledState == "enabled",
+		Active:       activeState == "active",
+	}
+}
+
+func systemctlState(ctx context.Context, systemctl string, args ...string) string {
+	output, err := exec.CommandContext(ctx, systemctl, args...).CombinedOutput()
+	state := strings.TrimSpace(string(output))
+	if state == "" && err != nil {
+		return "unavailable"
+	}
+	if state == "" {
+		return "unknown"
+	}
+	return state
 }
 
 func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, map[string]string, error) {
@@ -333,6 +434,13 @@ func fixtureCatalog() *appcatalog.Catalog {
 		Icon:       "preferences-system",
 		Categories: []string{"System", "Settings"},
 	})
+	source.Add(appcatalog.Entry{
+		ID:         "shell-settings",
+		Name:       "Settings",
+		Exec:       "agora-de-shell-settings",
+		Icon:       "preferences-desktop",
+		Categories: []string{"System", "Settings"},
+	})
 	return source
 }
 
@@ -362,6 +470,16 @@ func launchTargets() map[string]launchTarget {
 			LayerRole:     "popup",
 			Width:         980,
 			Height:        720,
+			ExclusiveZone: 96,
+		},
+		"shell-settings": {
+			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=settings",
+			Title:         "Agora DE Settings",
+			AppID:         "io.agorade.ShellSettings",
+			LayerShell:    true,
+			LayerRole:     "popup",
+			Width:         760,
+			Height:        520,
 			ExclusiveZone: 96,
 		},
 		"shell-launcher": {
@@ -867,7 +985,7 @@ func closeShellLayerSurface(ctx context.Context, compositorctlPath string, surfa
 
 func isCloseableShellLayerApp(appID string) bool {
 	switch strings.TrimSpace(appID) {
-	case "io.agorade.ShellLauncher", "io.agorade.ShellOverlay", "io.agorade.ShellStatus":
+	case "io.agorade.ShellLauncher", "io.agorade.ShellOverlay", "io.agorade.ShellSettings", "io.agorade.ShellStatus":
 		return true
 	default:
 		return false
@@ -1475,6 +1593,10 @@ func writeShellHTML(response http.ResponseWriter, request *http.Request, themeCS
 	}
 	if surface == "operator" {
 		writeOperatorHTML(response, themeCSS)
+		return
+	}
+	if surface == "settings" {
+		writeSettingsHTML(response, themeCSS)
 		return
 	}
 	if surface == "overlay" {
@@ -2208,6 +2330,287 @@ func writeOperatorHTML(response http.ResponseWriter, themeCSS string) {
       document.getElementById("overall").textContent = "status: offline";
       document.getElementById("overall").className = "overall warn";
     });
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>`, themeCSS)
+}
+
+func writeSettingsHTML(response http.ResponseWriter, themeCSS string) {
+	fmt.Fprintf(response, `<!doctype html>
+<html>
+<head>
+  <title>agora-de settings</title>
+  <meta name="color-scheme" content="dark">
+  <style>
+%s
+    html,
+    body {
+      background: var(--agora-bg);
+      color: var(--agora-fg);
+      font: var(--agora-font-status);
+      height: 100%%;
+      margin: 0;
+      overflow: hidden;
+      width: 100%%;
+    }
+    body {
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      min-height: 100vh;
+    }
+    header,
+    footer {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      padding: 16px 18px;
+    }
+    header {
+      border-bottom: 1px solid var(--agora-border-subtle);
+    }
+    footer {
+      border-top: 1px solid var(--agora-border-subtle);
+      color: var(--agora-text-muted);
+      justify-content: space-between;
+      min-height: 48px;
+    }
+    h1,
+    h2 {
+      font-size: 20px;
+      line-height: 1.2;
+      margin: 0;
+    }
+    h2 {
+      font-size: 15px;
+    }
+    .mark {
+      background: var(--agora-evidence-accent);
+      border-radius: var(--agora-radius-control);
+      height: 30px;
+      width: 30px;
+    }
+    .close {
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      cursor: pointer;
+      font: inherit;
+      height: var(--agora-control-height);
+      margin-left: auto;
+      min-width: 76px;
+      padding: 0 14px;
+    }
+    .settings {
+      display: grid;
+      gap: 14px;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 18px;
+    }
+    .setting-row {
+      align-items: center;
+      background: var(--agora-surface);
+      border: 1px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      min-height: 78px;
+      padding: 12px 14px;
+    }
+    .setting-copy {
+      min-width: 0;
+    }
+    .setting-title,
+    .setting-detail {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .setting-title {
+      font-weight: 800;
+    }
+    .setting-detail {
+      color: var(--agora-text-muted);
+      font-size: 13px;
+      margin-top: 5px;
+    }
+    .toggle {
+      align-items: center;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: 999px;
+      color: var(--agora-fg);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      height: 36px;
+      justify-content: flex-start;
+      min-width: 74px;
+      padding: 0 4px;
+      position: relative;
+    }
+    .toggle::before {
+      background: var(--agora-text-muted);
+      border-radius: 999px;
+      content: "";
+      display: block;
+      height: 24px;
+      transition: transform 120ms ease, background-color 120ms ease;
+      width: 24px;
+    }
+    .toggle[aria-pressed="true"] {
+      border-color: var(--agora-accent);
+    }
+    .toggle[aria-pressed="true"]::before {
+      background: var(--agora-accent);
+      transform: translateX(38px);
+    }
+    .state {
+      color: var(--agora-text-muted);
+      font: var(--agora-font-code);
+    }
+    .state.ready {
+      color: var(--agora-accent);
+    }
+    .state.warn {
+      color: var(--agora-warning);
+    }
+  </style>
+</head>
+<body data-surface="settings">
+  <header>
+    <span class="mark"></span>
+    <h1>Settings</h1>
+    <button class="close" id="close-button" type="button">Close</button>
+  </header>
+  <main class="settings" aria-label="Settings">
+    <section class="setting-row">
+      <span class="setting-copy">
+        <span class="setting-title">Debug overlay</span>
+        <span class="setting-detail" id="overlay-detail">loading</span>
+      </span>
+      <button class="toggle" id="overlay-toggle" type="button" aria-label="Debug overlay" aria-pressed="false"></button>
+    </section>
+  </main>
+  <footer>
+    <span id="status">loading</span>
+    <span class="state" id="service-state">unknown</span>
+  </footer>
+  <script>
+    const state = {
+      settings: null,
+      busy: false
+    };
+
+    function text(value, fallback) {
+      const trimmed = String(value || "").trim();
+      return trimmed || fallback;
+    }
+
+    async function loadJSON(path) {
+      const response = await fetch(path, {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function postJSON(path, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch (_error) {
+          payload = {};
+        }
+        throw new Error(text(payload.error, path + " returned " + response.status));
+      }
+      return response.json();
+    }
+
+    function render() {
+      const settings = state.settings || {};
+      const overlay = settings.diagnosticOverlay || {};
+      const enabled = Boolean(settings.diagnosticOverlayEnabled);
+      const active = Boolean(overlay.active);
+      const toggle = document.getElementById("overlay-toggle");
+      toggle.setAttribute("aria-pressed", String(enabled));
+      toggle.title = enabled ? "Debug overlay on" : "Debug overlay off";
+      toggle.disabled = state.busy;
+      const detail = document.getElementById("overlay-detail");
+      detail.textContent = "user service " + text(overlay.enabledState, "unknown") + " / " + text(overlay.activeState, "unknown");
+      const service = document.getElementById("service-state");
+      service.textContent = (enabled ? "enabled" : "disabled") + " / " + (active ? "active" : "inactive");
+      service.className = "state " + (enabled === active ? "ready" : "warn");
+      document.getElementById("status").textContent = state.busy ? "saving" : "ready";
+    }
+
+    async function refresh() {
+      try {
+        state.settings = await loadJSON("/api/settings");
+        render();
+      } catch (error) {
+        document.getElementById("status").textContent = "offline";
+        document.getElementById("service-state").textContent = "unavailable";
+        document.getElementById("service-state").className = "state warn";
+      }
+    }
+
+    async function toggleOverlay() {
+      if (state.busy) {
+        return;
+      }
+      state.busy = true;
+      render();
+      const enabled = !Boolean(state.settings && state.settings.diagnosticOverlayEnabled);
+      try {
+        state.settings = await postJSON("/api/settings", {diagnosticOverlayEnabled: enabled});
+      } catch (error) {
+        document.getElementById("status").textContent = "save failed";
+      } finally {
+        state.busy = false;
+        render();
+      }
+    }
+
+    async function settingsSurface() {
+      const surfaces = await loadJSON("/api/surfaces");
+      return (Array.isArray(surfaces.surfaces) ? surfaces.surfaces : []).find((surface) =>
+        surface.mapped && surface.appId === "io.agorade.ShellSettings"
+      );
+    }
+
+    async function closeSettings() {
+      try {
+        const surface = await settingsSurface();
+        if (surface) {
+          await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "close"});
+        } else {
+          window.close();
+        }
+      } catch (error) {
+        window.close();
+      }
+    }
+
+    document.getElementById("overlay-toggle").addEventListener("click", toggleOverlay);
+    document.getElementById("close-button").addEventListener("click", closeSettings);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeSettings();
+      }
+    });
+    refresh();
     setInterval(refresh, 5000);
   </script>
 </body>
@@ -3063,6 +3466,13 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
           <path d="M11 12h1v5h1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
         </svg>
         <span class="visually-hidden">Status</span>
+      </button>
+      <button class="taskbar-icon-button" id="settings-button" type="button" aria-label="Settings" title="Settings">
+        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.3 7A2 2 0 1 1 7.1 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="2"></path>
+        </svg>
+        <span class="visually-hidden">Settings</span>
       </button>
     </section>
     <section class="taskbar-tasks running" id="running-list" aria-label="Running surfaces">
@@ -4011,6 +4421,7 @@ func writePanelHTML(response http.ResponseWriter, surface string, themeCSS strin
     document.getElementById("apps-button").addEventListener("click", toggleApps);
     document.getElementById("refresh-button").addEventListener("click", refresh);
     document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
+    document.getElementById("settings-button").addEventListener("click", () => launchApp("shell-settings"));
     document.getElementById("workspace-list").addEventListener("click", (event) => {
       const target = event.target.closest("button[data-workspace-id]");
       if (target) {

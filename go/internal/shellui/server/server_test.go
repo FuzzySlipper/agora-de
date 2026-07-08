@@ -46,6 +46,8 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`aria-label="Refresh"`,
 		`id="operator-button"`,
 		`aria-label="Status"`,
+		`id="settings-button"`,
+		`aria-label="Settings"`,
 		`class="taskbar-button-icon"`,
 		`class="visually-hidden">Refresh</span>`,
 		`--taskbar-control-height`,
@@ -131,6 +133,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`className = "dock-item" + (className ? " " + className : "")`,
 		`surface-meta`,
 		`shell-status`,
+		`shell-settings`,
 		`workspace 1`,
 	} {
 		if !strings.Contains(body, want) {
@@ -189,6 +192,22 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	} {
 		if !strings.Contains(operator, want) {
 			t.Fatalf("operator body missing %q: %s", want, operator)
+		}
+	}
+
+	settings := responseBody(t, handler, "/shell/dist/desktop/?surface=settings")
+	for _, want := range []string{
+		"agora-de settings",
+		`data-surface="settings"`,
+		`id="overlay-toggle"`,
+		`aria-label="Debug overlay"`,
+		`/api/settings`,
+		`diagnosticOverlayEnabled`,
+		`io.agorade.ShellSettings`,
+		`closeSettings`,
+	} {
+		if !strings.Contains(settings, want) {
+			t.Fatalf("settings body missing %q: %s", want, settings)
 		}
 	}
 
@@ -256,7 +275,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		} `json:"apps"`
 	}
 	decodeRoute(t, handler, "/api/catalog/apps", &catalogResponse)
-	if len(catalogResponse.Apps) != 2 {
+	if len(catalogResponse.Apps) != 3 {
 		t.Fatalf("unexpected catalog response: %+v", catalogResponse)
 	}
 	seen := map[string]bool{}
@@ -981,6 +1000,22 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 			t.Fatalf("launcher compositorctl calls missing %q: %s", want, calls)
 		}
 	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/catalog/launch", strings.NewReader(`{"appId":"shell-settings"}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("settings launch status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	calls, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"surface=settings", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup", "--expected-app-id io.agorade.ShellSettings"} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("settings compositorctl calls missing %q: %s", want, calls)
+		}
+	}
 }
 
 func TestHandlerLaunchesNativeAppsWithAllowAllWildcard(t *testing.T) {
@@ -1275,6 +1310,22 @@ esac
 			t.Fatalf("launcher compositorctl calls missing %q: %s", want, calls)
 		}
 	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/catalog/launch", strings.NewReader(`{"appId":"shell-settings"}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("settings launch status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	calls, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"surface=settings", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup", "--expected-app-id io.agorade.ShellSettings"} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("settings compositorctl calls missing %q: %s", want, calls)
+		}
+	}
 }
 
 func TestHandlerRunsSurfaceActionsThroughCompositorctl(t *testing.T) {
@@ -1395,6 +1446,115 @@ esac
 	}
 	if strings.Contains(string(calls), "surface close --surface layer-status") {
 		t.Fatalf("launcher layer close should not use work-surface close: %s", calls)
+	}
+}
+
+func TestHandlerSettingsRouteTogglesDiagnosticOverlay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	dir := t.TempDir()
+	enabledPath := filepath.Join(dir, "enabled")
+	activePath := filepath.Join(dir, "active")
+	logPath := filepath.Join(dir, "systemctl.log")
+	command := filepath.Join(dir, "systemctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' "$*" >> "$CALL_LOG"
+case "$*" in
+  "--user is-enabled agora-de-shell-overlay.service")
+    if [ -f "$ENABLED_PATH" ]; then
+      printf 'enabled\n'
+      exit 0
+    fi
+    printf 'disabled\n'
+    exit 1
+    ;;
+  "--user is-active agora-de-shell-overlay.service")
+    if [ -f "$ACTIVE_PATH" ]; then
+      printf 'active\n'
+      exit 0
+    fi
+    printf 'inactive\n'
+    exit 3
+    ;;
+  "--user enable --now agora-de-shell-overlay.service")
+    : > "$ENABLED_PATH"
+    : > "$ACTIVE_PATH"
+    ;;
+  "--user disable --now agora-de-shell-overlay.service")
+    rm -f "$ENABLED_PATH" "$ACTIVE_PATH"
+    ;;
+  *)
+    printf 'unexpected systemctl command: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CALL_LOG", logPath)
+	t.Setenv("ENABLED_PATH", enabledPath)
+	t.Setenv("ACTIVE_PATH", activePath)
+
+	handler, err := NewHandler(Config{
+		FixtureProviders: true,
+		SystemctlPath:    command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var initial settingsResponse
+	decodeRoute(t, handler, SettingsPath, &initial)
+	if initial.DiagnosticOverlayEnabled || initial.DiagnosticOverlay.Enabled || initial.DiagnosticOverlay.Active {
+		t.Fatalf("initial settings = %+v, want overlay disabled", initial)
+	}
+	if initial.DiagnosticOverlay.EnabledState != "disabled" || initial.DiagnosticOverlay.ActiveState != "inactive" {
+		t.Fatalf("initial overlay state = %+v", initial.DiagnosticOverlay)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, SettingsPath, strings.NewReader(`{"diagnosticOverlayEnabled":true}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("enable status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	var enabled settingsResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &enabled); err != nil {
+		t.Fatal(err)
+	}
+	if !enabled.DiagnosticOverlayEnabled || !enabled.DiagnosticOverlay.Enabled || !enabled.DiagnosticOverlay.Active {
+		t.Fatalf("enabled settings = %+v, want overlay enabled and active", enabled)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, SettingsPath, strings.NewReader(`{"diagnosticOverlayEnabled":false}`))
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("disable status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	}
+	var disabled settingsResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &disabled); err != nil {
+		t.Fatal(err)
+	}
+	if disabled.DiagnosticOverlayEnabled || disabled.DiagnosticOverlay.Enabled || disabled.DiagnosticOverlay.Active {
+		t.Fatalf("disabled settings = %+v, want overlay disabled", disabled)
+	}
+
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"--user is-enabled agora-de-shell-overlay.service",
+		"--user is-active agora-de-shell-overlay.service",
+		"--user enable --now agora-de-shell-overlay.service",
+		"--user disable --now agora-de-shell-overlay.service",
+	} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("systemctl calls missing %q: %s", want, calls)
+		}
 	}
 }
 

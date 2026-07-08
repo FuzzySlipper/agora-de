@@ -25,6 +25,7 @@ func main() {
 	iconPixmapRoots := flag.String("icon-pixmap-roots", env("AGORA_DE_SHELLUI_ICON_PIXMAP_ROOTS", ""), "optional pixmap roots for desktop entry icon resolution")
 	surfaceProvider := flag.String("surface-provider", env("AGORA_DE_SHELLUI_SURFACE_PROVIDER", server.SurfaceProviderFixture), "surface provider: fixture or compositorctl")
 	compositorctlPath := flag.String("compositorctl", env("AGORA_DE_SHELLUI_COMPOSITORCTL", "compositorctl"), "compositorctl path for live surface provider")
+	systemctlPath := flag.String("systemctl", env("AGORA_DE_SHELLUI_SYSTEMCTL", "systemctl"), "systemctl path for shell settings actions")
 	nativeLaunchProvider := flag.String("native-launch-provider", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER", server.NativeLaunchProviderDisabled), "native launch provider: disabled or structured_compositorctl")
 	nativeLaunchAllowlist := flag.String("native-launch-allowlist", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST", ""), "comma-separated desktop entry ids allowed for native launch")
 	nativeLaunchUID := flag.Int("native-launch-uid", envInt("AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID", 0), "requester uid for native launch")
@@ -46,6 +47,7 @@ func main() {
 		IconPixmapRoots:          splitPathList(*iconPixmapRoots),
 		SurfaceProvider:          *surfaceProvider,
 		CompositorctlPath:        *compositorctlPath,
+		SystemctlPath:            *systemctlPath,
 		NativeLaunchProvider:     *nativeLaunchProvider,
 		NativeLaunchAllowlist:    splitCSV(*nativeLaunchAllowlist),
 		NativeLaunchRequesterUID: *nativeLaunchUID,
