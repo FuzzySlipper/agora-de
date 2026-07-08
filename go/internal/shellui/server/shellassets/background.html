@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+  <title>agora-de shell</title>
+  <style>
+__AGORA_THEME_CSS__
+    html,
+    body {
+      background: var(--agora-bg);
+      color: var(--agora-fg);
+      font: var(--agora-font-background);
+      height: 100%;
+      margin: 0;
+    }
+    body {
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: 1fr;
+      min-height: 100vh;
+    }
+    .stage {
+      align-items: center;
+      display: flex;
+      gap: 18px;
+      padding: 0 28px;
+    }
+    .mark {
+      background: var(--agora-evidence-accent);
+      border-radius: var(--agora-radius-control);
+      height: 40px;
+      width: 40px;
+    }
+    .taskbar {
+      align-items: center;
+      background: var(--agora-surface);
+      border-top: 4px solid var(--agora-evidence-accent);
+      box-shadow: inset 0 1px 0 var(--agora-border-subtle);
+      box-sizing: border-box;
+      display: flex;
+      gap: 18px;
+      min-height: var(--agora-panel-height);
+      padding: 0 28px;
+    }
+    .badge {
+      align-items: center;
+      background: var(--agora-evidence-strong);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-bg);
+      display: inline-flex;
+      height: var(--agora-control-height);
+      justify-content: center;
+      min-width: 132px;
+      padding: 0 16px;
+    }
+    .slot {
+      align-items: center;
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      display: inline-flex;
+      height: 40px;
+      padding: 0 14px;
+    }
+  </style>
+</head>
+<body class="background" data-surface="__AGORA_SURFACE__">
+  <main class="stage">
+    <span class="mark"></span>
+    <span>agora-de shell: __AGORA_SURFACE__</span>
+  </main>
+</body>
+</html>

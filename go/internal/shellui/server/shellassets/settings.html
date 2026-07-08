@@ -1,0 +1,278 @@
+<!doctype html>
+<html>
+<head>
+  <title>agora-de settings</title>
+  <meta name="color-scheme" content="dark">
+  <style>
+__AGORA_THEME_CSS__
+    html,
+    body {
+      background: var(--agora-bg);
+      color: var(--agora-fg);
+      font: var(--agora-font-status);
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      width: 100%;
+    }
+    body {
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      min-height: 100vh;
+    }
+    header,
+    footer {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      padding: 16px 18px;
+    }
+    header {
+      border-bottom: 1px solid var(--agora-border-subtle);
+    }
+    footer {
+      border-top: 1px solid var(--agora-border-subtle);
+      color: var(--agora-text-muted);
+      justify-content: space-between;
+      min-height: 48px;
+    }
+    h1,
+    h2 {
+      font-size: 20px;
+      line-height: 1.2;
+      margin: 0;
+    }
+    h2 {
+      font-size: 15px;
+    }
+    .mark {
+      background: var(--agora-evidence-accent);
+      border-radius: var(--agora-radius-control);
+      height: 30px;
+      width: 30px;
+    }
+    .close {
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      cursor: pointer;
+      font: inherit;
+      height: var(--agora-control-height);
+      margin-left: auto;
+      min-width: 76px;
+      padding: 0 14px;
+    }
+    .settings {
+      display: grid;
+      gap: 14px;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 18px;
+    }
+    .setting-row {
+      align-items: center;
+      background: var(--agora-surface);
+      border: 1px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      min-height: 78px;
+      padding: 12px 14px;
+    }
+    .setting-copy {
+      min-width: 0;
+    }
+    .setting-title,
+    .setting-detail {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .setting-title {
+      font-weight: 800;
+    }
+    .setting-detail {
+      color: var(--agora-text-muted);
+      font-size: 13px;
+      margin-top: 5px;
+    }
+    .toggle {
+      align-items: center;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: 999px;
+      color: var(--agora-fg);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      height: 36px;
+      justify-content: flex-start;
+      min-width: 74px;
+      padding: 0 4px;
+      position: relative;
+    }
+    .toggle::before {
+      background: var(--agora-text-muted);
+      border-radius: 999px;
+      content: "";
+      display: block;
+      height: 24px;
+      transition: transform 120ms ease, background-color 120ms ease;
+      width: 24px;
+    }
+    .toggle[aria-pressed="true"] {
+      border-color: var(--agora-accent);
+    }
+    .toggle[aria-pressed="true"]::before {
+      background: var(--agora-accent);
+      transform: translateX(38px);
+    }
+    .state {
+      color: var(--agora-text-muted);
+      font: var(--agora-font-code);
+    }
+    .state.ready {
+      color: var(--agora-accent);
+    }
+    .state.warn {
+      color: var(--agora-warning);
+    }
+  </style>
+</head>
+<body data-surface="settings">
+  <header>
+    <span class="mark"></span>
+    <h1>Settings</h1>
+    <button class="close" id="close-button" type="button">Close</button>
+  </header>
+  <main class="settings" aria-label="Settings">
+    <section class="setting-row">
+      <span class="setting-copy">
+        <span class="setting-title">Debug overlay</span>
+        <span class="setting-detail" id="overlay-detail">loading</span>
+      </span>
+      <button class="toggle" id="overlay-toggle" type="button" aria-label="Debug overlay" aria-pressed="false"></button>
+    </section>
+  </main>
+  <footer>
+    <span id="status">loading</span>
+    <span class="state" id="service-state">unknown</span>
+  </footer>
+  <script>
+    const state = {
+      settings: null,
+      busy: false
+    };
+
+    function text(value, fallback) {
+      const trimmed = String(value || "").trim();
+      return trimmed || fallback;
+    }
+
+    async function loadJSON(path) {
+      const response = await fetch(path, {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function postJSON(path, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch (_error) {
+          payload = {};
+        }
+        throw new Error(text(payload.error, path + " returned " + response.status));
+      }
+      return response.json();
+    }
+
+    function render() {
+      const settings = state.settings || {};
+      const overlay = settings.diagnosticOverlay || {};
+      const enabled = Boolean(settings.diagnosticOverlayEnabled);
+      const active = Boolean(overlay.active);
+      const toggle = document.getElementById("overlay-toggle");
+      toggle.setAttribute("aria-pressed", String(enabled));
+      toggle.title = enabled ? "Debug overlay on" : "Debug overlay off";
+      toggle.disabled = state.busy;
+      const detail = document.getElementById("overlay-detail");
+      detail.textContent = "user service " + text(overlay.enabledState, "unknown") + " / " + text(overlay.activeState, "unknown");
+      const service = document.getElementById("service-state");
+      service.textContent = (enabled ? "enabled" : "disabled") + " / " + (active ? "active" : "inactive");
+      service.className = "state " + (enabled === active ? "ready" : "warn");
+      document.getElementById("status").textContent = state.busy ? "saving" : "ready";
+    }
+
+    async function refresh() {
+      try {
+        state.settings = await loadJSON("/api/settings");
+        render();
+      } catch (error) {
+        document.getElementById("status").textContent = "offline";
+        document.getElementById("service-state").textContent = "unavailable";
+        document.getElementById("service-state").className = "state warn";
+      }
+    }
+
+    async function toggleOverlay() {
+      if (state.busy) {
+        return;
+      }
+      state.busy = true;
+      render();
+      const enabled = !Boolean(state.settings && state.settings.diagnosticOverlayEnabled);
+      try {
+        state.settings = await postJSON("/api/settings", {diagnosticOverlayEnabled: enabled});
+      } catch (error) {
+        document.getElementById("status").textContent = "save failed";
+      } finally {
+        state.busy = false;
+        render();
+      }
+    }
+
+    async function settingsSurface() {
+      const surfaces = await loadJSON("/api/surfaces");
+      return (Array.isArray(surfaces.surfaces) ? surfaces.surfaces : []).find((surface) =>
+        surface.mapped && surface.appId === "io.agorade.ShellSettings"
+      );
+    }
+
+    async function closeSettings() {
+      try {
+        const surface = await settingsSurface();
+        if (surface) {
+          await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "close"});
+        } else {
+          window.close();
+        }
+      } catch (error) {
+        window.close();
+      }
+    }
+
+    document.getElementById("overlay-toggle").addEventListener("click", toggleOverlay);
+    document.getElementById("close-button").addEventListener("click", closeSettings);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeSettings();
+      }
+    });
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

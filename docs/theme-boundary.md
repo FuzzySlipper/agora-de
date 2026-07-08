@@ -17,10 +17,17 @@ The token contract is intentionally narrow:
 
 The default dark manifest is represented by `theme.DefaultTokenDefinitions()`,
 `theme.DefaultThemeID` (`agora-default`), and
-`harness/fixtures/theme/agora-default-theme.json`. Go-rendered fallback/live
-shell HTML resolves a `theme.Selection` at shellui handler startup and consumes
+`harness/fixtures/theme/agora-default-theme.json`. Shell surface HTML is
+authored in TypeScript by `@agora-de/renderer` (the rendering authority) and
+projected to static templates under
+`go/internal/shellui/server/shellassets` by `harness/build/generate-shell-html.mjs`.
+The Go `shellAssetHandler` embeds those templates, resolves a `theme.Selection`
+at shellui handler startup, and substitutes the active theme CSS plus the
+requested surface name into the `__AGORA_THEME_CSS__` / `__AGORA_SURFACE__`
+placeholders at the one serving seam. Surface templates consume
 `var(--agora-*)` tokens rather than owning colors, radii, and panel dimensions
-directly.
+directly; a `StaticRoot` override may replace the embedded bundle with a
+self-theming SPA bundle.
 
 Bundled variants live in `go/internal/shellui/theme` alongside fixtures under
 `harness/fixtures/theme/`. `agora-ember` is the first bundled variant. It keeps

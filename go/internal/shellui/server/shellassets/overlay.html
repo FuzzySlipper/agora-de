@@ -1,0 +1,338 @@
+<!doctype html>
+<html>
+<head>
+  <title>agora-de agent overlay</title>
+  <meta name="color-scheme" content="dark">
+  <style>
+__AGORA_THEME_CSS__
+    html,
+    body {
+      background: transparent !important;
+      color: var(--agora-fg);
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      width: 100%;
+    }
+    body {
+      font: var(--agora-font-status);
+      pointer-events: none;
+    }
+    .agent-overlay {
+      height: 100vh;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      position: fixed;
+      width: 100vw;
+    }
+    .zone-hints {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      height: calc(100vh - var(--agora-panel-height));
+      inset: 0 0 var(--agora-panel-height) 0;
+      opacity: 0.14;
+      position: absolute;
+    }
+    .zone-hint {
+      border: 2px dashed var(--agora-border);
+      box-sizing: border-box;
+      color: var(--agora-text-muted);
+      padding: 12px;
+      text-transform: uppercase;
+    }
+    .window-box {
+      border: 3px solid var(--agora-evidence-accent);
+      box-shadow:
+        0 0 0 1px var(--agora-surface-strong),
+        inset 0 0 0 1px var(--agora-surface-strong);
+      box-sizing: border-box;
+      min-height: 72px;
+      min-width: 120px;
+      position: absolute;
+    }
+    .window-box.focused {
+      border-color: var(--agora-warning);
+      box-shadow:
+        0 0 0 2px var(--agora-surface-strong),
+        var(--agora-focus-glow),
+        inset 0 0 0 2px var(--agora-warning);
+    }
+    .label {
+      align-items: center;
+      background: var(--agora-overlay-label-bg);
+      border: 2px solid var(--agora-evidence-accent);
+      color: var(--agora-fg);
+      display: inline-flex;
+      gap: 8px;
+      left: auto;
+      max-width: calc(100% - 16px);
+      min-height: 36px;
+      padding: 0 10px;
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      white-space: nowrap;
+    }
+    .focused .label {
+      border-color: var(--agora-warning);
+    }
+    .number {
+      align-items: center;
+      background: var(--agora-evidence-accent);
+      color: var(--agora-surface-strong);
+      display: inline-flex;
+      font: var(--agora-font-code);
+      height: 24px;
+      justify-content: center;
+      min-width: 24px;
+      padding: 0 4px;
+    }
+    .copy {
+      display: block;
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bounds {
+      background: var(--agora-overlay-chip-bg);
+      border: 2px solid var(--agora-border);
+      bottom: 8px;
+      color: var(--agora-text-muted);
+      font: var(--agora-font-code);
+      left: 8px;
+      padding: 5px 8px;
+      position: absolute;
+    }
+    .meta {
+      align-items: center;
+      bottom: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: calc(100% - 16px);
+      opacity: 0.62;
+      position: absolute;
+      right: 8px;
+    }
+    .chip {
+      background: var(--agora-overlay-chip-bg);
+      border: 2px solid var(--agora-border);
+      color: var(--agora-fg);
+      font: var(--agora-font-code);
+      padding: 5px 7px;
+    }
+    .action-hints {
+      border-color: var(--agora-evidence-accent);
+      color: var(--agora-text-muted);
+    }
+    .fallback-stack {
+      display: grid;
+      gap: 10px;
+      left: 24px;
+      max-width: 520px;
+      position: absolute;
+      top: 24px;
+    }
+    .fallback-item {
+      background: var(--agora-surface-strong);
+      border: 2px solid var(--agora-evidence-accent);
+      color: var(--agora-fg);
+      padding: 10px 12px;
+    }
+    .empty {
+      background: var(--agora-surface-strong);
+      border: 2px solid var(--agora-border);
+      color: var(--agora-text-muted);
+      left: 24px;
+      padding: 10px 12px;
+      position: absolute;
+      top: 24px;
+    }
+  </style>
+</head>
+<body data-surface="overlay">
+  <main class="agent-overlay" id="agent-overlay-surface" aria-label="Agent-visible window labels and bounds overlay">
+    <section class="zone-hints" id="zone-hints" aria-label="Workspace zone hints">
+      <span class="zone-hint">primary</span>
+      <span class="zone-hint">secondary</span>
+    </section>
+    <section id="overlay-labels" aria-label="Surface labels"></section>
+  </main>
+  <script>
+    const state = {
+      layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
+      surfaces: []
+    };
+
+    function text(value, fallback) {
+      const trimmed = String(value || "").trim();
+      return trimmed || fallback;
+    }
+
+    function number(value, fallback) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function geometryFor(surface) {
+      const geometry = surface && surface.geometry;
+      if (!geometry || typeof geometry !== "object") {
+        return null;
+      }
+      const x = number(geometry.x, 0);
+      const y = number(geometry.y, 0);
+      const width = number(geometry.width, 0);
+      const height = number(geometry.height, 0);
+      if (width <= 0 || height <= 0) {
+        return null;
+      }
+      return {x, y, width, height};
+    }
+
+    function surfaceName(surface) {
+      return text(surface.title, text(surface.appId, surface.surfaceId));
+    }
+
+    function activeWorkspace() {
+      const workspaces = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
+      return workspaces.find((workspace) => workspace.active) || workspaces[0] || {zones: []};
+    }
+
+    function layoutRuleLabel() {
+      const settings = state.layout.settings || {};
+      return text(settings.rule, text(state.layout.mode, "freeform"));
+    }
+
+    function renderZoneHints() {
+      const target = document.getElementById("zone-hints");
+      const zones = Array.isArray(activeWorkspace().zones) ? activeWorkspace().zones : [];
+      const zoneLabels = zones.length ? zones.map((zone) => text(zone.id, "zone")) : ["primary", "secondary"];
+      target.replaceChildren();
+      target.style.gridTemplateColumns = "repeat(" + Math.max(1, zoneLabels.length) + ", 1fr)";
+      zoneLabels.forEach((zoneId) => {
+        const hint = document.createElement("span");
+        hint.className = "zone-hint";
+        hint.textContent = zoneId;
+        target.appendChild(hint);
+      });
+    }
+
+    function actionHints(surface) {
+      const participation = text(surface.participation, surface.floating ? "floating" : "tiled");
+      return participation === "floating" || participation === "transient"
+        ? "focus close tile"
+        : "focus close float zone reset";
+    }
+
+    function chip(value, className) {
+      const element = document.createElement("span");
+      element.className = "chip" + (className ? " " + className : "");
+      element.textContent = value;
+      return element;
+    }
+
+    function renderBox(surface) {
+      const geometry = geometryFor(surface);
+      if (!geometry) {
+        return null;
+      }
+      const element = document.createElement("article");
+      element.className = "window-box" + (surface.focused ? " focused" : "");
+      element.dataset.surfaceId = surface.surfaceId;
+      element.dataset.zoneId = text(surface.zoneId, "primary");
+      element.dataset.order = String(number(surface.order, 0));
+      element.dataset.participation = text(surface.participation, surface.floating ? "floating" : "tiled");
+      element.dataset.layoutRule = layoutRuleLabel();
+      element.style.left = Math.max(0, geometry.x) + "px";
+      element.style.top = Math.max(0, geometry.y) + "px";
+      element.style.width = geometry.width + "px";
+      element.style.height = geometry.height + "px";
+
+      const label = document.createElement("span");
+      label.className = "label";
+      const numberBadge = document.createElement("span");
+      numberBadge.className = "number";
+      numberBadge.textContent = text(surface.label, String(number(surface.order, 0) + 1));
+      const copy = document.createElement("span");
+      copy.className = "copy";
+      copy.textContent = "#" + text(surface.surfaceId, "?") + " / " + surfaceName(surface);
+      label.append(numberBadge, copy);
+
+      const bounds = document.createElement("span");
+      bounds.className = "bounds";
+      bounds.textContent = geometry.x + "," + geometry.y + " " + geometry.width + "x" + geometry.height;
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.append(
+        chip("order " + String(number(surface.order, 0))),
+        chip(text(surface.zoneId, "primary")),
+        chip(text(surface.participation, surface.floating ? "floating" : "tiled")),
+        chip(layoutRuleLabel()),
+        chip(surface.focused ? "focused" : "unfocused"),
+        chip(actionHints(surface), "action-hints")
+      );
+      element.append(label, bounds, meta);
+      return element;
+    }
+
+    function renderFallback(surfaces) {
+      const stack = document.createElement("section");
+      stack.className = "fallback-stack";
+      surfaces.forEach((surface, index) => {
+        const item = document.createElement("span");
+        item.className = "fallback-item";
+        item.textContent = text(surface.label, String(index + 1)) + " / " + surfaceName(surface) + " / " + text(surface.zoneId, "primary");
+        stack.appendChild(item);
+      });
+      return stack;
+    }
+
+    function render() {
+      const target = document.getElementById("overlay-labels");
+      target.replaceChildren();
+      renderZoneHints();
+      const surfaces = (Array.isArray(state.layout.surfaces) ? state.layout.surfaces : [])
+        .filter((surface) => surface && surface.visible !== false);
+      if (!surfaces.length) {
+        const empty = document.createElement("span");
+        empty.className = "empty";
+        empty.textContent = "no work surfaces";
+        target.appendChild(empty);
+        return;
+      }
+      const boxes = surfaces.map(renderBox).filter(Boolean);
+      if (boxes.length) {
+        boxes.forEach((box) => target.appendChild(box));
+        return;
+      }
+      target.appendChild(renderFallback(surfaces));
+    }
+
+    async function loadJSON(path) {
+      const response = await fetch(path, {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function refresh() {
+      try {
+        const [layout, surfaces] = await Promise.all([
+          loadJSON("/api/layout"),
+          loadJSON("/api/surfaces")
+        ]);
+        state.layout = layout.layout || state.layout;
+        state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
+        render();
+      } catch (error) {
+        render();
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

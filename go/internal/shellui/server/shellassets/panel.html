@@ -1,0 +1,1397 @@
+<!doctype html>
+<html>
+<head>
+  <title>agora-de shell panel</title>
+  <meta name="color-scheme" content="dark">
+  <style>
+__AGORA_THEME_CSS__
+    html,
+    body {
+      background: transparent !important;
+      color: var(--agora-fg);
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      width: 100%;
+    }
+    body {
+      align-items: stretch;
+      background: transparent;
+      box-sizing: border-box;
+      display: flex;
+      font: 600 14px var(--agora-font-family);
+      overflow: hidden;
+    }
+    .panel {
+      --taskbar-control-height: var(--agora-panel-control-height);
+      align-items: center;
+      background: var(--agora-panel-bg);
+      border-top: 3px solid var(--agora-evidence-accent);
+      bottom: 0;
+      box-shadow: var(--agora-panel-shadow);
+      box-sizing: border-box;
+      display: grid;
+      gap: 8px;
+      grid-template-columns: auto minmax(220px, 1fr) auto auto auto auto;
+      height: var(--agora-panel-height);
+      left: 0;
+      min-height: var(--agora-panel-height);
+      padding: 8px var(--agora-panel-padding-x);
+      position: fixed;
+      right: 0;
+      width: 100vw;
+    }
+    button {
+      font: inherit;
+    }
+    button:disabled {
+      opacity: 0.55;
+    }
+    .taskbar-start,
+    .taskbar-tray,
+    .workspace-strip {
+      align-items: center;
+      display: inline-flex;
+      gap: 6px;
+      min-width: 0;
+    }
+    .start-button,
+    .taskbar-icon-button,
+    .workspace,
+    .layout-status,
+    .status,
+    .clock {
+      align-items: center;
+      border-radius: var(--agora-radius-control);
+      display: inline-flex;
+      box-sizing: border-box;
+      height: var(--taskbar-control-height);
+      justify-content: center;
+      min-width: 44px;
+      padding: 0 10px;
+      white-space: nowrap;
+    }
+    .start-button {
+      background: var(--agora-evidence-strong);
+      border: 2px solid var(--agora-evidence-accent);
+      color: var(--agora-fg);
+      cursor: pointer;
+      font-weight: 800;
+      min-width: 86px;
+    }
+    .start-button[aria-pressed="true"] {
+      background: var(--agora-accent);
+      color: var(--agora-bg);
+    }
+    .taskbar-icon-button {
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      color: var(--agora-fg);
+      cursor: pointer;
+      min-width: var(--taskbar-control-height);
+      padding: 0;
+      width: var(--taskbar-control-height);
+    }
+    .taskbar-button-icon {
+      display: block;
+      height: 18px;
+      pointer-events: none;
+      width: 18px;
+    }
+    .visually-hidden {
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+    .taskbar-icon-button:hover,
+    .workspace:hover,
+    .layout-status:hover,
+    .wm-menu summary:hover,
+    .task-button:hover {
+      border-color: var(--agora-accent);
+    }
+    .workspace,
+    .layout-status,
+    .status,
+    .clock {
+      border: 2px solid var(--agora-border);
+      color: var(--agora-fg);
+    }
+    .workspace {
+      background: var(--agora-surface-raised);
+      cursor: pointer;
+      font: inherit;
+      gap: 5px;
+      min-width: 42px;
+      position: relative;
+    }
+    .workspace.active {
+      background: var(--agora-surface-strong);
+      border-color: var(--agora-accent);
+      box-shadow: inset 0 -4px 0 var(--agora-accent);
+    }
+    .workspace-count {
+      align-items: center;
+      background: var(--agora-accent);
+      border-radius: 999px;
+      color: var(--agora-bg);
+      display: inline-flex;
+      font: 800 12px var(--agora-font-family);
+      height: 16px;
+      justify-content: center;
+      margin-left: 5px;
+      min-width: 16px;
+      padding: 0 4px;
+    }
+    .workspace-output {
+      color: var(--agora-text-muted);
+      font: 700 10px var(--agora-font-family);
+      text-transform: uppercase;
+    }
+    .layout-status {
+      background: var(--agora-surface-raised);
+      cursor: pointer;
+      font: inherit;
+      max-width: 116px;
+      min-width: 92px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .taskbar-tasks {
+      align-items: center;
+      display: flex;
+      gap: 6px;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+    .taskbar-tasks::-webkit-scrollbar {
+      height: 5px;
+    }
+    .taskbar-tasks::-webkit-scrollbar-thumb {
+      background: var(--agora-border-subtle);
+    }
+    .task-button,
+    .dock-item {
+      align-items: center;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      display: inline-flex;
+      gap: 8px;
+      height: var(--taskbar-control-height);
+      min-width: 0;
+      overflow: hidden;
+      padding: 0 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .task-button {
+      cursor: pointer;
+      flex: 1 1 168px;
+      max-width: 230px;
+      min-width: 104px;
+      position: relative;
+    }
+    .task-button.focused {
+      background: var(--agora-surface-strong);
+      border-color: var(--agora-accent);
+      box-shadow: inset 0 -3px 0 var(--agora-accent);
+    }
+    .task-button.minimized {
+      background: var(--agora-taskbar-minimized-bg);
+      border-color: var(--agora-taskbar-minimized-border);
+      color: var(--agora-text-muted);
+    }
+    .task-button.minimized .task-label::after {
+      border: 1px solid var(--agora-warning);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-warning);
+      content: "min";
+      font: 800 10px var(--agora-font-family);
+      margin-left: 7px;
+      padding: 1px 4px;
+      text-transform: uppercase;
+    }
+    .task-icon {
+      align-items: center;
+      background: var(--agora-evidence-strong);
+      border: 1px solid var(--agora-border-subtle);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      display: inline-flex;
+      flex: 0 0 28px;
+      font: 800 14px var(--agora-font-family);
+      height: 26px;
+      justify-content: center;
+      overflow: hidden;
+      width: 26px;
+    }
+    .task-icon img {
+      display: block;
+      height: 100%;
+      object-fit: contain;
+      width: 100%;
+    }
+    .task-icon.has-image .icon-fallback {
+      display: none;
+    }
+    .task-icon.icon-load-failed img {
+      display: none;
+    }
+    .task-icon.icon-load-failed .icon-fallback {
+      display: inline;
+    }
+    .task-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    button.dock-item {
+      cursor: pointer;
+    }
+    .dock-item.muted {
+      flex: 0 0 auto;
+      min-width: 132px;
+    }
+    .surface-actions {
+      align-items: center;
+      display: inline-flex;
+      gap: 6px;
+      min-width: 0;
+    }
+    .surface-action {
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      height: var(--taskbar-control-height);
+      min-width: 58px;
+      padding: 0 10px;
+    }
+    .wm-menu {
+      position: relative;
+    }
+    .wm-menu summary {
+      align-items: center;
+      background: var(--agora-surface-raised);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      box-sizing: border-box;
+      color: var(--agora-fg);
+      cursor: pointer;
+      display: inline-flex;
+      height: var(--taskbar-control-height);
+      justify-content: center;
+      list-style: none;
+      min-width: 54px;
+      padding: 0 12px;
+      white-space: nowrap;
+    }
+    .wm-menu summary::-webkit-details-marker {
+      display: none;
+    }
+    .wm-controls {
+      align-items: center;
+      background: var(--agora-surface);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      bottom: calc(var(--agora-panel-height) - 2px);
+      box-shadow: var(--agora-popup-shadow);
+      display: none;
+      gap: 8px;
+      padding: 10px;
+      position: absolute;
+      right: 0;
+      width: min(760px, calc(100vw - 44px));
+      z-index: 5;
+    }
+    .wm-menu[open] .wm-controls {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .wm-control {
+      background: var(--agora-surface);
+      border: 2px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-fg);
+      flex: 0 0 auto;
+      height: var(--taskbar-control-height);
+      min-width: 54px;
+      padding: 0 10px;
+    }
+    .wm-control.primary {
+      border-color: var(--agora-accent);
+    }
+    .wm-control:disabled {
+      color: var(--agora-text-muted);
+      cursor: default;
+      opacity: 0.65;
+    }
+    .wm-rule {
+      background: var(--agora-surface-strong);
+      border-color: var(--agora-border-subtle);
+      max-width: 150px;
+      min-width: 96px;
+    }
+    .surface-meta {
+      font-size: 12px;
+      min-width: 78px;
+      padding: 0 8px;
+    }
+    .target-meta {
+      border-color: var(--agora-accent);
+      max-width: 170px;
+      min-width: 104px;
+    }
+    .status {
+      background: var(--agora-surface-strong);
+      max-width: 126px;
+      min-width: 92px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .clock {
+      min-width: 68px;
+      width: 68px;
+    }
+    .status.ready {
+      border-color: var(--agora-accent);
+    }
+    .status.warn {
+      border-color: var(--agora-warning);
+    }
+    .muted {
+      color: var(--agora-text-muted);
+    }
+    @media (max-width: 980px) {
+      .panel {
+        gap: 8px;
+        grid-template-columns: auto minmax(120px, 1fr) auto auto;
+        padding-inline: 10px;
+      }
+      .layout-status,
+      .status {
+        display: none;
+      }
+      .taskbar-icon-button {
+        min-width: var(--taskbar-control-height);
+        padding: 0;
+      }
+      .start-button {
+        min-width: 72px;
+      }
+    }
+  </style>
+</head>
+<body data-surface="__AGORA_SURFACE__">
+  <main class="panel taskbar" aria-label="Agora DE shell panel">
+    <section class="taskbar-start" aria-label="Shell controls">
+      <button class="start-button" id="apps-button" type="button" aria-pressed="false">Start</button>
+      <button class="taskbar-icon-button" id="refresh-button" type="button" aria-label="Refresh" title="Refresh">
+        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          <path d="M20 4v4h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          <path d="M20 12a8 8 0 0 1-13.7 5.7L4 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          <path d="M4 20v-4h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+        </svg>
+        <span class="visually-hidden">Refresh</span>
+      </button>
+      <button class="taskbar-icon-button" id="operator-button" type="button" aria-label="Status" title="Status">
+        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          <path d="M12 8h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3"></path>
+          <path d="M11 12h1v5h1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+        </svg>
+        <span class="visually-hidden">Status</span>
+      </button>
+      <button class="taskbar-icon-button" id="settings-button" type="button" aria-label="Settings" title="Settings">
+        <svg class="taskbar-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.3 7A2 2 0 1 1 7.1 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="2"></path>
+        </svg>
+        <span class="visually-hidden">Settings</span>
+      </button>
+    </section>
+    <section class="taskbar-tasks running" id="running-list" aria-label="Running surfaces">
+      <span class="dock-item muted">loading surfaces</span>
+    </section>
+    <details class="wm-menu" id="wm-menu">
+      <summary>WM</summary>
+      <section class="wm-controls" id="wm-controls" aria-label="Window controls">
+        <span class="dock-item surface-meta target-meta" id="target-label">no target</span>
+        <button class="wm-control" id="focus-prev-button" type="button">Prev</button>
+        <button class="wm-control" id="focus-next-button" type="button">Next</button>
+        <button class="wm-control primary" id="promote-button" type="button">Master</button>
+        <button class="wm-control" id="move-zone-button" type="button">Move</button>
+        <button class="wm-control" id="float-button" type="button">Float</button>
+        <button class="wm-control" id="fullscreen-button" type="button">Full</button>
+        <button class="wm-control" id="maximize-button" type="button">Max</button>
+        <button class="wm-control" id="minimize-button" type="button">Min</button>
+        <button class="wm-control" id="close-focus-button" type="button">Close</button>
+        <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
+        <button class="wm-control" id="rule-button" type="button">Rule</button>
+        <button class="wm-control" id="master-count-button" type="button">M1</button>
+        <button class="wm-control" id="master-ratio-button" type="button">50%</button>
+        <button class="wm-control" id="gaps-button" type="button">Gap0</button>
+        <button class="wm-control" id="smart-gaps-button" type="button">Smart</button>
+        <span class="dock-item surface-meta wm-rule" id="layout-rule-label">master_stack</span>
+      </section>
+    </details>
+    <section class="workspace-strip" id="workspace-list" aria-label="Workspaces">
+      <button class="workspace active" id="workspace-label" type="button" data-workspace-id="workspace-1">1</button>
+    </section>
+    <button class="layout-status" id="layout-mode-button" type="button">freeform</button>
+    <section class="taskbar-tray" aria-label="Status tray">
+      <span class="status" id="status-label">starting</span>
+      <time class="clock" id="clock-label">--:--</time>
+    </section>
+  </main>
+  <script>
+    const state = {
+      apps: [],
+      surfaces: [],
+      layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
+      workspaceState: {currentWorkspaceId: "workspace-1", currentOutputId: "", workspaces: []},
+      workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
+      feedback: {label: "", className: "", until: 0},
+      surface: "__AGORA_SURFACE__"
+    };
+    const unsupportedSurfaceActions = new Set([]);
+
+    function text(value, fallback) {
+      const trimmed = String(value || "").trim();
+      return trimmed || fallback;
+    }
+
+    function item(label, className) {
+      const element = document.createElement("span");
+      element.className = "dock-item" + (className ? " " + className : "");
+      element.textContent = label;
+      element.title = label;
+      return element;
+    }
+
+    function button(label, className, onClick) {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = className;
+      element.textContent = label;
+      element.title = label;
+      element.addEventListener("click", onClick);
+      return element;
+    }
+
+    function renderList(id, emptyLabel, values, mapper, limit) {
+      const target = document.getElementById(id);
+      target.replaceChildren();
+      if (!values.length) {
+        target.appendChild(item(emptyLabel, "muted"));
+        return;
+      }
+      values.slice(0, limit || 4).forEach((value) => target.appendChild(mapper(value)));
+    }
+
+    function launcherSurface() {
+      return state.surfaces.find((surface) =>
+        surface.mapped && surface.appId === "io.agorade.ShellLauncher"
+      );
+    }
+
+    function layoutSurface(surfaceId) {
+      const surfaces = Array.isArray(state.layout.surfaces) ? state.layout.surfaces : [];
+      return surfaces.find((surface) => surface.surfaceId === surfaceId);
+    }
+
+    function layoutSurfaces() {
+      return Array.isArray(state.layout.surfaces) ? state.layout.surfaces : [];
+    }
+
+    function manageableLayoutSurfaces() {
+      return layoutSurfaces()
+        .filter((surface) => surface.visible !== false && surface.participation !== "transient")
+        .sort((left, right) => Number(left.order || 0) - Number(right.order || 0));
+    }
+
+    function focusedLayoutSurface() {
+      return manageableLayoutSurfaces().find((surface) => surface.focused) || manageableLayoutSurfaces()[0] || null;
+    }
+
+    function targetSurface() {
+      const layout = focusedLayoutSurface();
+      if (layout) {
+        const surface = state.surfaces.find((candidate) => candidate.id === layout.surfaceId) || {};
+        return {
+          ...layout,
+          fullscreen: Boolean(surface.fullscreen),
+          maximized: Boolean(surface.maximized),
+          minimized: Boolean(surface.minimized)
+        };
+      }
+      const surface = state.surfaces.find((candidate) => isTaskbarWorkSurface(candidate) && candidate.focused) ||
+        state.surfaces.find((candidate) => isTaskbarWorkSurface(candidate));
+      return surface ? {
+        surfaceId: surface.id,
+        appId: surface.appId,
+        title: surface.title,
+        zoneId: surface.zoneId,
+        focused: surface.focused,
+        floating: surface.layoutRole === "floating",
+        fullscreen: Boolean(surface.fullscreen),
+        maximized: Boolean(surface.maximized),
+        minimized: Boolean(surface.minimized)
+      } : null;
+    }
+
+    function activeLayoutWorkspace() {
+      const workspaces = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
+      const currentId = text(state.workspaceState.currentWorkspaceId, "");
+      return (currentId ? workspaces.find((workspace) => workspace.id === currentId) : null) ||
+        workspaces.find((workspace) => workspace.active) ||
+        workspaces.find((workspace) => workspace.id === state.workspace.id) ||
+        workspaces[0] ||
+        {zones: []};
+    }
+
+    function workspaceNumber(workspaceId) {
+      const match = String(workspaceId || "").match(/^workspace-(d+)$/);
+      return match ? Number(match[1]) : 0;
+    }
+
+    function allWorkspaces() {
+      const fromLayout = Array.isArray(state.layout.workspaces) ? state.layout.workspaces : [];
+      const fromWorkspaceState = Array.isArray(state.workspaceState.workspaces) ? state.workspaceState.workspaces : [];
+      const fromState = state.workspace && state.workspace.id ? [state.workspace] : [];
+      const byId = new Map();
+      fromLayout.concat(fromWorkspaceState, fromState).forEach((workspace) => {
+        const id = text(workspace && workspace.id, "");
+        if (!id || byId.has(id)) {
+          return;
+        }
+        byId.set(id, workspace);
+      });
+      if (!byId.size) {
+        byId.set("workspace-1", {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0});
+      }
+      return Array.from(byId.values()).sort((left, right) => workspaceNumber(left.id) - workspaceNumber(right.id));
+    }
+
+    function activeWorkspaceId() {
+      return text(state.workspaceState.currentWorkspaceId, text(state.workspace.id, text(activeLayoutWorkspace().id, "workspace-1")));
+    }
+
+    function workspaceById(workspaceId) {
+      return allWorkspaces().find((workspace) => text(workspace.id, "") === workspaceId) || null;
+    }
+
+    function workspaceOutputId(workspace) {
+      return text(workspace && workspace.outputId, "");
+    }
+
+    function workspaceOutputShortName(outputId) {
+      const value = text(outputId, "");
+      if (!value) {
+        return "";
+      }
+      const parts = value.split("-");
+      if (parts.length >= 3) {
+        return parts[0][0] + parts[1][0] + parts[parts.length - 1];
+      }
+      return value.length > 5 ? value.slice(0, 5) : value;
+    }
+
+    function workspaceShortName(workspace) {
+      const id = text(workspace && workspace.id, "workspace-1");
+      const number = workspaceNumber(id);
+      return number ? String(number) : text(workspace && workspace.name, id);
+    }
+
+    function workspaceSurfaceCount(workspace) {
+      if (Number.isFinite(Number(workspace && workspace.surfaceCount))) {
+        return Number(workspace.surfaceCount);
+      }
+      const order = Array.isArray(workspace && workspace.surfaceOrder) ? workspace.surfaceOrder : [];
+      return order.length;
+    }
+
+    function nextWorkspaceId() {
+      const workspaces = allWorkspaces();
+      const ids = workspaces.map((workspace) => text(workspace.id, "")).filter(Boolean);
+      const activeId = activeWorkspaceId();
+      if (ids.length <= 1) {
+        const nextNumber = Math.max(2, workspaceNumber(activeId) + 1);
+        return "workspace-" + nextNumber;
+      }
+      const index = ids.indexOf(activeId);
+      return ids[(Math.max(index, 0) + 1) % ids.length];
+    }
+
+    function surfaceWorkspaceId(surface) {
+      const layout = layoutSurface(surface.id) || {};
+      return text(layout.workspaceId, text(surface.workspaceId, activeWorkspaceId()));
+    }
+
+    function lowerText(value) {
+      return text(value, "").toLowerCase();
+    }
+
+    function createIcon(className, label, iconUrl, title) {
+      const icon = document.createElement("span");
+      icon.className = className;
+      icon.title = title || "";
+      const fallback = document.createElement("span");
+      fallback.className = "icon-fallback";
+      fallback.textContent = label;
+      if (iconUrl) {
+        icon.classList.add("has-image");
+        const image = document.createElement("img");
+        image.src = iconUrl;
+        image.alt = "";
+        image.decoding = "async";
+        image.loading = "lazy";
+        image.addEventListener("error", () => icon.classList.add("icon-load-failed"), {once: true});
+        icon.appendChild(image);
+      }
+      icon.appendChild(fallback);
+      return icon;
+    }
+
+    function isShellManagedSurface(surface) {
+      const appId = text(surface && surface.appId, "");
+      return appId.indexOf("io.agorade.Shell") === 0;
+    }
+
+    function isTransientSurfaceRole(value) {
+      const role = lowerText(value);
+      return ["dialog", "modal", "popup", "popover", "menu", "tooltip", "transient", "unmanaged"]
+        .some((marker) => role === marker || role.indexOf(marker) >= 0);
+    }
+
+    function surfacePolicyClass(surface, layout) {
+      return lowerText(text(layout && layout.policyClass, text(surface && surface.policyClass, "")));
+    }
+
+    function isTaskbarTransientPolicy(policyClass) {
+      return ["transient", "shell_chrome", "no_parent", "stale", "unsupported"]
+        .some((policy) => policy === policyClass);
+    }
+
+    function isTaskbarWorkSurface(surface) {
+      if (!surface || !surface.mapped) {
+        return false;
+      }
+      const layout = layoutSurface(surface.id) || {};
+      if (isTaskbarTransientPolicy(surfacePolicyClass(surface, layout))) {
+        return false;
+      }
+      if (surface.surfaceKind === "layer_shell" || isShellManagedSurface(surface)) {
+        return false;
+      }
+      if (isTransientSurfaceRole(surface.role) ||
+        isTransientSurfaceRole(surface.layoutRole) ||
+        isTransientSurfaceRole(layout.role) ||
+        isTransientSurfaceRole(layout.participation)) {
+        return false;
+      }
+      const zone = lowerText(text(layout.zoneId, surface.zoneId));
+      if (zone === "chrome" || zone === "transient") {
+        return false;
+      }
+      return surfaceWorkspaceId(surface) === activeWorkspaceId();
+    }
+
+    function surfacePolicyLabel(surface, layout) {
+      const policy = text(layout && layout.policyClass, text(surface && surface.policyClass, "work"));
+      const reason = text(layout && layout.policyReason, text(surface && surface.policyReason, ""));
+      return reason ? policy + " / " + reason : policy;
+    }
+
+    function appIconLabel(surface, layout) {
+      const app = catalogAppForSurface(surface, layout);
+      if (app) {
+        return text(app.iconLabel, text(app.name, text(app.id, "?")).slice(0, 1).toUpperCase());
+      }
+      const source = text(surface.appId, text(layout.appId, text(surface.title, surface.id)));
+      return source.slice(0, 1).toUpperCase();
+    }
+
+    function normalizeAppKey(value) {
+      return text(value, "").toLowerCase().replace(/.desktop$/, "");
+    }
+
+    function catalogAppForSurface(surface, layout) {
+      const keys = new Set([
+        normalizeAppKey(surface && surface.appId),
+        normalizeAppKey(layout && layout.appId),
+        normalizeAppKey(surface && surface.id),
+        normalizeAppKey(surface && surface.title)
+      ]);
+      return state.apps.find((app) => {
+        const appKeys = [
+          normalizeAppKey(app.id),
+          normalizeAppKey(app.name),
+          normalizeAppKey(app.startupWMClass),
+          normalizeAppKey(app.iconRef),
+          normalizeAppKey(app.icon)
+        ];
+        return appKeys.some((key) => key && keys.has(key));
+      }) || null;
+    }
+
+    function appIconURL(surface, layout) {
+      const app = catalogAppForSurface(surface, layout);
+      return app ? text(app.iconUrl, "") : "";
+    }
+
+    function workspaceZones() {
+      const zones = Array.isArray(activeLayoutWorkspace().zones) ? activeLayoutWorkspace().zones : [];
+      const zoneIds = zones
+        .filter((zone) => text(zone.id, "") && zone.kind !== "chrome")
+        .map((zone) => zone.id);
+      return zoneIds.length ? zoneIds : ["primary", "secondary"];
+    }
+
+    function nextLayoutMode(mode) {
+      const modes = ["freeform", "zones", "columns"];
+      const current = modes.indexOf(mode);
+      return modes[(current + 1) % modes.length];
+    }
+
+    function nextZone(zoneId) {
+      const zones = workspaceZones();
+      const index = zones.indexOf(zoneId);
+      return zones[(index + 1) % zones.length];
+    }
+
+    function geometryLabel(geometry) {
+      if (!geometry || geometry.width <= 0 || geometry.height <= 0) {
+        return "";
+      }
+      return geometry.width + "x" + geometry.height + "@" + geometry.x + "," + geometry.y;
+    }
+
+    function surfaceAreaLabel(layout, zone) {
+      const area = geometryLabel(layout.geometry);
+      return area ? zone + " " + area : zone;
+    }
+
+    function layoutSettingsLabel() {
+      const settings = state.layout.settings || {};
+      const gaps = settings.gaps || {};
+      const gapLabel = [gaps.outerHorizontal, gaps.outerVertical, gaps.innerHorizontal, gaps.innerVertical]
+        .filter((value) => Number(value || 0) > 0)
+        .length ? " gaps" : "";
+      const master = settings.masterCount ? " n" + settings.masterCount : "";
+      const ratio = settings.masterRatio ? " " + Math.round(settings.masterRatio * 100) + "%" : "";
+      return text(settings.rule, "master_stack") + master + ratio + gapLabel;
+    }
+
+    function normalizedSettings() {
+      const settings = state.layout.settings || {};
+      const gaps = settings.gaps || {};
+      return {
+        rule: text(settings.rule, "master_stack"),
+        mode: text(settings.mode, text(state.layout.mode, "zones")),
+        gaps: {
+          outerHorizontal: Math.max(0, Number(gaps.outerHorizontal || 0)),
+          outerVertical: Math.max(0, Number(gaps.outerVertical || 0)),
+          innerHorizontal: Math.max(0, Number(gaps.innerHorizontal || 0)),
+          innerVertical: Math.max(0, Number(gaps.innerVertical || 0))
+        },
+        masterCount: Math.max(1, Number(settings.masterCount || 1)),
+        masterRatio: Math.min(0.9, Math.max(0.1, Number(settings.masterRatio || 0.5))),
+        smartGaps: settings.smartGaps !== false
+      };
+    }
+
+    function nextLayoutRule(rule) {
+      const rules = ["master_stack", "zones", "dwindle"];
+      const current = rules.indexOf(rule);
+      return rules[(current + 1) % rules.length];
+    }
+
+    function nextMasterCount(count) {
+      return count >= 3 ? 1 : count + 1;
+    }
+
+    function nextMasterRatio(ratio) {
+      const rounded = Math.round(ratio * 10) / 10;
+      return rounded >= 0.8 ? 0.4 : Math.round((rounded + 0.1) * 10) / 10;
+    }
+
+    function nextGapSet(gaps) {
+      const values = [gaps.outerHorizontal, gaps.outerVertical, gaps.innerHorizontal, gaps.innerVertical];
+      const current = Math.max.apply(null, values.map((value) => Number(value || 0)));
+      const next = current >= 16 ? 0 : current + 4;
+      return {
+        outerHorizontal: next,
+        outerVertical: next,
+        innerHorizontal: next,
+        innerVertical: next
+      };
+    }
+
+    function setFeedback(label, className) {
+      state.feedback = {
+        label,
+        className: className || "ready",
+        until: Date.now() + 3500
+      };
+    }
+
+    function statusFromFeedback() {
+      if (state.feedback.label && Date.now() < state.feedback.until) {
+        return state.feedback;
+      }
+      return null;
+    }
+
+    function actionStatus(result) {
+      return text(result && (result.status || result.decision), "accepted");
+    }
+
+    function setControlDisabled(id, disabled) {
+      const element = document.getElementById(id);
+      if (element) {
+        element.disabled = disabled;
+        element.setAttribute("aria-disabled", String(disabled));
+      }
+    }
+
+    function renderWMControls() {
+      const target = targetSurface();
+      const hasTarget = Boolean(target && target.surfaceId);
+      [
+        "focus-prev-button",
+        "focus-next-button",
+        "promote-button",
+        "move-zone-button",
+        "float-button",
+        "fullscreen-button",
+        "maximize-button",
+        "minimize-button",
+        "close-focus-button"
+      ].forEach((id) => setControlDisabled(id, !hasTarget));
+      const targetLabel = document.getElementById("target-label");
+      if (targetLabel) {
+        const targetName = target ? text(target.title, text(target.appId, target.surfaceId)) : "no target";
+        const targetZone = target ? text(target.zoneId, "primary") : "";
+        targetLabel.textContent = target ? targetName : "no target";
+        targetLabel.title = target ? targetName + " / " + targetZone + " / " + geometryLabel(target.geometry) : "no target";
+      }
+      const floatButton = document.getElementById("float-button");
+      if (floatButton) {
+        floatButton.textContent = target && target.floating ? "Tile" : "Float";
+        floatButton.title = target ? "Toggle floating for " + text(target.title, text(target.appId, target.surfaceId)) : "Toggle floating";
+      }
+      const moveButton = document.getElementById("move-zone-button");
+      if (moveButton && target) {
+        moveButton.title = "Move " + text(target.title, target.surfaceId) + " to " + nextZone(text(target.zoneId, "primary"));
+      }
+      const fullscreenButton = document.getElementById("fullscreen-button");
+      if (fullscreenButton) {
+        fullscreenButton.textContent = target && target.fullscreen ? "Unfull" : "Full";
+      }
+      const maximizeButton = document.getElementById("maximize-button");
+      if (maximizeButton) {
+        maximizeButton.textContent = target && target.maximized ? "Unmax" : "Max";
+      }
+      const ruleLabel = document.getElementById("layout-rule-label");
+      const settings = state.layout.settings || {};
+      ruleLabel.textContent = layoutSettingsLabel();
+      ruleLabel.title = "rule " + text(settings.rule, "master_stack") +
+        " / mode " + text(state.layout.mode, "freeform") +
+        " / revision " + Number(state.layout.revision || 0);
+      const normalized = normalizedSettings();
+      const ruleButton = document.getElementById("rule-button");
+      ruleButton.textContent = text(normalized.rule, "master_stack").replace("_stack", "");
+      ruleButton.title = "rule " + normalized.rule;
+      const masterCountButton = document.getElementById("master-count-button");
+      masterCountButton.textContent = "M" + normalized.masterCount;
+      masterCountButton.title = "master count " + normalized.masterCount;
+      const masterRatioButton = document.getElementById("master-ratio-button");
+      masterRatioButton.textContent = Math.round(normalized.masterRatio * 100) + "%";
+      masterRatioButton.title = "master ratio " + normalized.masterRatio.toFixed(2);
+      const gapsButton = document.getElementById("gaps-button");
+      const gapValue = Math.max(normalized.gaps.outerHorizontal, normalized.gaps.outerVertical, normalized.gaps.innerHorizontal, normalized.gaps.innerVertical);
+      gapsButton.textContent = "Gap" + gapValue;
+      gapsButton.title = "gaps " + normalized.gaps.outerHorizontal + "/" + normalized.gaps.outerVertical + "/" + normalized.gaps.innerHorizontal + "/" + normalized.gaps.innerVertical;
+      const smartGapsButton = document.getElementById("smart-gaps-button");
+      smartGapsButton.textContent = normalized.smartGaps ? "Smart" : "Gaps";
+      smartGapsButton.title = normalized.smartGaps ? "smart gaps on" : "smart gaps off";
+    }
+
+    function render() {
+      const launcher = launcherSurface();
+      const showingApps = Boolean(launcher);
+      document.querySelector(".panel").classList.toggle("apps-open", showingApps);
+      const appsButton = document.getElementById("apps-button");
+      appsButton.textContent = "Start";
+      appsButton.title = showingApps ? "Close applications" : state.apps.length + " apps";
+      appsButton.setAttribute("aria-pressed", showingApps ? "true" : "false");
+      renderWorkspaces();
+      const workSurfaces = state.surfaces.filter(isTaskbarWorkSurface);
+      renderList("running-list", "no running apps", workSurfaces, (surface) => {
+        const group = document.createElement("span");
+        group.className = "surface-actions";
+        const layout = layoutSurface(surface.id) || {};
+        const zone = text(layout.zoneId, text(surface.zoneId, "primary"));
+        const taskLabel = text(surface.title, text(surface.appId, surface.id));
+        const minimized = Boolean(surface.minimized);
+        const focusButton = button(
+          "",
+          "task-button" +
+            (surface.focused || layout.focused ? " focused" : "") +
+            (minimized ? " minimized" : ""),
+          () => activateTaskSurface(surface)
+        );
+        const icon = createIcon("task-icon", appIconLabel(surface, layout), appIconURL(surface, layout), text(surface.appId, text(layout.appId, "")));
+        const name = document.createElement("span");
+        name.className = "task-label";
+        name.textContent = taskLabel;
+        focusButton.appendChild(icon);
+        focusButton.appendChild(name);
+        const area = surfaceAreaLabel(layout, zone);
+        focusButton.title = taskLabel + " / " + area + " / " + surfacePolicyLabel(surface, layout) + (minimized ? " / click to restore" : "");
+        group.appendChild(focusButton);
+        return group;
+      }, 8);
+      const status = document.getElementById("status-label");
+      const feedback = statusFromFeedback();
+      if (feedback) {
+        status.textContent = feedback.label;
+        status.className = "status " + feedback.className;
+      } else if (launcher) {
+        status.textContent = "apps open";
+        status.className = "status ready";
+      } else {
+        status.textContent = workSurfaces.length ? workSurfaces.length + " running" : "ready";
+        status.className = "status " + (workSurfaces.length ? "ready" : "warn");
+      }
+      const layoutMode = text(state.layout.mode, "freeform");
+      const layoutStatus = document.getElementById("layout-mode-button");
+      layoutStatus.textContent = layoutMode + (state.layout.revision ? " r" + state.layout.revision : "");
+      layoutStatus.title = layoutSettingsLabel() + " / zones: " + workspaceZones().join(" / ");
+      renderWMControls();
+    }
+
+    function renderWorkspaces() {
+      const target = document.getElementById("workspace-list");
+      const activeId = activeWorkspaceId();
+      const workspaces = allWorkspaces();
+      const outputIds = new Set(workspaces.map(workspaceOutputId).filter(Boolean));
+      const showOutputs = outputIds.size > 1;
+      target.replaceChildren();
+      workspaces.forEach((workspace) => {
+        const workspaceId = text(workspace.id, "workspace-1");
+        const outputId = workspaceOutputId(workspace);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "workspace" + (workspaceId === activeId || workspace.active ? " active" : "");
+        button.dataset.workspaceId = workspaceId;
+        if (outputId) {
+          button.dataset.outputId = outputId;
+        }
+        if (workspaceId === activeId) {
+          button.id = "workspace-label";
+        }
+        const label = document.createElement("span");
+        label.textContent = workspaceShortName(workspace);
+        button.appendChild(label);
+        if (showOutputs && outputId) {
+          const output = document.createElement("span");
+          output.className = "workspace-output";
+          output.textContent = workspaceOutputShortName(outputId);
+          button.appendChild(output);
+        }
+        const count = workspaceSurfaceCount(workspace);
+        if (count) {
+          const badge = document.createElement("span");
+          badge.className = "workspace-count";
+          badge.textContent = String(count);
+          button.appendChild(badge);
+        }
+        button.title = workspaceId + (outputId ? " / " + outputId : "") + (count ? " / " + count + " surfaces" : "");
+        target.appendChild(button);
+      });
+      const nextButton = document.createElement("button");
+      nextButton.type = "button";
+      nextButton.className = "workspace";
+      nextButton.dataset.workspaceId = nextWorkspaceId();
+      nextButton.textContent = "+";
+      nextButton.title = nextWorkspaceId();
+      target.appendChild(nextButton);
+    }
+
+    async function loadJSON(path) {
+      const response = await fetch(path, {cache: "no-store"});
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
+    async function refresh() {
+      try {
+        const [catalog, surfaces, workspaces, layout] = await Promise.all([
+          loadJSON("/api/catalog/apps"),
+          loadJSON("/api/surfaces"),
+          loadJSON("/api/workspaces"),
+          loadJSON("/api/layout")
+        ]);
+        state.apps = Array.isArray(catalog.apps) ? catalog.apps : [];
+        state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
+        state.layout = layout.layout || state.layout;
+        if (Array.isArray(workspaces.workspaces) && workspaces.workspaces.length) {
+          state.workspaceState = {
+            currentWorkspaceId: text(workspaces.currentWorkspaceId, ""),
+            currentOutputId: text(workspaces.currentOutputId, ""),
+            workspaces: workspaces.workspaces
+          };
+          state.workspace = workspaces.workspaces.find((workspace) => workspace.id === state.workspaceState.currentWorkspaceId) ||
+            workspaces.workspaces.find((workspace) => workspace.active) ||
+            workspaces.workspaces[0];
+        }
+        render();
+      } catch (error) {
+        const status = document.getElementById("status-label");
+        status.textContent = "offline";
+        status.className = "status warn";
+      }
+    }
+
+    async function postJSON(path, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        let payload = {};
+        try {
+          payload = await response.json();
+        } catch (error) {
+          payload = {};
+        }
+        const message = payload.error || path + " returned " + response.status;
+        const error = new Error(message);
+        error.errorClass = payload.errorClass || "";
+        error.status = response.status;
+        throw error;
+      }
+      return response.json();
+    }
+
+    async function launchApp(appId) {
+      const status = document.getElementById("status-label");
+      status.textContent = "launching";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/catalog/launch", {appId});
+        await refresh();
+        setFeedback(actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "launch failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function activateTaskSurface(surface) {
+      if (!surface || !surface.id) {
+        return;
+      }
+      const status = document.getElementById("status-label");
+      status.textContent = surface.minimized ? "restoring" : "focus";
+      status.className = "status ready";
+      try {
+        if (surface.minimized) {
+          await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "minimize", enabled: false});
+        }
+        const result = await postJSON("/api/surfaces/action", {surfaceId: surface.id, action: "focus"});
+        await refresh();
+        setFeedback((surface.minimized ? "restore " : "focus ") + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = surface.minimized ? "restore failed" : "focus failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function actOnSurface(surfaceId, action, enabled) {
+      const status = document.getElementById("status-label");
+      status.textContent = action;
+      status.className = "status ready";
+      try {
+        const body = {surfaceId, action};
+        if (typeof enabled === "boolean") {
+          body.enabled = enabled;
+        }
+        const result = await postJSON("/api/surfaces/action", body);
+        await refresh();
+        setFeedback(action + " " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = error.errorClass === "backend_unsupported" ? action + " unsupported" : action + " failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function assignZone(surfaceId, zoneId) {
+      const status = document.getElementById("status-label");
+      status.textContent = "zone";
+      status.className = "status ready";
+      try {
+        const target = layoutSurface(surfaceId) || {};
+        const result = await postJSON("/api/layout/action", {
+          surfaceId,
+          workspaceId: text(target.workspaceId, state.workspace.id),
+          zoneId,
+          action: "assignZone"
+        });
+        await refresh();
+        setFeedback("zone " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "zone unsupported";
+        status.className = "status warn";
+      }
+    }
+
+    async function setLayoutMode(mode) {
+      const status = document.getElementById("status-label");
+      status.textContent = mode;
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {mode, action: "setMode"});
+        await refresh();
+        setFeedback("layout " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "layout unsupported";
+        status.className = "status warn";
+      }
+    }
+
+    async function setLayoutSettings(patch) {
+      const status = document.getElementById("status-label");
+      const current = normalizedSettings();
+      const settings = Object.assign({}, current, patch || {});
+      settings.gaps = Object.assign({}, current.gaps, (patch && patch.gaps) || {});
+      status.textContent = "settings";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {action: "setSettings", settings});
+        await refresh();
+        setFeedback("settings " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "settings unsupported";
+        status.className = "status warn";
+      }
+    }
+
+    async function cycleLayoutRule() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({rule: nextLayoutRule(settings.rule)});
+    }
+
+    async function cycleMasterCount() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({masterCount: nextMasterCount(settings.masterCount)});
+    }
+
+    async function cycleMasterRatio() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({masterRatio: nextMasterRatio(settings.masterRatio)});
+    }
+
+    async function cycleGaps() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({gaps: nextGapSet(settings.gaps)});
+    }
+
+    async function toggleSmartGaps() {
+      const settings = normalizedSettings();
+      await setLayoutSettings({smartGaps: !settings.smartGaps});
+    }
+
+    async function activateWorkspace(workspaceId, outputId) {
+      const status = document.getElementById("status-label");
+      status.textContent = "workspace";
+      status.className = "status ready";
+      try {
+        const targetWorkspaceId = text(workspaceId, nextWorkspaceId());
+        if (state.layout.mode !== "zones") {
+          await setLayoutMode("zones");
+        }
+        const targetOutputId = text(outputId, workspaceOutputId(workspaceById(targetWorkspaceId)));
+        const body = {workspaceId: targetWorkspaceId, action: "activate"};
+        if (targetOutputId) {
+          body.outputId = targetOutputId;
+        }
+        const result = await postJSON("/api/workspaces/action", body);
+        await refresh();
+        setFeedback(text(result.currentWorkspaceId, targetWorkspaceId), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "workspace failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function focusRelative(delta) {
+      const surfaces = manageableLayoutSurfaces();
+      const target = targetSurface();
+      if (!surfaces.length || !target) {
+        return;
+      }
+      const current = surfaces.findIndex((surface) => surface.surfaceId === target.surfaceId);
+      const next = surfaces[(Math.max(current, 0) + delta + surfaces.length) % surfaces.length];
+      if (next) {
+        await promoteSurface(next.surfaceId);
+      }
+    }
+
+    async function promoteSurface(surfaceId) {
+      const status = document.getElementById("status-label");
+      status.textContent = "promote";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {surfaceId, action: "promote"});
+        await refresh();
+        setFeedback("promote " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "promote failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function promoteTarget() {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      await promoteSurface(target.surfaceId);
+    }
+
+    async function moveTargetToNextZone() {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      await assignZone(target.surfaceId, nextZone(text(target.zoneId, "primary")));
+    }
+
+    async function toggleTargetFloating() {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      const floating = !Boolean(target.floating);
+      const status = document.getElementById("status-label");
+      status.textContent = floating ? "floating" : "tiling";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {surfaceId: target.surfaceId, floating, action: "setFloating"});
+        await refresh();
+        setFeedback((floating ? "float " : "tile ") + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "float failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function actOnTarget(action, enabled) {
+      if (unsupportedSurfaceActions.has(action)) {
+        const status = document.getElementById("status-label");
+        status.textContent = action + " unsupported";
+        status.className = "status warn";
+        return;
+      }
+      const target = targetSurface();
+      if (target) {
+        await actOnSurface(target.surfaceId, action, enabled);
+      }
+    }
+
+    function toggleTargetState(action, field) {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      actOnSurface(target.surfaceId, action, !Boolean(target[field]));
+    }
+
+    async function resetLayout() {
+      const mode = text(state.layout.mode, "freeform");
+      await setLayoutMode(mode === "freeform" ? "zones" : mode);
+    }
+
+    async function toggleApps() {
+      const status = document.getElementById("status-label");
+      const launcher = launcherSurface();
+      if (launcher) {
+        status.textContent = "apps";
+        status.className = "status ready";
+        try {
+          await postJSON("/api/surfaces/action", {surfaceId: launcher.id, action: "close"});
+          await refresh();
+        } catch (error) {
+          status.textContent = "close failed";
+          status.className = "status warn";
+        }
+        return;
+      }
+      await launchApp("shell-launcher");
+    }
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("clock-label").textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    document.getElementById("apps-button").addEventListener("click", toggleApps);
+    document.getElementById("refresh-button").addEventListener("click", refresh);
+    document.getElementById("operator-button").addEventListener("click", () => launchApp("shell-status"));
+    document.getElementById("settings-button").addEventListener("click", () => launchApp("shell-settings"));
+    document.getElementById("workspace-list").addEventListener("click", (event) => {
+      const target = event.target.closest("button[data-workspace-id]");
+      if (target) {
+        activateWorkspace(target.dataset.workspaceId, target.dataset.outputId);
+      }
+    });
+    document.getElementById("layout-mode-button").addEventListener("click", () => setLayoutMode(nextLayoutMode(text(state.layout.mode, "freeform"))));
+    document.getElementById("focus-prev-button").addEventListener("click", () => focusRelative(-1));
+    document.getElementById("focus-next-button").addEventListener("click", () => focusRelative(1));
+    document.getElementById("promote-button").addEventListener("click", promoteTarget);
+    document.getElementById("move-zone-button").addEventListener("click", moveTargetToNextZone);
+    document.getElementById("float-button").addEventListener("click", toggleTargetFloating);
+    document.getElementById("fullscreen-button").addEventListener("click", () => toggleTargetState("fullscreen", "fullscreen"));
+    document.getElementById("maximize-button").addEventListener("click", () => toggleTargetState("maximize", "maximized"));
+    document.getElementById("minimize-button").addEventListener("click", () => actOnTarget("minimize"));
+    document.getElementById("close-focus-button").addEventListener("click", () => actOnTarget("close"));
+    document.getElementById("reset-layout-button").addEventListener("click", resetLayout);
+    document.getElementById("rule-button").addEventListener("click", cycleLayoutRule);
+    document.getElementById("master-count-button").addEventListener("click", cycleMasterCount);
+    document.getElementById("master-ratio-button").addEventListener("click", cycleMasterRatio);
+    document.getElementById("gaps-button").addEventListener("click", cycleGaps);
+    document.getElementById("smart-gaps-button").addEventListener("click", toggleSmartGaps);
+    updateClock();
+    refresh();
+    setInterval(updateClock, 30000);
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
