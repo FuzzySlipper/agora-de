@@ -35,6 +35,9 @@ should remain a live evidence action rather than a CI gate.
   and final phases;
 - `events`: detailed launch, focus, popup, workspace, and restart actions;
 - `journals`: recent user shell and compositor bridge journal tails;
+- `journalAnalysis`: classified journal observations, including known benign
+  bridge client/plugin disconnect lines;
+- `memoryAnalysis`: per-process RSS deltas and threshold classification;
 - `evidencePackets`: optional physical output capture packets using the
   existing capture vocabulary;
 - `summary`: total pass/fail counts.
@@ -47,6 +50,7 @@ When `--artifact-dir` is supplied, the same run also writes:
 - `journal-user-panel.log`;
 - `journal-user-overlay.log`;
 - `journal-system-bridge.log`;
+- `analysis.json`;
 - `capture-packets.json` when capture evidence exists.
 
 ## Failure Boundaries
@@ -62,6 +66,17 @@ The soak suite separates product instability from harness cleanup issues:
   state still showed drift;
 - journal command failures are recorded as evidence but do not fail the soak by
   themselves, because journal access can vary by service/user scope.
+- bridge lines matching `write compositor response ... broken pipe`,
+  `decode plugin event ... use of closed network connection`,
+  `send policy_replace ... broken pipe`, or
+  `send input_context ... broken pipe` are classified as benign short-lived
+  client/plugin disconnect churn when product checks pass;
+- bridge journal lines containing panic/fatal/crash markers fail the
+  `journal-noise` check;
+- memory growth fails only when a run is at or above
+  `--memory-fail-min-cycles` and a process exceeds both
+  `--memory-rss-growth-threshold-kb` and
+  `--memory-rss-growth-threshold-percent`.
 
 The harness only closes surfaces that it opened during the current run. If a
 native launch reuses an existing surface, the runner restores/focuses it and
@@ -110,6 +125,9 @@ explicit when testing host-specific launch behavior:
   --app-id firefox.desktop \
   --expected-app-id firefox \
   --cycles 10 \
+  --memory-fail-min-cycles 5 \
+  --memory-rss-growth-threshold-kb 131072 \
+  --memory-rss-growth-threshold-percent 50 \
   --artifact-dir /tmp/agora-de-live-session-soak-long
 ```
 
@@ -152,7 +170,7 @@ Result:
   popup, Alacritty launch/focus/minimize/restore/close, state-drift cleanup,
   process samples, and journal tails.
 
-The run still showed recurring compositor bridge broken-pipe journal lines
-during short-lived client interactions, so task 4751 tracks classification or
-log reduction. Task 4752 tracks longer-run memory threshold interpretation on
-top of the raw process samples.
+Tasks 4751 and 4752 added durable interpretation for this evidence class:
+known bridge broken-pipe/client-disconnect lines are classified as benign
+client/plugin churn when product checks pass, and longer runs now emit
+thresholded process RSS deltas in `memoryAnalysis`.

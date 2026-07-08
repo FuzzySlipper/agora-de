@@ -320,9 +320,10 @@ native launch/focus/minimize/restore/close, launcher/status popup cycles,
 workspace activation, overlay route/surface health checks, optional explicit
 restart probes, process/memory sampling, surface/layout drift checks, journal
 tail collection, cleanup verification, and optional physical output capture.
-It is an intentional installed-session evidence harness, not a normal CI gate.
-For scenario design, artifact layout, and failure boundaries, see
-`docs/live-session-soak.md`.
+It also emits `journalAnalysis` for known bridge client/plugin disconnect noise
+and `memoryAnalysis` for thresholded RSS growth. It is an intentional
+installed-session evidence harness, not a normal CI gate. For scenario design,
+artifact layout, and failure boundaries, see `docs/live-session-soak.md`.
 
 Task 4571 live evidence ran the capture-backed one-cycle soak with
 `10 passed / 0 failed`. Artifacts were written under
@@ -332,7 +333,8 @@ The physical output capture at
 `/run/agent-os/artifacts/den-k8-live-session-soak-4571/output-capture-1783465385672928500-1/output-capture-1783465385672928500-1.png`
 classified as `capture_visible` with expected shell pixels. Recurring bridge
 broken-pipe journal noise and longer-run memory threshold interpretation were
-split to Den follow-up tasks 4751 and 4752.
+split to Den follow-up tasks 4751 and 4752, which then added explicit
+`journal-noise` and `memory-growth` checks plus `analysis.json` artifacts.
 
 Run the installed shell theme-switch smoke with capture evidence:
 

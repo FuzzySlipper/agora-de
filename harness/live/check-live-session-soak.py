@@ -27,6 +27,13 @@ SHELL_CHROME_APP_IDS = {
     *SHELL_POPUP_APP_IDS,
 }
 AGORA_PROCESS_NEEDLES = ("agora-de", "wayfire")
+BENIGN_BRIDGE_JOURNAL_PATTERNS = [
+    ("write compositor response", "broken pipe"),
+    ("decode plugin event", "use of closed network connection"),
+    ("send policy_replace", "broken pipe"),
+    ("send input_context", "broken pipe"),
+]
+SUSPICIOUS_BRIDGE_JOURNAL_MARKERS = ("panic", "fatal", "segmentation fault", "traceback")
 
 
 def main() -> int:
@@ -45,6 +52,9 @@ def main() -> int:
     parser.add_argument("--restart-command", default="", help="Optional explicit command to run once during the soak.")
     parser.add_argument("--restart-timeout-seconds", type=float, default=20.0)
     parser.add_argument("--journal-lines", type=int, default=80)
+    parser.add_argument("--memory-rss-growth-threshold-kb", type=int, default=131072)
+    parser.add_argument("--memory-rss-growth-threshold-percent", type=float, default=50.0)
+    parser.add_argument("--memory-fail-min-cycles", type=int, default=5)
     parser.add_argument("--artifact-dir", default="", help="Optional directory for summary, samples, journals, and capture packets.")
     args = parser.parse_args()
 
@@ -427,11 +437,21 @@ def collect_process_sample() -> list[dict]:
         haystack = f"{command} {args}"
         if not any(needle in haystack for needle in AGORA_PROCESS_NEEDLES):
             continue
+        if skip_process_sample(command, args):
+            continue
         try:
             processes.append({"pid": int(pid), "command": command, "rssKb": int(rss), "vszKb": int(vsz), "args": args[:220]})
         except ValueError:
             continue
     return processes
+
+
+def skip_process_sample(command: str, args: str) -> bool:
+    if command in {"runuser", "dbus-run-sessio"}:
+        return True
+    if "check-live-session-soak.py" in args:
+        return True
+    return False
 
 
 def capture_output(args: argparse.Namespace, checked_at: int, surface_ids: list[str]) -> tuple[dict, dict | None]:
@@ -478,6 +498,173 @@ def collect_journals(args: argparse.Namespace) -> dict:
     return journals
 
 
+def analyze_journals(journals: dict) -> tuple[dict, dict]:
+    analyses = {}
+    totals = {"benignClientDisconnects": 0, "suspiciousLines": 0, "journalReadFailures": 0}
+    for name, journal in journals.items():
+        text = "\n".join([journal.get("stdout", ""), journal.get("stderr", "")])
+        lines = [line for line in text.splitlines() if line.strip()]
+        benign = []
+        suspicious = []
+        for line in lines:
+            lower = line.lower()
+            if is_benign_bridge_disconnect(line):
+                benign.append(line)
+                continue
+            if name == "system-bridge" and any(marker in lower for marker in SUSPICIOUS_BRIDGE_JOURNAL_MARKERS):
+                suspicious.append(line)
+        if journal.get("returnCode", 0) != 0:
+            totals["journalReadFailures"] += 1
+        totals["benignClientDisconnects"] += len(benign)
+        totals["suspiciousLines"] += len(suspicious)
+        analyses[name] = {
+            "lineCount": len(lines),
+            "returnCode": journal.get("returnCode", -1),
+            "benignClientDisconnectCount": len(benign),
+            "benignClientDisconnectSamples": benign[-5:],
+            "suspiciousLineCount": len(suspicious),
+            "suspiciousLineSamples": suspicious[-5:],
+            "classification": "suspicious" if suspicious else "benign_or_unclassified",
+        }
+    check = passed(
+        "journal-noise",
+        "journal noise classified; known bridge disconnect lines are benign client/plugin churn",
+        **totals,
+    )
+    if totals["suspiciousLines"] > 0:
+        check = failed("journal-noise", "journal analysis found suspicious compositor bridge lines", **totals)
+    return {"units": analyses, "totals": totals}, check
+
+
+def is_benign_bridge_disconnect(line: str) -> bool:
+    lower = line.lower()
+    return any(all(part in lower for part in pattern) for pattern in BENIGN_BRIDGE_JOURNAL_PATTERNS)
+
+
+def analyze_memory(samples: list[dict], args: argparse.Namespace) -> tuple[dict, dict]:
+    process_samples: dict[str, list[dict]] = {}
+    for sample in samples:
+        phase = sample.get("phase", "")
+        sampled_at = sample.get("sampledAtUnixMillis", 0)
+        for process in sample.get("processes", []):
+            key = process_key(process)
+            process_samples.setdefault(key, []).append(
+                {
+                    "phase": phase,
+                    "sampledAtUnixMillis": sampled_at,
+                    "pid": process.get("pid", 0),
+                    "command": process.get("command", ""),
+                    "rssKb": process.get("rssKb", 0),
+                    "vszKb": process.get("vszKb", 0),
+                    "args": process.get("args", ""),
+                }
+            )
+
+    process_deltas = []
+    suspicious = []
+    for key, values in sorted(process_samples.items()):
+        ordered = sorted(values, key=lambda item: item.get("sampledAtUnixMillis", 0))
+        if len(ordered) < 2:
+            continue
+        first = ordered[0]
+        last = ordered[-1]
+        first_rss = int(first.get("rssKb") or 0)
+        last_rss = int(last.get("rssKb") or 0)
+        max_rss = max(int(item.get("rssKb") or 0) for item in ordered)
+        min_rss = min(int(item.get("rssKb") or 0) for item in ordered)
+        delta = last_rss - first_rss
+        max_delta = max_rss - first_rss
+        percent = round((delta / first_rss) * 100, 3) if first_rss > 0 else None
+        max_percent = round((max_delta / first_rss) * 100, 3) if first_rss > 0 else None
+        item = {
+            "processKey": key,
+            "command": last.get("command", ""),
+            "pid": last.get("pid", 0),
+            "sampleCount": len(ordered),
+            "firstPhase": first.get("phase", ""),
+            "lastPhase": last.get("phase", ""),
+            "firstRssKb": first_rss,
+            "lastRssKb": last_rss,
+            "minRssKb": min_rss,
+            "maxRssKb": max_rss,
+            "rssDeltaKb": delta,
+            "rssDeltaPercent": percent,
+            "maxRssDeltaKb": max_delta,
+            "maxRssDeltaPercent": max_percent,
+        }
+        process_deltas.append(item)
+        if exceeds_memory_threshold(item, args):
+            suspicious.append(item)
+
+    threshold = {
+        "rssGrowthThresholdKb": args.memory_rss_growth_threshold_kb,
+        "rssGrowthThresholdPercent": args.memory_rss_growth_threshold_percent,
+        "failMinCycles": args.memory_fail_min_cycles,
+        "cycles": args.cycles,
+    }
+    analysis = {
+        "threshold": threshold,
+        "processDeltas": process_deltas,
+        "suspiciousGrowth": suspicious,
+        "classification": "suspicious_growth" if suspicious else "within_thresholds",
+    }
+    if suspicious and args.cycles >= args.memory_fail_min_cycles:
+        check = failed(
+            "memory-growth",
+            "one or more long-run process RSS deltas exceeded soak thresholds",
+            threshold=threshold,
+            suspiciousGrowth=suspicious,
+        )
+    else:
+        detail = "process RSS deltas stayed within thresholds"
+        if suspicious:
+            detail = "process RSS deltas exceeded thresholds, but run is below failure cycle count"
+        check = passed(
+            "memory-growth",
+            detail,
+            threshold=threshold,
+            suspiciousGrowthCount=len(suspicious),
+            processCount=len(process_deltas),
+        )
+    return analysis, check
+
+
+def process_key(process: dict) -> str:
+    command = str(process.get("command") or "")
+    args = str(process.get("args") or "")
+    if command == "wayfire":
+        return "wayfire"
+    if "agora-de-compositor-bridge" in args:
+        return "agora-de-compositor-bridge"
+    if "agora-de-shellui" in args:
+        return "agora-de-shellui"
+    if "agora-de-shell-panel-supervisor" in args:
+        return f"agora-de-shell-panel-supervisor:{process.get('pid', 0)}"
+    if "agora-de-native-overlay" in args:
+        return "agora-de-native-overlay"
+    if "agora-de-gtk4-layer-shell-webview" in args:
+        if "surface=background" in args:
+            return "agora-de-shell-background-webview"
+        if "surface=dock" in args:
+            return "agora-de-shell-panel-webview"
+        if "surface=launcher" in args:
+            return f"agora-de-shell-launcher-popup:{process.get('pid', 0)}"
+        if "surface=operator" in args:
+            return f"agora-de-shell-status-popup:{process.get('pid', 0)}"
+        return f"agora-de-gtk4-layer-shell-webview:{process.get('pid', 0)}"
+    return f"{command}:{process.get('pid', 0)}"
+
+
+def exceeds_memory_threshold(item: dict, args: argparse.Namespace) -> bool:
+    max_delta = int(item.get("maxRssDeltaKb") or 0)
+    max_percent = item.get("maxRssDeltaPercent")
+    return (
+        max_delta >= args.memory_rss_growth_threshold_kb
+        and max_percent is not None
+        and float(max_percent) >= args.memory_rss_growth_threshold_percent
+    )
+
+
 def write_artifacts(args: argparse.Namespace, result: dict, samples: list[dict], journals: dict) -> list[str]:
     if not args.artifact_dir:
         return []
@@ -496,6 +683,20 @@ def write_artifacts(args: argparse.Namespace, result: dict, samples: list[dict],
         journal_path = artifact_dir / f"journal-{name}.log"
         journal_path.write_text(journal.get("stdout", "") + journal.get("stderr", ""), encoding="utf-8")
         paths.append(str(journal_path))
+    analysis_path = artifact_dir / "analysis.json"
+    analysis_path.write_text(
+        json.dumps(
+            {
+                "journalAnalysis": result.get("journalAnalysis", {}),
+                "memoryAnalysis": result.get("memoryAnalysis", {}),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    paths.append(str(analysis_path))
     packets = result.get("evidencePackets") or []
     if packets:
         packet_path = artifact_dir / "capture-packets.json"
@@ -664,6 +865,9 @@ def finish(
     evidence_packets: list[dict],
 ) -> int:
     journals = collect_journals(args)
+    journal_analysis, journal_check = analyze_journals(journals)
+    memory_analysis, memory_check = analyze_memory(samples, args)
+    checks.extend([journal_check, memory_check])
     failed_checks = [check for check in checks if check.get("status") == "fail"]
     result = {
         "schema": SCHEMA,
@@ -677,6 +881,8 @@ def finish(
         "samples": samples,
         "events": events,
         "evidencePackets": evidence_packets,
+        "journalAnalysis": journal_analysis,
+        "memoryAnalysis": memory_analysis,
         "journals": {
             name: {
                 "command": journal.get("command", []),
