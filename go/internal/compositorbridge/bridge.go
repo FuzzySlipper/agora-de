@@ -32,6 +32,8 @@ const (
 	MethodSetSurfaceFloating   = "set_surface_floating"
 	MethodAssignSurfaceZone    = "assign_surface_zone"
 	MethodPromoteSurface       = "promote_surface"
+	MethodMoveSurface          = "move_surface"
+	MethodSwapMasterSurface    = "swap_master_surface"
 	MethodMaximizeSurface      = "maximize_surface"
 	MethodMinimizeSurface      = "minimize_surface"
 	MethodFullscreenSurface    = "fullscreen_surface"
@@ -63,6 +65,7 @@ const (
 	DecisionAccepted           = "accepted"
 	ErrorSurfaceNotFound       = "surface_not_found"
 	ErrorSurfaceStale          = "surface_stale"
+	ErrorInvalidRequest        = "invalid_request"
 	ErrorCaptureDenied         = "capture_denied"
 	ErrorBackendUnsupported    = "backend_unsupported"
 	ErrorCompositorUnavailable = "compositor_unavailable"
@@ -101,6 +104,7 @@ type Bridge struct {
 	layoutSettingsPath      string
 	backendLayout           *LayoutState
 	promotedSurfaceID       string
+	surfaceOrder            []string
 	activeWorkspaceID       string
 	activeWorkspaceByOutput map[string]string
 	workspaces              map[string]workspaceRecord
@@ -300,6 +304,26 @@ func (bridge *Bridge) Dispatch(request Request) (json.RawMessage, error) {
 			return nil, err
 		}
 		response, err := bridge.PromoteSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodMoveSurface:
+		var body MoveSurfaceRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.MoveSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodSwapMasterSurface:
+		var body SurfaceLayoutActionRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.SwapMasterSurface(body)
 		if err != nil {
 			return nil, err
 		}

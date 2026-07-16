@@ -70,6 +70,38 @@ func TestRunLaunchRejectsCommandStringFlag(t *testing.T) {
 	}
 }
 
+func TestRunLaunchOpenPolicyAllowsNativeLaunchWithoutSessionToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	t.Setenv("AGORA_DE_AGENT_LAUNCH_POLICY", "open")
+	dir := t.TempDir()
+	launcher := filepath.Join(dir, "app")
+	if err := os.WriteFile(launcher, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatalf("write launcher: %v", err)
+	}
+	var stdout bytes.Buffer
+	if err := run([]string{"launch", "--arg", launcher}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatalf("open-policy native launch without session token error = %v", err)
+	}
+	var response launchResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Status != "launched_without_surface" || response.SessionTokenPresent {
+		t.Fatalf("open-policy response = %+v", response)
+	}
+}
+
+func TestRunLaunchGovernedPolicyRequiresSessionToken(t *testing.T) {
+	t.Setenv("AGORA_DE_AGENT_LAUNCH_POLICY", "governed")
+	err := run([]string{"launch", "--arg", "/bin/true"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "governed launch policy") {
+		t.Fatalf("governed-policy launch without session token error = %v, want governed rejection", err)
+	}
+}
+
+
 func TestRunLaunchWebviewURLStartsWithoutNativeSessionFlags(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture is Unix-specific")
@@ -663,4 +695,79 @@ func serveControlSocket(t *testing.T, handle func(controlRequest) controlRespons
 		<-done
 	})
 	return &requests
+}
+
+func TestRunInputRejectsUntrackedAndNonInjectableSurfaces(t *testing.T) {
+	original := listSurfacesFunc
+	t.Cleanup(func() { listSurfacesFunc = original })
+	listSurfacesFunc = func() ([]trackedSurface, error) {
+		var injectable trackedSurface
+		injectable.Surface.ID = "view-1"
+		injectable.Surface.AppID = "Alacritty"
+		injectable.Surface.SurfaceKind = "xdg_toplevel"
+		injectable.InputInjectable = true
+		var shell trackedSurface
+		shell.Surface.ID = "layer-shell-1"
+		shell.Surface.AppID = "io.agorade.ShellPanel"
+		shell.Surface.SurfaceKind = "layer_shell"
+		shell.InputInjectable = false
+		return []trackedSurface{injectable, shell}, nil
+	}
+	// untracked surface is rejected before the helper is consulted
+	if err := run([]string{"input", "pointer", "click", "--surface", "missing", "--x", "1", "--y", "1"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("input accepted untracked surface")
+	}
+	// shell / non-injectable surface is rejected
+	if err := run([]string{"input", "pointer", "click", "--surface", "layer-shell-1", "--x", "1", "--y", "1"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("input accepted non-injectable shell surface")
+	}
+	// missing surface flag
+	if err := run([]string{"input", "pointer", "click", "--x", "1", "--y", "1"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("input accepted missing --surface")
+	}
+	// unknown device
+	if err := run([]string{"input", "gamepad", "tap", "--surface", "view-1"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("input accepted unsupported device")
+	}
+	// keyboard type rejects untracked surface at the guardrail (before focus/wtype)
+	if err := run([]string{"input", "keyboard", "type", "--surface", "missing", "--text", "x"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("input accepted untracked surface for keyboard")
+	}
+	// keyboard type rejects shell / non-injectable surface
+	if err := run([]string{"input", "keyboard", "type", "--surface", "layer-shell-1", "--text", "x"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("input accepted non-injectable shell surface for keyboard")
+	}
+}
+
+func TestRunInputInjectsIntoTrackedSurfaceViaHelper(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("helper fixture is Unix-specific")
+	}
+	original := listSurfacesFunc
+	t.Cleanup(func() { listSurfacesFunc = original })
+	listSurfacesFunc = func() ([]trackedSurface, error) {
+		var s trackedSurface
+		s.Surface.ID = "view-1"
+		s.Surface.SurfaceKind = "xdg_toplevel"
+		s.InputInjectable = true
+		return []trackedSurface{s}, nil
+	}
+	// stub helper that pretends success without a real Wayland connection
+	helper := filepath.Join(t.TempDir(), "agora-de-wayland-input")
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"ok\":true,\"device\":\"pointer\",\"action\":\"click\",\"x\":5,\"y\":6,\"button\":272}'\n"
+	if err := os.WriteFile(helper, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	err := run([]string{"input", "pointer", "click", "--surface", "view-1", "--x", "5", "--y", "6", "--helper", helper, "--output-w", "100", "--output-h", "100"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("input click error = %v", err)
+	}
+	var result inputResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if !result.Ok || result.SurfaceID != "view-1" || result.Helper == "" {
+		t.Fatalf("result = %+v", result)
+	}
 }

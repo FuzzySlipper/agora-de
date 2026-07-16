@@ -145,6 +145,51 @@ func TestLayoutPromoteActionForwardsSurface(t *testing.T) {
 	}
 }
 
+func TestLayoutMoveActionForwardsDirection(t *testing.T) {
+	args, err := actionArgs(actionRequest{
+		Action:    "move",
+		SurfaceID: "view-live",
+		Direction: "left",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"surface", "move",
+		"--surface", "view-live",
+		"--direction", "left",
+		"--timeout-ms", "2000",
+	}
+	if strings.Join(args, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}
+
+func TestLayoutMoveActionRejectsInvalidDirection(t *testing.T) {
+	_, err := actionArgs(actionRequest{Action: "move", SurfaceID: "view-live", Direction: "sideways"})
+	if err == nil || !strings.Contains(err.Error(), "direction must be") {
+		t.Fatalf("err = %v, want direction validation error", err)
+	}
+}
+
+func TestLayoutSwapMasterActionForwardsSurface(t *testing.T) {
+	args, err := actionArgs(actionRequest{
+		Action:    "swapMaster",
+		SurfaceID: "view-live",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"surface", "swap-master",
+		"--surface", "view-live",
+		"--timeout-ms", "2000",
+	}
+	if strings.Join(args, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}
+
 func TestLayoutZoneActionsRejectInvalidPlannerGeometry(t *testing.T) {
 	_, err := actionArgs(actionRequest{
 		Action:    "tile",

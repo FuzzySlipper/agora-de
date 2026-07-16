@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,21 @@ import (
 
 const defaultCompositorControlSocket = "/run/agent-os/compositor-control.sock"
 const launchSurfacePollInterval = 50 * time.Millisecond
+
+// agentLaunchPolicy selects how much ceremony native launch requires.
+// "open" (default): agents pop native windows with no session token or audit
+// id — real-app GUI testing is the priority, and the bridge does not enforce
+// those fields anyway. "governed": restore the session-token + audit-correlation
+// requirement as a future hook for agora-os governance handoff. Set via
+// AGORA_DE_AGENT_LAUNCH_POLICY.
+func agentLaunchPolicy() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGORA_DE_AGENT_LAUNCH_POLICY"))) {
+	case "governed":
+		return "governed"
+	default:
+		return "open"
+	}
+}
 
 const (
 	launchStatusLaunched                    = "launched"
@@ -42,6 +58,8 @@ const (
 	methodSetSurfaceFloating   = "set_surface_floating"
 	methodAssignSurfaceZone    = "assign_surface_zone"
 	methodPromoteSurface       = "promote_surface"
+	methodMoveSurface          = "move_surface"
+	methodSwapMasterSurface    = "swap_master_surface"
 	methodMaximizeSurface      = "maximize_surface"
 	methodMinimizeSurface      = "minimize_surface"
 	methodFullscreenSurface    = "fullscreen_surface"
@@ -84,6 +102,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		return runSurface(args[1:], stdout, pretty)
 	case "workspace":
 		return runWorkspace(args[1:], stdout, pretty)
+	case "input":
+		return runInput(args[1:], stdout, pretty)
 	default:
 		usage(stderr)
 		return fmt.Errorf("unsupported command %q", args[0])
@@ -91,7 +111,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func usage(output io.Writer) {
-	fmt.Fprintln(output, `Usage: compositorctl [--pretty] <command> [flags]
+	fmt.Fprintln(output, `Usage: agora-de-compositorctl [--pretty] <command> [flags]
 
 Commands:
   launch         Launch a native process from a structured argv vector
@@ -99,6 +119,7 @@ Commands:
   list-surfaces  List tracked compositor surfaces
   output         List outputs or capture a physical output
   surface        Focus, close, or request layout actions for a tracked surface
+  input          Inject widget input (pointer move/click) into a tracked surface
   workspace      Request workspace actions`)
 }
 
@@ -128,8 +149,8 @@ func runLaunch(args []string, stdout io.Writer) error {
 	cwd := fs.String("cwd", "", "working directory")
 	uid := fs.Uint("uid", 0, "requester uid")
 	gid := fs.Uint("gid", 0, "requester gid")
-	sessionToken := fs.String("session-token", "", "session token")
-	auditCorrelationID := fs.String("audit-correlation-id", "", "audit correlation id")
+	sessionToken := fs.String("session-token", "", "session token (optional under open launch policy; required under governed)")
+	auditCorrelationID := fs.String("audit-correlation-id", "", "audit correlation id (optional under open launch policy; required under governed)")
 	outputName := fs.String("output", "", "logical output name")
 	waitSurface := fs.Bool("wait-surface", false, "wait for a matching mapped surface")
 	waitTimeoutMs := fs.Int("wait-timeout-ms", 5000, "surface wait timeout in milliseconds")
@@ -163,11 +184,13 @@ func runLaunch(args []string, stdout io.Writer) error {
 	if len(argv) == 0 {
 		return errors.New("launch requires at least one --arg or --url/--path")
 	}
-	if !webviewLaunch && *sessionToken == "" {
-		return errors.New("--session-token is required")
-	}
-	if !webviewLaunch && *auditCorrelationID == "" {
-		return errors.New("--audit-correlation-id is required")
+	if !webviewLaunch && agentLaunchPolicy() == "governed" {
+		if *sessionToken == "" {
+			return errors.New("--session-token is required under governed launch policy")
+		}
+		if *auditCorrelationID == "" {
+			return errors.New("--audit-correlation-id is required under governed launch policy")
+		}
 	}
 
 	launchID := fmt.Sprintf("launch-%d", time.Now().UnixNano())
@@ -378,11 +401,28 @@ func runOutput(args []string, stdout io.Writer, pretty bool) error {
 
 func runLayout(args []string, stdout io.Writer, pretty bool) error {
 	if len(args) == 0 {
-		return errors.New("layout subcommand is required: get, set-mode, or set-settings")
+		return errors.New("layout subcommand is required: get, set-mode, set-settings, cycle-mode, or cycle-rule")
 	}
 	switch args[0] {
 	case "get":
 		return callAndPrint(methodGetLayout, nil, stdout, pretty)
+	case "cycle-mode":
+		info, err := fetchLayout()
+		if err != nil {
+			return err
+		}
+		current := info.Mode
+		if current == "" {
+			current = info.Settings.Mode
+		}
+		return callAndPrint(methodSetLayoutMode, setLayoutModeRequest{Mode: cycleString([]string{"freeform", "zones", "columns"}, current)}, stdout, pretty)
+	case "cycle-rule":
+		info, err := fetchLayout()
+		if err != nil {
+			return err
+		}
+		rule := cycleString([]string{"master_stack", "zones", "dwindle"}, info.Settings.Rule)
+		return callAndPrint(methodUpdateLayoutSettings, updateLayoutSettingsRequest{Rule: &rule}, stdout, pretty)
 	case "set-mode":
 		fs := flag.NewFlagSet("layout set-mode", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -464,7 +504,7 @@ func buildUpdateLayoutSettingsRequest(args []string) (updateLayoutSettingsReques
 
 func runSurface(args []string, stdout io.Writer, pretty bool) error {
 	if len(args) == 0 {
-		return errors.New("surface subcommand is required")
+		return errors.New("surface subcommand is required: focus, close, move-resize, tile, set-floating, assign-zone, promote, move, swap-master, maximize, minimize, fullscreen")
 	}
 	switch args[0] {
 	case "focus":
@@ -473,6 +513,8 @@ func runSurface(args []string, stdout io.Writer, pretty bool) error {
 			return err
 		}
 		return callAndPrint(methodFocusSurface, req, stdout, pretty)
+	case "focus-next", "focus-prev":
+		return runSurfaceFocusCycle(args[0], stdout, pretty)
 	case "close":
 		req, err := buildSurfaceRequest("surface close", args[1:])
 		if err != nil {
@@ -509,6 +551,14 @@ func runSurface(args []string, stdout io.Writer, pretty bool) error {
 			return err
 		}
 		return callAndPrint(methodPromoteSurface, surfaceLayoutRequest{SurfaceID: req.SurfaceID, WaitTimeoutMs: req.WaitTimeoutMs}, stdout, pretty)
+	case "move":
+		return runSurfaceMove(args[1:], stdout, pretty)
+	case "swap-master":
+		req, err := buildSurfaceRequest("surface swap-master", args[1:])
+		if err != nil {
+			return err
+		}
+		return callAndPrint(methodSwapMasterSurface, surfaceLayoutRequest{SurfaceID: req.SurfaceID, WaitTimeoutMs: req.WaitTimeoutMs}, stdout, pretty)
 	case "maximize":
 		req, err := buildEnabledSurfaceRequest("surface maximize", args[1:])
 		if err != nil {
@@ -555,6 +605,366 @@ func runWorkspace(args []string, stdout io.Writer, pretty bool) error {
 	}
 }
 
+const defaultInputHelper = "agora-de-wayland-input"
+
+func runInput(args []string, stdout io.Writer, _ bool) error {
+	if len(args) == 0 {
+		return errors.New("input subcommand is required: pointer|keyboard")
+	}
+	switch device := args[0]; device {
+	case "pointer":
+		return runInputPointer(args[1:], stdout)
+	case "keyboard":
+		return runInputKeyboard(args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown input device %q (pointer or keyboard)", device)
+	}
+}
+
+func runInputPointer(args []string, stdout io.Writer) error {
+	if len(args) < 1 {
+		return errors.New("pointer action is required: move or click")
+	}
+	action := args[0]
+	switch action {
+	case "move", "click":
+	default:
+		return fmt.Errorf("unknown pointer action %q (move or click)", action)
+	}
+
+	fs := flag.NewFlagSet("input pointer", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	surfaceID := fs.String("surface", "", "tracked surface id to target (required)")
+	x := fs.Int("x", 0, "pointer x coordinate, output-relative")
+	y := fs.Int("y", 0, "pointer y coordinate, output-relative")
+	button := fs.Uint("button", 0x110, "button code for click (default 0x110 BTN_LEFT)")
+	outputW := fs.Int("output-w", 0, "output width for absolute motion (default: auto from output list)")
+	outputH := fs.Int("output-h", 0, "output height for absolute motion (default: auto from output list)")
+	helperPath := fs.String("helper", "", "path to agora-de-wayland-input (default: resolved from PATH/common paths)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	target, err := verifyInputSurface(*surfaceID)
+	if err != nil {
+		return err
+	}
+
+	if *outputW <= 0 || *outputH <= 0 {
+		if w, h, ok := outputExtents(target.Surface.OutputID); ok {
+			*outputW, *outputH = w, h
+		}
+	}
+	if *outputW <= 0 {
+		*outputW = 2560
+	}
+	if *outputH <= 0 {
+		*outputH = 1440
+	}
+
+	resolved, err := resolveInputHelper(*helperPath)
+	if err != nil {
+		return err
+	}
+
+	result := inputResult{
+		Device:       "pointer",
+		Action:       action,
+		SurfaceID:    *surfaceID,
+		X:            *x,
+		Y:            *y,
+		Button:       *button,
+		OutputW:      *outputW,
+		OutputH:      *outputH,
+		SurfaceAppID: target.Surface.AppID,
+	}
+	helperOut, helperErr := execInputHelper(resolved, action, *x, *y, *button, *outputW, *outputH)
+	result.Helper = helperOut
+	if helperErr != nil {
+		result.Ok = false
+		result.Error = helperErr.Error()
+		_ = json.NewEncoder(stdout).Encode(result)
+		return fmt.Errorf("input injection failed: %w", helperErr)
+	}
+	result.Ok = true
+	return json.NewEncoder(stdout).Encode(result)
+}
+
+func runInputKeyboard(args []string, stdout io.Writer) error {
+	if len(args) < 1 {
+		return errors.New("keyboard action is required: type or key")
+	}
+	action := args[0]
+	switch action {
+	case "type", "key":
+	default:
+		return fmt.Errorf("unknown keyboard action %q (type or key)", action)
+	}
+	fs := flag.NewFlagSet("input keyboard", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	surfaceID := fs.String("surface", "", "tracked surface id to target (required)")
+	text := fs.String("text", "", "text to type (for action type)")
+	key := fs.String("key", "", "xkb keysym name to press, e.g. Return, Escape, Tab, space (for action key)")
+	method := fs.String("method", "auto", "type method: auto (input-method then virtual-keyboard), input-method (text-input-v3 clients like Chromium), virtual-keyboard (native wl_keyboard clients)")
+	wtypePath := fs.String("wtype", "", "path to wtype (virtual-keyboard engine; default: resolved)")
+	helperPath := fs.String("helper", "", "path to agora-de-wayland-input (input-method+pointer engine; default: resolved)")
+	timeoutMs := fs.Int("timeout-ms", 4000, "input-method activate wait timeout in milliseconds")
+	clickX := fs.Int("click-x", 0, "input-method: x to click to focus the text-input field (default: output center)")
+	clickY := fs.Int("click-y", 0, "input-method: y to click to focus the text-input field (default: output center)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *surfaceID == "" {
+		return errors.New("--surface is required")
+	}
+	if action == "type" && *text == "" {
+		return errors.New("--text is required for type")
+	}
+	if action == "key" && *key == "" {
+		return errors.New("--key is required for key")
+	}
+	target, err := verifyInputSurface(*surfaceID)
+	if err != nil {
+		return err
+	}
+	result := inputResult{
+		Device:       "keyboard",
+		Action:       action,
+		SurfaceID:    *surfaceID,
+		SurfaceAppID: target.Surface.AppID,
+	}
+
+	// `key` (Return/Tab/...) is a raw keyboard event: virtual-keyboard (wtype) only.
+	if action == "key" {
+		*method = "virtual-keyboard"
+	}
+
+	switch *method {
+	case "input-method", "auto":
+		cx, cy := *clickX, *clickY
+		if cx <= 0 || cy <= 0 {
+			if w, h, ok := outputExtents(target.Surface.OutputID); ok {
+				cx, cy = w/2, h/2
+			} else {
+				cx, cy = 1280, 720
+			}
+		}
+		ok, helperOut, helperErr := runInputMethodHelper(*helperPath, *surfaceID, cx, cy, *text, *timeoutMs)
+		if ok {
+			result.Ok = true
+			result.Helper = helperOut
+			return json.NewEncoder(stdout).Encode(result)
+		}
+		if *method == "input-method" {
+			result.Ok = false
+			result.Error = helperErr
+			_ = json.NewEncoder(stdout).Encode(result)
+			return fmt.Errorf("input-method keyboard injection failed: %s", helperErr)
+		}
+		result.Helper = "input-method: " + helperErr
+	}
+	// virtual-keyboard (wtype) path.
+	_ = focusSurface(*surfaceID)
+	time.Sleep(300 * time.Millisecond)
+	resolved, err := resolveWtype(*wtypePath)
+	if err != nil {
+		result.Ok = false
+		result.Error = err.Error()
+		_ = json.NewEncoder(stdout).Encode(result)
+		return err
+	}
+	var wargs []string
+	if action == "key" {
+		wargs = []string{"-k", *key}
+	} else {
+		wargs = []string{*text}
+	}
+	cmd := exec.Command(resolved, wargs...)
+	cmd.Env = os.Environ()
+	var out, errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	runErr := cmd.Run()
+	if runErr != nil {
+		result.Ok = false
+		result.Error = strings.TrimSpace(errBuf.String() + " " + out.String())
+		_ = json.NewEncoder(stdout).Encode(result)
+		return fmt.Errorf("keyboard injection failed: %w", runErr)
+	}
+	result.Ok = true
+	if result.Helper == "" {
+		result.Helper = resolved
+	} else {
+		result.Helper = resolved + " (" + result.Helper + ")"
+	}
+	return json.NewEncoder(stdout).Encode(result)
+}
+
+// runInputMethodHelper commits text into a focused text-input-v3 client (e.g.
+// Chromium) via the owned agora-de-wayland-input input-method path. The input
+// method must be bound BEFORE the text-input field is focused (enabled), so this
+// starts the helper (which binds and waits for activate), then clicks the field
+// to trigger enable, then waits for the helper to commit. Returns ok=false if no
+// text-input-v3 client activates (used by the auto method to fall through).
+func runInputMethodHelper(explicit, surfaceID string, clickX, clickY int, text string, timeoutMs int) (bool, string, string) {
+	resolved, err := resolveInputHelper(explicit)
+	if err != nil {
+		return false, "", err.Error()
+	}
+	helper := exec.Command(resolved, "input-method", "--text", text, "--timeout-ms", strconv.Itoa(timeoutMs))
+	helper.Env = os.Environ()
+	var hOut, hErr bytes.Buffer
+	helper.Stdout = &hOut
+	helper.Stderr = &hErr
+	if err := helper.Start(); err != nil {
+		return false, "", err.Error()
+	}
+	// give the helper time to bind zwp_input_method_v1, then click the field to
+	// trigger the text-input-v3 enable -> activate.
+	time.Sleep(500 * time.Millisecond)
+	_ = focusSurface(surfaceID)
+	time.Sleep(300 * time.Millisecond)
+	_, _ = execInputHelper(resolved, "click", clickX, clickY, 0x110, 2560, 1440)
+	waitErr := helper.Wait()
+	if waitErr != nil {
+		return false, "", strings.TrimSpace(hErr.String() + " " + hOut.String())
+	}
+	return true, strings.TrimSpace(hOut.String()), ""
+}
+func verifyInputSurface(surfaceID string) (*trackedSurface, error) {
+	if surfaceID == "" {
+		return nil, errors.New("--surface is required")
+	}
+	surfaces, err := listSurfacesFunc()
+	if err != nil {
+		return nil, fmt.Errorf("verify surface: %w", err)
+	}
+	for i := range surfaces {
+		if surfaces[i].Surface.ID == surfaceID {
+			if !surfaces[i].InputInjectable {
+				return nil, fmt.Errorf("surface %q (%s) is not input-injectable (kind=%q)",
+					surfaceID, surfaces[i].Surface.AppID, surfaces[i].Surface.SurfaceKind)
+			}
+			return &surfaces[i], nil
+		}
+	}
+	return nil, fmt.Errorf("surface %q is not tracked; input targets must be tracked surfaces", surfaceID)
+}
+
+func focusSurface(surfaceID string) error {
+	_, err := callCompositorControl(methodFocusSurface, surfaceRequest{SurfaceID: surfaceID, WaitTimeoutMs: 2000})
+	return err
+}
+
+func resolveWtype(explicit string) (string, error) {
+	if path := strings.TrimSpace(explicit); path != "" {
+		return path, nil
+	}
+	if path := strings.TrimSpace(os.Getenv("AGORA_DE_WTYPE")); path != "" {
+		return path, nil
+	}
+	if path, err := exec.LookPath("wtype"); err == nil {
+		return path, nil
+	}
+	return "", fmt.Errorf("wtype not found; install wtype or set --wtype / AGORA_DE_WTYPE")
+}
+
+type inputResult struct {
+	Ok           bool   `json:"ok"`
+	Device       string `json:"device"`
+	Action       string `json:"action"`
+	SurfaceID    string `json:"surface_id"`
+	SurfaceAppID string `json:"surface_app_id,omitempty"`
+	X            int    `json:"x,omitempty"`
+	Y            int    `json:"y,omitempty"`
+	Button       uint   `json:"button,omitempty"`
+	OutputW      int    `json:"output_w,omitempty"`
+	OutputH      int    `json:"output_h,omitempty"`
+	Helper       string `json:"helper,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+func outputExtents(preferredOutput string) (int, int, bool) {
+	raw, err := callCompositorControl(methodListOutputs, map[string]string{})
+	if err != nil {
+		return 0, 0, false
+	}
+	var resp struct {
+		Outputs []struct {
+			Name   string `json:"name"`
+			Width  int    `json:"width"`
+			Height int    `json:"height"`
+		} `json:"outputs"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return 0, 0, false
+	}
+	for _, o := range resp.Outputs {
+		if preferredOutput != "" && o.Name == preferredOutput && o.Width > 0 && o.Height > 0 {
+			return o.Width, o.Height, true
+		}
+	}
+	for _, o := range resp.Outputs {
+		if o.Width > 0 && o.Height > 0 {
+			return o.Width, o.Height, true
+		}
+	}
+	return 0, 0, false
+}
+
+func resolveInputHelper(explicit string) (string, error) {
+	if path := strings.TrimSpace(explicit); path != "" {
+		return path, nil
+	}
+	if path := strings.TrimSpace(os.Getenv("AGORA_DE_WAYLAND_INPUT")); path != "" {
+		return path, nil
+	}
+	if path, err := exec.LookPath(defaultInputHelper); err == nil {
+		return path, nil
+	}
+	for _, candidate := range []string{
+		os.Getenv("HOME") + "/.local/bin/" + defaultInputHelper,
+		"/usr/local/bin/" + defaultInputHelper,
+	} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("input helper %q not found; build chrome/wayland-input or set --helper / AGORA_DE_WAYLAND_INPUT", defaultInputHelper)
+}
+
+func execInputHelper(path, action string, x, y int, button uint, outputW, outputH int) (string, error) {
+	cmd := exec.Command(path,
+		"pointer",
+		"--action", action,
+		"--x", strconv.Itoa(x),
+		"--y", strconv.Itoa(y),
+		"--output-w", strconv.Itoa(outputW),
+		"--output-h", strconv.Itoa(outputH),
+	)
+	if action == "click" {
+		cmd.Args = append(cmd.Args, "--button", strconv.FormatUint(uint64(button), 10))
+	}
+	cmd.Env = os.Environ()
+	var out, errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		tail := strings.TrimSpace(errBuf.String())
+		if tail == "" {
+			tail = strings.TrimSpace(out.String())
+		}
+		return "", fmt.Errorf("%s: %s", path, firstLine(tail))
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
 func buildSurfaceRequest(name string, args []string) (surfaceRequest, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -566,7 +976,151 @@ func buildSurfaceRequest(name string, args []string) (surfaceRequest, error) {
 	if *surfaceID == "" {
 		return surfaceRequest{}, errors.New("--surface is required")
 	}
-	return surfaceRequest{SurfaceID: *surfaceID, WaitTimeoutMs: *timeoutMs}, nil
+	resolved, err := resolveSurfaceID(*surfaceID)
+	if err != nil {
+		return surfaceRequest{}, err
+	}
+	return surfaceRequest{SurfaceID: resolved, WaitTimeoutMs: *timeoutMs}, nil
+}
+
+// resolveSurfaceID turns the literal token "focused" into the currently-focused
+// surface id (via get_layout); any other value passes through unchanged. This
+// lets keybindings drive the focused window without knowing its id.
+func resolveSurfaceID(surfaceID string) (string, error) {
+	if strings.TrimSpace(surfaceID) != "focused" {
+		return surfaceID, nil
+	}
+	focused, err := focusedSurfaceID()
+	if err != nil {
+		return "", err
+	}
+	if focused == "" {
+		return "", errors.New("no focused surface")
+	}
+	return focused, nil
+}
+
+type layoutSurfaceInfo struct {
+	SurfaceID string `json:"surface_id"`
+	Focused   bool   `json:"focused"`
+}
+
+type layoutInfo struct {
+	Mode     string `json:"mode"`
+	Settings struct {
+		Rule string `json:"rule"`
+		Mode string `json:"mode"`
+	} `json:"settings"`
+	Surfaces   []layoutSurfaceInfo `json:"surfaces"`
+	Workspaces []struct {
+		SurfaceOrder []string `json:"surface_order"`
+	} `json:"workspaces"`
+}
+
+type layoutEnvelope struct {
+	Layout layoutInfo `json:"layout"`
+}
+
+func fetchLayout() (layoutInfo, error) {
+	raw, err := callCompositorControl(methodGetLayout, nil)
+	if err != nil {
+		return layoutInfo{}, err
+	}
+	var env layoutEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return layoutInfo{}, err
+	}
+	return env.Layout, nil
+}
+
+func focusedSurfaceID() (string, error) {
+	info, err := fetchLayout()
+	if err != nil {
+		return "", err
+	}
+	for _, surface := range info.Surfaces {
+		if surface.Focused {
+			return surface.SurfaceID, nil
+		}
+	}
+	return "", nil
+}
+
+func cycleString(list []string, current string) string {
+	for index, value := range list {
+		if value == current {
+			return list[(index+1)%len(list)]
+		}
+	}
+	return list[0]
+}
+
+// moveSurfaceRequest mirrors the bridge MoveSurfaceRequest.
+type moveSurfaceRequest struct {
+	SurfaceID     string `json:"surface_id"`
+	Direction     string `json:"direction"`
+	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
+}
+
+func runSurfaceMove(args []string, stdout io.Writer, pretty bool) error {
+	fs := flag.NewFlagSet("surface move", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	surfaceID := fs.String("surface", "", "surface id")
+	direction := fs.String("direction", "", "direction: left, right, up, or down")
+	timeoutMs := fs.Int("timeout-ms", 2000, "acknowledgement timeout in milliseconds")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *surfaceID == "" {
+		return errors.New("--surface is required")
+	}
+	switch *direction {
+	case "left", "right", "up", "down":
+	default:
+		return fmt.Errorf("invalid --direction %q (left|right|up|down)", *direction)
+	}
+	resolved, err := resolveSurfaceID(*surfaceID)
+	if err != nil {
+		return err
+	}
+	return callAndPrint(methodMoveSurface, moveSurfaceRequest{
+		SurfaceID:     resolved,
+		Direction:     *direction,
+		WaitTimeoutMs: *timeoutMs,
+	}, stdout, pretty)
+}
+
+// runSurfaceFocusCycle moves focus to the next/previous surface in the active
+// workspace's surface order. Used by keyboard focus cycling.
+func runSurfaceFocusCycle(action string, stdout io.Writer, pretty bool) error {
+	info, err := fetchLayout()
+	if err != nil {
+		return err
+	}
+	var order []string
+	if len(info.Workspaces) > 0 {
+		order = info.Workspaces[0].SurfaceOrder
+	}
+	if len(order) == 0 {
+		return errors.New("no surfaces to focus")
+	}
+	focused, _ := focusedSurfaceID()
+	index := -1
+	for i, id := range order {
+		if id == focused {
+			index = i
+			break
+		}
+	}
+	var target string
+	if index < 0 {
+		target = order[0]
+	} else if action == "focus-next" {
+		target = order[(index+1)%len(order)]
+	} else {
+		target = order[(index-1+len(order))%len(order)]
+	}
+	return callAndPrint(methodFocusSurface, surfaceRequest{SurfaceID: target}, stdout, pretty)
 }
 
 func buildMoveResizeSurfaceRequest(args []string) (surfaceLayoutRequest, error) {
@@ -698,17 +1252,20 @@ type surfaceListResponse struct {
 
 type trackedSurface struct {
 	Surface struct {
-		ID      string `json:"id"`
-		AppID   string `json:"app_id"`
-		Title   string `json:"title"`
-		Visible bool   `json:"visible"`
+		ID          string `json:"id"`
+		AppID       string `json:"app_id"`
+		Title       string `json:"title"`
+		Visible     bool   `json:"visible"`
+		SurfaceKind string `json:"surface_kind"`
+		OutputID    string `json:"output_id"`
 	} `json:"surface"`
 	Client struct {
 		PID int `json:"pid"`
 	} `json:"client"`
-	Mapped    bool      `json:"mapped"`
-	Visible   bool      `json:"visible"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Mapped          bool      `json:"mapped"`
+	Visible         bool      `json:"visible"`
+	InputInjectable bool      `json:"input_injectable"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type launchSurfaceMatch struct {

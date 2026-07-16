@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Install the agora-de keybindings config and regenerate the managed Wayfire
+# [command] block from it. Idempotent: by default it installs the default TOML
+# only when absent (preserving user customizations) and always re-applies the
+# Wayfire block so the keys match the config. Use --force to overwrite the TOML
+# with repo defaults.
+set -euo pipefail
+IFS=$'\n\t'
+
+usage() {
+  cat <<'USAGE'
+Usage: deploy/compositor/install-keybindings [--force]
+
+Installs ~/.config/agora-de/keybindings.toml (defaults from
+deploy/compositor/keybindings.toml) and regenerates the managed agora-de
+keybindings block in the Wayfire config.
+
+Options:
+  --force    Overwrite an existing keybindings.toml with repo defaults.
+
+Environment:
+  AGORA_DE_REPO_ROOT           repo root (default: detected from script location)
+  AGORA_DE_CONFIG_DIR          user config dir (default: ~/.config/agora-de)
+  AGORA_DE_WAYFIRE_CONFIG      Wayfire config (default: ~/.config/wayfire.ini)
+USAGE
+}
+
+force=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --force) force=1 ;;
+    -h|--help|help) usage; exit 0 ;;
+    *) usage >&2; echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+repo_root=${AGORA_DE_REPO_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}
+config_dir=${AGORA_DE_CONFIG_DIR:-$HOME/.config/agora-de}
+wayfire_config=${AGORA_DE_WAYFIRE_CONFIG:-$HOME/.config/wayfire.ini}
+source_toml="$repo_root/deploy/compositor/keybindings.toml"
+target_toml="$config_dir/keybindings.toml"
+
+if [[ ! -f "$source_toml" ]]; then
+  echo "missing source keybindings: $source_toml" >&2
+  exit 1
+fi
+
+install -d -m 0755 "$config_dir"
+if [[ "$force" -eq 1 || ! -f "$target_toml" ]]; then
+  install -D -m 0644 "$source_toml" "$target_toml"
+  echo "installed $target_toml"
+else
+  echo "kept existing $target_toml (use --force to overwrite with defaults)"
+fi
+
+if [[ ! -f "$wayfire_config" ]]; then
+  echo "missing Wayfire config: $wayfire_config (skipping [command] regen)" >&2
+  exit 0
+fi
+
+python3 "$repo_root/harness/compositor/generate-wayfire-keybindings.py" \
+  --config "$target_toml" \
+  --wayfire-ini "$wayfire_config" \
+  --apply

@@ -43,7 +43,9 @@ export type LayoutActionKind =
   | 'surface.maximize'
   | 'surface.minimize'
   | 'surface.fullscreen'
-  | 'workspace.activate';
+  | 'workspace.activate'
+  | 'surface.move'
+  | 'surface.swap_master';
 
 export interface SurfaceGeometry {
   readonly x: number;

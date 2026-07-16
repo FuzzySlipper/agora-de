@@ -1398,7 +1398,7 @@ ${componentCSS}
       height: var(--agora-panel-height);
       left: 0;
       min-height: var(--agora-panel-height);
-      padding: 8px var(--agora-panel-padding-x);
+      padding: var(--agora-panel-padding-y) var(--agora-panel-padding-x);
       position: fixed;
       right: 0;
       width: 100vw;
@@ -1764,18 +1764,23 @@ ${componentCSS}
         <button class="wm-control" id="focus-prev-button" type="button">Prev</button>
         <button class="wm-control" id="focus-next-button" type="button">Next</button>
         <button class="wm-control primary" id="promote-button" type="button">Master</button>
-        <button class="wm-control" id="move-zone-button" type="button">Move</button>
+        <button class="wm-control" id="move-left-button" type="button" title="Move focused window left (toward master)">◀</button>
+        <button class="wm-control" id="move-right-button" type="button" title="Move focused window right (toward stack)">▶</button>
+        <button class="wm-control" id="move-up-button" type="button" title="Move focused window up">▲</button>
+        <button class="wm-control" id="move-down-button" type="button" title="Move focused window down">▼</button>
+        <button class="wm-control" id="swap-master-button" type="button" title="Swap focused window with the master">Swap</button>
+        <button class="wm-control" id="move-zone-button" type="button">Move zone</button>
         <button class="wm-control" id="float-button" type="button">Float</button>
         <button class="wm-control" id="fullscreen-button" type="button">Full</button>
         <button class="wm-control" id="maximize-button" type="button">Max</button>
         <button class="wm-control" id="minimize-button" type="button">Min</button>
         <button class="wm-control" id="close-focus-button" type="button">Close</button>
         <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
-        <button class="wm-control" id="rule-button" type="button">Rule</button>
-        <button class="wm-control" id="master-count-button" type="button">M1</button>
-        <button class="wm-control" id="master-ratio-button" type="button">50%</button>
-        <button class="wm-control" id="gaps-button" type="button">Gap0</button>
-        <button class="wm-control" id="smart-gaps-button" type="button">Smart</button>
+        <button class="wm-control" id="rule-button" type="button">Rule: master</button>
+        <button class="wm-control" id="master-count-button" type="button">Master: 1</button>
+        <button class="wm-control" id="master-ratio-button" type="button">Ratio: 50%</button>
+        <button class="wm-control" id="gaps-button" type="button">Gaps: 0</button>
+        <button class="wm-control" id="smart-gaps-button" type="button">Smart: off</button>
         <span class="dock-item surface-meta wm-rule" id="layout-rule-label">master_stack</span>
       </section>
     </details>
@@ -2206,6 +2211,11 @@ ${componentCSS}
         "focus-prev-button",
         "focus-next-button",
         "promote-button",
+        "move-left-button",
+        "move-right-button",
+        "move-up-button",
+        "move-down-button",
+        "swap-master-button",
         "move-zone-button",
         "float-button",
         "fullscreen-button",
@@ -2245,21 +2255,21 @@ ${componentCSS}
         " / revision " + Number(state.layout.revision || 0);
       const normalized = normalizedSettings();
       const ruleButton = document.getElementById("rule-button");
-      ruleButton.textContent = text(normalized.rule, "master_stack").replace("_stack", "");
-      ruleButton.title = "rule " + normalized.rule;
+      ruleButton.textContent = "Rule: " + text(normalized.rule, "master_stack").replace("_stack", "");
+      ruleButton.title = "cycle rule (current " + normalized.rule + ")";
       const masterCountButton = document.getElementById("master-count-button");
-      masterCountButton.textContent = "M" + normalized.masterCount;
-      masterCountButton.title = "master count " + normalized.masterCount;
+      masterCountButton.textContent = "Master: " + normalized.masterCount;
+      masterCountButton.title = "master count " + normalized.masterCount + " (click to add)";
       const masterRatioButton = document.getElementById("master-ratio-button");
-      masterRatioButton.textContent = Math.round(normalized.masterRatio * 100) + "%";
-      masterRatioButton.title = "master ratio " + normalized.masterRatio.toFixed(2);
+      masterRatioButton.textContent = "Ratio: " + Math.round(normalized.masterRatio * 100) + "%";
+      masterRatioButton.title = "master ratio " + normalized.masterRatio.toFixed(2) + " (click to step)";
       const gapsButton = document.getElementById("gaps-button");
       const gapValue = Math.max(normalized.gaps.outerHorizontal, normalized.gaps.outerVertical, normalized.gaps.innerHorizontal, normalized.gaps.innerVertical);
-      gapsButton.textContent = "Gap" + gapValue;
-      gapsButton.title = "gaps " + normalized.gaps.outerHorizontal + "/" + normalized.gaps.outerVertical + "/" + normalized.gaps.innerHorizontal + "/" + normalized.gaps.innerVertical;
+      gapsButton.textContent = "Gaps: " + gapValue;
+      gapsButton.title = "gaps " + normalized.gaps.outerHorizontal + "/" + normalized.gaps.outerVertical + "/" + normalized.gaps.innerHorizontal + "/" + normalized.gaps.innerVertical + " (click to step)";
       const smartGapsButton = document.getElementById("smart-gaps-button");
-      smartGapsButton.textContent = normalized.smartGaps ? "Smart" : "Gaps";
-      smartGapsButton.title = normalized.smartGaps ? "smart gaps on" : "smart gaps off";
+      smartGapsButton.textContent = "Smart: " + (normalized.smartGaps ? "on" : "off");
+      smartGapsButton.title = normalized.smartGaps ? "smart gaps on (click to disable)" : "smart gaps off (click to enable)";
     }
 
     function render() {
@@ -2625,6 +2635,44 @@ ${componentCSS}
       await assignZone(target.surfaceId, nextZone(text(target.zoneId, "primary")));
     }
 
+    async function moveTarget(direction) {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      const status = document.getElementById("status-label");
+      status.textContent = "move " + direction;
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {surfaceId: target.surfaceId, action: "move", direction});
+        await refresh();
+        setFeedback("move " + direction + " " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "move failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function swapMasterTarget() {
+      const target = targetSurface();
+      if (!target) {
+        return;
+      }
+      const status = document.getElementById("status-label");
+      status.textContent = "swap master";
+      status.className = "status ready";
+      try {
+        const result = await postJSON("/api/layout/action", {surfaceId: target.surfaceId, action: "swapMaster"});
+        await refresh();
+        setFeedback("swap master " + actionStatus(result), "ready");
+        render();
+      } catch (error) {
+        status.textContent = "swap failed";
+        status.className = "status warn";
+      }
+    }
+
     async function toggleTargetFloating() {
       const target = targetSurface();
       if (!target) {
@@ -2711,6 +2759,11 @@ ${componentCSS}
     document.getElementById("focus-prev-button").addEventListener("click", () => focusRelative(-1));
     document.getElementById("focus-next-button").addEventListener("click", () => focusRelative(1));
     document.getElementById("promote-button").addEventListener("click", promoteTarget);
+    document.getElementById("move-left-button").addEventListener("click", () => moveTarget("left"));
+    document.getElementById("move-right-button").addEventListener("click", () => moveTarget("right"));
+    document.getElementById("move-up-button").addEventListener("click", () => moveTarget("up"));
+    document.getElementById("move-down-button").addEventListener("click", () => moveTarget("down"));
+    document.getElementById("swap-master-button").addEventListener("click", swapMasterTarget);
     document.getElementById("move-zone-button").addEventListener("click", moveTargetToNextZone);
     document.getElementById("float-button").addEventListener("click", toggleTargetFloating);
     document.getElementById("fullscreen-button").addEventListener("click", () => toggleTargetState("fullscreen", "fullscreen"));
@@ -2737,7 +2790,7 @@ export interface BackgroundHTMLOptions {
 
 export function backgroundHTML(options: BackgroundHTMLOptions): string {
   const bodyClass = options.includeTaskbar ? 'background with-taskbar' : 'background';
-  const rows = options.includeTaskbar ? '1fr 96px' : '1fr';
+  const rows = options.includeTaskbar ? '1fr var(--agora-panel-height)' : '1fr';
   const taskbarHTML = options.includeTaskbar ? `
   <nav class="taskbar" aria-label="Agora DE fallback taskbar">
     <span class="badge">agora-de</span>

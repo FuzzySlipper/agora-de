@@ -125,10 +125,44 @@ pub enum LayoutActionKind {
     MinimizeSurface,
     FullscreenSurface,
     ActivateWorkspace,
+    MoveDirection,
+    SwapMaster,
+}
+
+/// Cardinal direction for `LayoutActionKind::MoveDirection`. A surface moves one
+/// step in the given direction within the active layout order. Left/Right cross
+/// the master/stack column boundary (master-stack); Up/Down reorder within the
+/// current column. The runtime planner (Go) interprets this against the active
+/// rule + master count; the contract model treats Left as "toward master"
+/// (index 0) and Right as "toward stack" (index 1).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MoveDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+impl MoveDirection {
+    pub const ALL: [MoveDirection; 4] = [
+        MoveDirection::Left,
+        MoveDirection::Right,
+        MoveDirection::Up,
+        MoveDirection::Down,
+    ];
+
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            MoveDirection::Left => "left",
+            MoveDirection::Right => "right",
+            MoveDirection::Up => "up",
+            MoveDirection::Down => "down",
+        }
+    }
 }
 
 impl LayoutActionKind {
-    pub const ALL: [LayoutActionKind; 10] = [
+    pub const ALL: [LayoutActionKind; 12] = [
         LayoutActionKind::GetLayout,
         LayoutActionKind::SetLayoutMode,
         LayoutActionKind::MoveResizeSurface,
@@ -139,6 +173,8 @@ impl LayoutActionKind {
         LayoutActionKind::MinimizeSurface,
         LayoutActionKind::FullscreenSurface,
         LayoutActionKind::ActivateWorkspace,
+        LayoutActionKind::MoveDirection,
+        LayoutActionKind::SwapMaster,
     ];
 
     pub fn wire_name(&self) -> &'static str {
@@ -153,6 +189,8 @@ impl LayoutActionKind {
             LayoutActionKind::MinimizeSurface => "surface.minimize",
             LayoutActionKind::FullscreenSurface => "surface.fullscreen",
             LayoutActionKind::ActivateWorkspace => "workspace.activate",
+            LayoutActionKind::MoveDirection => "surface.move",
+            LayoutActionKind::SwapMaster => "surface.swap_master",
         }
     }
 }
@@ -160,8 +198,8 @@ impl LayoutActionKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        LayoutActionKind, LayoutMode, SurfaceEventKind, SurfaceLayoutParticipation,
-        SurfacePolicyClass,
+        LayoutActionKind, LayoutMode, MoveDirection, SurfaceEventKind,
+        SurfaceLayoutParticipation, SurfacePolicyClass,
     };
 
     #[test]
@@ -219,7 +257,15 @@ mod tests {
                 "surface.minimize",
                 "surface.fullscreen",
                 "workspace.activate",
+                "surface.move",
+                "surface.swap_master",
             ]
         );
+
+        let directions: Vec<&str> = MoveDirection::ALL
+            .iter()
+            .map(MoveDirection::wire_name)
+            .collect();
+        assert_eq!(directions, vec!["left", "right", "up", "down"]);
     }
 }

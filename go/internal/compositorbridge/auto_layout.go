@@ -175,18 +175,13 @@ func (bridge *Bridge) autoLayoutPlan() []autoLayoutPlacement {
 	if len(surfaces) == 0 {
 		return nil
 	}
-	sort.Slice(surfaces, func(i, j int) bool {
-		promoted := bridge.promotedSurfaceID
-		if promoted != "" && (surfaces[i].Surface.ID == promoted || surfaces[j].Surface.ID == promoted) {
-			return surfaces[i].Surface.ID == promoted
+	rank := make(map[string]int, len(bridge.surfaceOrder))
+	for index, id := range bridge.surfaceOrder {
+		if _, ok := rank[id]; !ok {
+			rank[id] = index
 		}
-		left := firstNonEmpty(surfaces[i].Surface.Label, surfaces[i].Surface.ID)
-		right := firstNonEmpty(surfaces[j].Surface.Label, surfaces[j].Surface.ID)
-		if left == right {
-			return surfaces[i].Surface.ID < surfaces[j].Surface.ID
-		}
-		return left < right
-	})
+	}
+	sortStableByOrder(surfaces, rank, bridge.promotedSurfaceID)
 
 	output := bridge.outputForAutoLayoutLocked(surfaces)
 	if output.Name == "" {

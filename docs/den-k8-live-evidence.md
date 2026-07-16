@@ -55,9 +55,9 @@ Current den-k8 installed-service surfaces observed on this host:
 | Compositor bridge | `/run/agent-os/compositor-bridge.sock` | Unix socket exists and accepts connection |
 | Compositor control | `/run/agent-os/compositor-control.sock` | Unix socket exists and accepts connection |
 | Capture artifacts | `/run/agent-os/captures` | capture JSON supplied to the runner |
-| Surface frame readback | `compositorctl list-surfaces` | selected surface mapped/visible and optional `frame_count` |
-| Physical output discovery | `compositorctl output list` | physical output identity; `physical_surface_readback` is inferred from mapped surfaces |
-| Physical output capture | `compositorctl output capture` via `--output-name` | monitor/output image evidence, preferred for visible-shell closeout |
+| Surface frame readback | `agora-de-compositorctl list-surfaces` | selected surface mapped/visible and optional `frame_count` |
+| Physical output discovery | `agora-de-compositorctl output list` | physical output identity; `physical_surface_readback` is inferred from mapped surfaces |
+| Physical output capture | `agora-de-compositorctl output capture` via `--output-name` | monitor/output image evidence, preferred for visible-shell closeout |
 
 The shell route currently proves installed shell availability, not visual
 correctness. `/api/surfaces` forwards compositor lifecycle fields such as
@@ -209,7 +209,7 @@ committed content, not that the compositor presented it. Prefer physical output
 capture once the compositor exposes the active monitor.
 
 The first output-discovery step in the compositor bridge is intentionally
-conservative: `compositorctl output list` may report a physical output with
+conservative: `agora-de-compositorctl output list` may report a physical output with
 `mode: physical_surface_readback` when mapped surfaces already carry an
 `output_id` such as `HDMI-A-1`. That discovers the monitor identity but is not
 yet image capture.
@@ -233,7 +233,7 @@ Require physical output capture evidence for the run to pass:
   --require-capture
 ```
 
-This invokes `compositorctl output capture --name HDMI-A-1 --export`, reads the
+This invokes `agora-de-compositorctl output capture --name HDMI-A-1 --export`, reads the
 artifact PNG, and emits `capture_visible` only when the compositor inspection is
 visible and the pixel classifier finds the expected light shell background,
 accent line, dock/panel dark region, and text-like foreground pixels.
@@ -273,7 +273,7 @@ Run the governed native app launch loop with capture evidence:
 ```
 
 The native-launch runner emits `agora-de.native-launch-live.v1`. It fails closed
-if `/usr/local/bin/compositorctl` is selected, requires the target app to be
+if `/usr/local/bin/agora-de-compositorctl` is selected, requires the target app to be
 launchable in `/api/catalog/apps`, launches through `/api/catalog/launch`,
 verifies compositor-backed surface readback and focus, captures the physical
 output, closes the surface, and verifies stale cleanup.
@@ -449,7 +449,7 @@ three or more native work surfaces through the installed shell catalog path,
 uses `/api/layout/action` to select zones mode, waits for continuous
 `master_stack` auto-placement, checks backend-acknowledged geometry and
 non-overlap, verifies focus promotion/order, exercises shell controls for
-floating/tiling and compositor state actions, exercises compositorctl agent
+floating/tiling and compositor state actions, exercises agora-de-compositorctl agent
 controls, closes and relaunches a surface to prove recovery, verifies overlay
 label state, optionally captures the physical output, and cleans up all launched
 surfaces. Capture packets use `scenario: den-k8-auto-tiling-wm-visible`.
@@ -473,14 +473,14 @@ and checking it with:
 The runner emits `agora-de.installed-catalog-live.v1`. With native launch
 disabled or no allowlist, imported installed entries must be visible in the
 catalog and non-launchable in shellui with stable `disabledCode` values. With
-`structured_compositorctl` enabled, only explicitly allowlisted desktop-entry
+`structured_agora-de-compositorctl` enabled, only explicitly allowlisted desktop-entry
 ids such as `Alacritty.desktop` should become launchable. On the current
 den-k8 development install, `AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=*` is
 used so every installed entry that can be prepared by the structured argv
 launcher is launchable.
 
 Structured native launch evidence for task 4176 used the agora-de
-`go/cmd/compositorctl` binary built to `/home/agent/.local/bin/agora-de-compositorctl`.
+`go/cmd/agora-de-compositorctl` binary built to `/home/agent/.local/bin/agora-de-compositorctl`.
 The direct launch command:
 
 ```bash
@@ -518,7 +518,7 @@ go run ./cmd/shellui \
   --desktop-entry-roots /usr/share/applications:/home/agent/.local/share/applications \
   --surface-provider fixture \
   --compositorctl /home/agent/.local/bin/agora-de-compositorctl \
-  --native-launch-provider structured_compositorctl \
+  --native-launch-provider structured_agora-de-compositorctl \
   --native-launch-allowlist Alacritty.desktop \
   --native-launch-uid 1001 \
   --native-launch-gid 1002 \

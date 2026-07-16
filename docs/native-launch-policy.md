@@ -7,8 +7,8 @@ all of them. Discovery is catalog metadata. Launch is session authority.
 
 Native `.desktop` `Exec` launch is deferred for shellui.
 
-The installed den-k8 `compositorctl launch` binary exposes a `-cmd` option for
-native process launch, and shellui already uses `compositorctl launch` for
+The installed den-k8 `agora-de-compositorctl launch` binary exposes a `-cmd` option for
+native process launch, and shellui already uses `agora-de-compositorctl launch` for
 webview targets. That host capability is not yet enough to mark imported
 desktop entries launchable from the shell. The repo does not yet own a governed
 native-launch boundary that expands desktop-entry arguments, controls

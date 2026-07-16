@@ -18,7 +18,7 @@ func TestSelectDefaultsToAgoraDefault(t *testing.T) {
 	if selection.Source != "builtin:"+DefaultThemeID {
 		t.Fatalf("theme source = %q", selection.Source)
 	}
-	if !strings.Contains(selection.CSS, TokenEvidenceAccent) || !strings.Contains(selection.CSS, TokenBackground+": #0f172a;") {
+	if !strings.Contains(selection.CSS, TokenEvidenceAccent) || !strings.Contains(selection.CSS, TokenBackground+": #0b2a39;") {
 		t.Fatalf("default theme CSS missing expected tokens: %s", selection.CSS)
 	}
 }

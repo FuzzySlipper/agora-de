@@ -70,3 +70,32 @@ systemctl --user restart agora-de-shellui.service agora-de-shell-background.serv
 
 See `docs/den-k8-window-visibility.md` for current den-k8 behavior and live
 capture evidence from the tested host.
+
+## Full Host Provisioning
+
+One idempotent step brings a den-k8 host to a known-good agora-de session
+state from a checkout: compositor bridge + shellui binaries and services,
+the Wayfire `input-method-v1` plugin (for Chromium keyboard entry), and the
+keybindings config + managed `[command]` block. Run as the desktop user:
+
+```bash
+deploy/provision-den-k8.sh            # provision everything
+deploy/provision-den-k8.sh --check    # verify without changing anything
+```
+
+It orchestrates the existing installers rather than duplicating them:
+
+- `agora-de-compositor-bridge-admin install-bridge` (system; allowlisted sudo)
+  — compositor-bridge, compositorctl, agora-de-wayland-input, system service.
+- `deploy/shellui/install-user-services --enable --restart` — shellui + chrome
+  helpers + user services (panel/background/shellui).
+- `deploy/compositor/agora-de-wayfire-input-method-config enable` — ensures the
+  `input-method-v1` plugin + `enable_text_input_v3 = true`.
+- `deploy/compositor/install-keybindings` — installs `keybindings.toml` (defaults
+  preserved unless `--force`) and regenerates the Wayfire keybindings block.
+- a smoke `--check` (binaries, services, sockets, wayfire config, compositorctl,
+  shellui panel).
+
+Re-running converges (managed blocks are replaced, not duplicated). Wayfire
+reloads its config on change; if a keybinding doesn't fire after a change,
+restart Wayfire.

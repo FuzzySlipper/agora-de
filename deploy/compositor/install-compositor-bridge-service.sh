@@ -6,6 +6,7 @@ repo_root=${AGORA_DE_REPO_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../..
 tmp_root=${AGORA_DE_TMP_ROOT:-${TMPDIR:-/tmp}/agora-de}
 binary_tmp="$tmp_root/agora-de-compositor-bridge"
 ctl_tmp="$tmp_root/agora-de-compositorctl"
+input_tmp="$tmp_root/agora-de-wayland-input"
 binary_dest=${AGORA_DE_COMPOSITOR_BRIDGE_DEST:-/usr/local/bin/agora-de-compositor-bridge}
 ctl_dest=${AGORA_DE_COMPOSITORCTL_DEST:-/usr/local/bin/agora-de-compositorctl}
 unit_dest=${AGORA_DE_COMPOSITOR_BRIDGE_UNIT:-/etc/systemd/system/compositor-bridge.service}
@@ -36,10 +37,35 @@ mkdir -p "$tmp_root"
 go -C "$repo_root/go" build -trimpath -buildvcs=false -o "$binary_tmp" ./cmd/compositor-bridge
 go -C "$repo_root/go" build -trimpath -buildvcs=false -o "$ctl_tmp" ./cmd/compositorctl
 
+# Build the owned Wayland input injection helper (requires wayland-scanner +
+# libwayland-client). Skipped silently if the native build deps are absent so
+# the bridge/compositorctl deploy still works on minimal hosts.
+if command -v wayland-scanner >/dev/null 2>&1 && pkg-config --exists wayland-client 2>/dev/null; then
+  (cd "$repo_root/chrome/wayland-input" && ./build "$input_tmp")
+else
+  printf 'wayland-scanner/wayland-client not found; skipping agora-de-wayland-input build\n' >&2
+fi
+
 install -D -m 0755 "$binary_tmp" "$binary_dest"
 install -D -m 0755 "$ctl_tmp" "$ctl_dest"
+if [[ -f "$input_tmp" ]]; then
+  install -D -m 0755 "$input_tmp" "$(dirname "$ctl_dest")/agora-de-wayland-input"
+fi
 if [[ -n "$install_user" ]] && id "$install_user" >/dev/null 2>&1; then
   install -D -o "$install_user" -g "$(id -gn "$install_user")" -m 0755 "$ctl_tmp" "$ctl_user_dest"
+  if [[ -f "$input_tmp" ]]; then
+    install -D -o "$install_user" -g "$(id -gn "$install_user")" -m 0755 "$input_tmp" "$(dirname "$ctl_user_dest")/agora-de-wayland-input"
+  fi
+fi
+
+# Supersede the predecessor agora-os compositorctl. The legacy binary speaks
+# --cmd/launch_app (incompatible with this bridge) and collides with the bare
+# `compositorctl` name, trapping agents into the wrong tool. Remove it and any
+# user-local shim so the only compositor control tool is agora-de-compositorctl.
+# Do not leave a shim or fallback behind.
+rm -f "$(dirname "$ctl_dest")/compositorctl" 2>/dev/null || true
+if [[ -n "$install_user" ]] && id "$install_user" >/dev/null 2>&1; then
+  rm -f "$(getent passwd "$install_user" | cut -d: -f6)/.local/bin/compositorctl" 2>/dev/null || true
 fi
 
 unit_tmp="$tmp_root/compositor-bridge.service"

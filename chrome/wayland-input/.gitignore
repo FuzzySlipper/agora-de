@@ -1,0 +1,7 @@
+agora-de-wayland-input
+wlr-virtual-pointer-client-protocol.h
+wlr-virtual-pointer-protocol.c
+virtual-keyboard-client-protocol.h
+virtual-keyboard-protocol.c
+input-method-client-protocol.h
+input-method-protocol.c

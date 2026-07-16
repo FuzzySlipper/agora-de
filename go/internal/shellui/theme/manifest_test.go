@@ -21,8 +21,8 @@ func TestDecodeManifestFixture(t *testing.T) {
 	if manifest.ID != "agora-default" {
 		t.Fatalf("theme id = %q, want agora-default", manifest.ID)
 	}
-	if manifest.Name != "Agora Observatory" {
-		t.Fatalf("theme name = %q, want Agora Observatory", manifest.Name)
+	if manifest.Name != "Agora Tide" {
+		t.Fatalf("theme name = %q, want Agora Tide", manifest.Name)
 	}
 	if len(manifest.Tokens) != len(DefaultTokens()) {
 		t.Fatalf("token count = %d, want %d", len(manifest.Tokens), len(DefaultTokens()))

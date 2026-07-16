@@ -231,6 +231,14 @@ type SurfaceLayoutActionRequest struct {
 	WaitTimeoutMs int              `json:"wait_timeout_ms,omitempty"`
 }
 
+// MoveSurfaceRequest moves a surface one step in Direction within the active
+// layout order. Direction is one of left/right/up/down (MoveDirection wire names).
+type MoveSurfaceRequest struct {
+	SurfaceID     string `json:"surface_id"`
+	Direction     string `json:"direction"`
+	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
+}
+
 type WorkspaceActionRequest struct {
 	WorkspaceID   string `json:"workspace_id"`
 	OutputID      string `json:"output_id,omitempty"`

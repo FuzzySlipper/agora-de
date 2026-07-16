@@ -64,13 +64,13 @@ ss -ltnp 'sport = :17780 or sport = :7780'
 
 If a restart leaves stale agora-de shell surfaces, close them before restarting
 the shell again. Layer-shell surfaces cannot be closed through
-`compositorctl surface close`, so terminate their client pids or stop the owning
+`agora-de-compositorctl surface close`, so terminate their client pids or stop the owning
 user services:
 
 ```bash
 systemctl --user stop agora-de-shell-background.service agora-de-shell-panel.service
 
-compositorctl list-surfaces | jq -r '.surfaces[]
+agora-de-compositorctl list-surfaces | jq -r '.surfaces[]
   | select((.surface.app_id // "") | startswith("io.agorade."))
   | .client.pid // empty' \
   | xargs -r kill
@@ -81,7 +81,7 @@ systemctl --user start agora-de-shell-background.service agora-de-shell-panel.se
 Then verify the mapped background and panel:
 
 ```bash
-compositorctl list-surfaces | jq '.surfaces[]
+agora-de-compositorctl list-surfaces | jq '.surfaces[]
   | select((.surface.app_id // "") | startswith("io.agorade.Shell"))
   | {
       id: .surface.id,
@@ -221,7 +221,7 @@ AGORA_DE_LIVE_REQUIRE_FRAME=1 \
 
 Per-layer-shell capture is denied; use physical output capture for visible
 claims. The active den-k8 monitor is currently exposed as `HDMI-A-1` by
-`compositorctl output list`.
+`agora-de-compositorctl output list`.
 
 Run the full installed-service visual check:
 
@@ -245,7 +245,7 @@ Run the full installed-service visual check:
 The capture packet should report `captureClassification: capture_visible` and
 `pixelClassification.classification: expected_shell_visible`. If the monitor is
 black or the output capture path fails, the harness fails closed and includes the
-artifact path or compositorctl stderr needed for debugging.
+artifact path or agora-de-compositorctl stderr needed for debugging.
 
 For task 4153, the live artifact
 `/run/agent-os/artifacts/den-k8-live-4153/output-capture-1783170766443939863-3/output-capture-1783170766443939863-3.png`

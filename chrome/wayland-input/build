@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Build agora-de-wayland-input from vendored protocol XML + C source.
+# Requires wayland-scanner, wayland-client, xkbcommon (pkg-config), and a C compiler.
+set -euo pipefail
+
+here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+out="${1:-$here/agora-de-wayland-input}"
+
+cd "$here"
+wayland-scanner client-header protocol/wlr-virtual-pointer-unstable-v1.xml \
+  wlr-virtual-pointer-client-protocol.h
+wayland-scanner private-code protocol/wlr-virtual-pointer-unstable-v1.xml \
+  wlr-virtual-pointer-protocol.c
+wayland-scanner client-header protocol/virtual-keyboard-unstable-v1.xml \
+  virtual-keyboard-client-protocol.h
+wayland-scanner private-code protocol/virtual-keyboard-unstable-v1.xml \
+  virtual-keyboard-protocol.c
+wayland-scanner client-header protocol/input-method-unstable-v1.xml \
+  input-method-client-protocol.h
+wayland-scanner private-code protocol/input-method-unstable-v1.xml \
+  input-method-protocol.c
+
+cc -O2 -Wall -Wextra -o "$out" \
+  agora-de-wayland-input.c \
+  wlr-virtual-pointer-protocol.c \
+  virtual-keyboard-protocol.c \
+  input-method-protocol.c \
+  $(pkg-config --cflags --libs wayland-client xkbcommon)
+
+printf 'built %s\n' "$out"

@@ -1,0 +1,81 @@
+# Agora DE keybindings (defaults).
+#
+# Each [[binding]] becomes a Wayfire [command] binding: Wayfire runs `command`
+# (prefixed with `compositorctl`) when `keys` is pressed. Edit `keys` to rebind,
+# then run:
+#
+#   python3 harness/compositor/generate-wayfire-keybindings.py --apply
+#
+# to regenerate the managed block in ~/.config/wayfire.ini. `command` values are
+# compositorctl subcommands; use `--surface focused` to act on the focused window.
+#
+# Keys use Wayfire's binding grammar, e.g. `<super> KEY_J`, `<super> <shift> KEY_H`,
+# `<super> <ctrl> KEY_LEFT`. Modifiers: <super> <ctrl> <alt> <shift>.
+
+compositorctl = "/usr/local/bin/agora-de-compositorctl"
+
+# Focus cycling (Super+J/K; vim-style down/up the focus order).
+[[binding]]
+name = "focus_next"
+keys = "<super> KEY_J"
+command = "surface focus-next"
+
+[[binding]]
+name = "focus_prev"
+keys = "<super> KEY_K"
+command = "surface focus-prev"
+
+# Move the focused window within the layout (Super+Shift+HJKL).
+[[binding]]
+name = "move_left"
+keys = "<super> <shift> KEY_H"
+command = "surface move --surface focused --direction left"
+
+[[binding]]
+name = "move_right"
+keys = "<super> <shift> KEY_L"
+command = "surface move --surface focused --direction right"
+
+[[binding]]
+name = "move_up"
+keys = "<super> <shift> KEY_K"
+command = "surface move --surface focused --direction up"
+
+[[binding]]
+name = "move_down"
+keys = "<super> <shift> KEY_J"
+command = "surface move --surface focused --direction down"
+
+# Swap the focused window with the master (Super+Shift+Enter; Super+Enter is terminal).
+[[binding]]
+name = "swap_master"
+keys = "<super> <shift> KEY_ENTER"
+command = "surface swap-master --surface focused"
+
+# Promote focused window to master / toggle floating.
+[[binding]]
+name = "promote"
+keys = "<super> <shift> KEY_M"
+command = "surface promote --surface focused"
+
+[[binding]]
+name = "toggle_float"
+keys = "<super> <shift> KEY_F"
+command = "surface set-floating --surface focused"
+
+# Cycle layout mode (freeform/zones/columns) and rule (master_stack/zones/dwindle).
+[[binding]]
+name = "cycle_mode"
+keys = "<super> <shift> KEY_SPACE"
+command = "layout cycle-mode"
+
+[[binding]]
+name = "cycle_rule"
+keys = "<super> <shift> KEY_R"
+command = "layout cycle-rule"
+
+# Close the focused window.
+[[binding]]
+name = "close_focused"
+keys = "<super> <shift> KEY_Q"
+command = "surface close --surface focused"

@@ -478,7 +478,7 @@ func launchTargets() map[string]launchTarget {
 			LayerRole:     "popup",
 			Width:         980,
 			Height:        720,
-			ExclusiveZone: 96,
+			ExclusiveZone: 54,
 		},
 		"shell-settings": {
 			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=settings",
@@ -488,7 +488,7 @@ func launchTargets() map[string]launchTarget {
 			LayerRole:     "popup",
 			Width:         760,
 			Height:        520,
-			ExclusiveZone: 96,
+			ExclusiveZone: 54,
 		},
 		"shell-launcher": {
 			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=launcher",
@@ -498,7 +498,7 @@ func launchTargets() map[string]launchTarget {
 			LayerRole:     "popup",
 			Width:         760,
 			Height:        600,
-			ExclusiveZone: 96,
+			ExclusiveZone: 54,
 		},
 	}
 }

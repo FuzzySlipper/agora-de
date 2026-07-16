@@ -153,6 +153,7 @@ type actionRequest struct {
 	Settings    *layoutSettings        `json:"settings"`
 	Floating    *bool                  `json:"floating"`
 	Enabled     *bool                  `json:"enabled"`
+	Direction   string                 `json:"direction"`
 }
 
 type actionResponse struct {
@@ -263,6 +264,24 @@ func actionArgs(action actionRequest) ([]string, error) {
 			return nil, fmt.Errorf("surfaceId is required")
 		}
 		return []string{"surface", "promote", "--surface", surfaceID, "--timeout-ms", "2000"}, nil
+	case "move":
+		surfaceID := strings.TrimSpace(action.SurfaceID)
+		if surfaceID == "" {
+			return nil, fmt.Errorf("surfaceId is required")
+		}
+		direction := strings.TrimSpace(action.Direction)
+		switch direction {
+		case "left", "right", "up", "down":
+		default:
+			return nil, fmt.Errorf("direction must be left|right|up|down")
+		}
+		return []string{"surface", "move", "--surface", surfaceID, "--direction", direction, "--timeout-ms", "2000"}, nil
+	case "swapMaster":
+		surfaceID := strings.TrimSpace(action.SurfaceID)
+		if surfaceID == "" {
+			return nil, fmt.Errorf("surfaceId is required")
+		}
+		return []string{"surface", "swap-master", "--surface", surfaceID, "--timeout-ms", "2000"}, nil
 	case "tile":
 		return zoneActionArgs("tile", action)
 	case "moveResize":

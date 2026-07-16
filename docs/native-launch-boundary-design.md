@@ -13,7 +13,7 @@ go/internal/nativelaunch
 
 Reasoning:
 
-- the current live compositor bridge and `compositorctl launch` surface are Go;
+- the current live compositor bridge and `agora-de-compositorctl launch` surface are Go;
 - shellui is already a Go HTTP boundary and should call a narrow launcher
   interface instead of executing desktop entries itself;
 - `go/internal/appcatalog`, `go/internal/session`, and
@@ -83,7 +83,7 @@ without learning how to parse or execute desktop-entry commands.
 The launcher must construct an argv vector. It must not invoke a shell and must
 not hand a concatenated desktop-entry `Exec` string to a shell-like API.
 
-The installed den-k8 `compositorctl launch` currently exposes `-cmd string`.
+The installed den-k8 `agora-de-compositorctl launch` currently exposes `-cmd string`.
 Before native installed apps become launchable, the bridge/CLI contract must
 prove that native launch accepts a structured argv vector, for example by adding
 a repeated `--arg` or `--argv-json` option. If the only available bridge command
@@ -161,9 +161,9 @@ Initial UI/API behavior:
 
 Shellui must never execute `Entry.Exec` or `Entry.ExecTokens` directly.
 
-The first wired provider name is `structured_compositorctl`. It is disabled by
+The first wired provider name is `structured_agora-de-compositorctl`. It is disabled by
 default and must be paired with an explicit desktop-entry id allowlist. The
-provider sends repeated `--arg` values to compositorctl and must not use
+provider sends repeated `--arg` values to agora-de-compositorctl and must not use
 `--cmd`.
 
 Installed configuration is environment-driven so native launch can be enabled
@@ -172,7 +172,7 @@ or rolled back without code edits:
 ```text
 AGORA_DE_SHELLUI_CATALOG_PROVIDER=desktop_entries
 AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS=/usr/share/applications:/home/agent/.local/share/applications
-AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=structured_compositorctl
+AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER=structured_agora-de-compositorctl
 AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST=Alacritty.desktop
 AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID=1001
 AGORA_DE_SHELLUI_NATIVE_LAUNCH_GID=1002
@@ -201,7 +201,7 @@ codes are:
 - `native_launch_unavailable`: reserved for provider/config states that still
   cannot launch the entry.
 
-The agora-de `go/cmd/compositorctl` implementation now supports that narrow
+The agora-de `go/cmd/agora-de-compositorctl` implementation now supports that narrow
 structured launch contract directly:
 
 ```bash
@@ -215,7 +215,7 @@ agora-de-compositorctl launch \
 ```
 
 This command starts the argv vector without shell evaluation. Surface readback
-now uses the same agora-de `compositorctl` control-socket client as shellui.
+now uses the same agora-de `agora-de-compositorctl` control-socket client as shellui.
 The control socket is served by the agora-de compositor bridge daemon once
 `deploy/compositor/install-compositor-bridge-service.sh` has replaced the
 predecessor unit. The remaining runtime dependency is the Wayfire plugin loaded

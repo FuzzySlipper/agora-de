@@ -18,7 +18,10 @@ python3 -m py_compile \
   "$ROOT/harness/live/check-theme-switch.py" \
   "$ROOT/harness/live/check-responsiveness-baseline.py" \
   "$ROOT/harness/live/check-multi-output-workspaces.py" \
-  "$ROOT/harness/live/check-live-session-soak.py"
+  "$ROOT/harness/live/check-live-session-soak.py" \
+  "$ROOT/harness/live/check-input.py" \
+  "$ROOT/harness/live/check-input-keyboard.py" \
+  "$ROOT/harness/live/check-input-chromium.py"
 
 python3 - "$ROOT" <<'PY'
 import pathlib
@@ -40,6 +43,9 @@ expectations = {
     "harness/live/check-responsiveness-baseline.py": "agora-de.responsiveness-baseline-live.v1",
     "harness/live/check-multi-output-workspaces.py": "agora-de.multi-output-workspaces-live.v1",
     "harness/live/check-live-session-soak.py": "agora-de.live-session-soak.v1",
+    "harness/live/check-input.py": "agora-de.input-injection-live.v1",
+    "harness/live/check-input-keyboard.py": "agora-de.input-keyboard-live.v1",
+    "harness/live/check-input-chromium.py": "agora-de.input-chromium-live.v1",
 }
 for relative, schema in expectations.items():
     text = (root / relative).read_text(encoding="utf-8")
