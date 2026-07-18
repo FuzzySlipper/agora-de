@@ -7,4 +7,3 @@ pub fn classify_blank(nonzero_pixels: bool) -> VisualStatus {
         VisualStatus::Blank
     }
 }
-

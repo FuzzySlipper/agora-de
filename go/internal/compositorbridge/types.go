@@ -239,6 +239,15 @@ type MoveSurfaceRequest struct {
 	WaitTimeoutMs int    `json:"wait_timeout_ms,omitempty"`
 }
 
+// SetSurfaceOrderRequest sets the active workspace's planning order to the given
+// surface ids (best-effort: ids are pruned to currently-active tiled surfaces,
+// any active surface missing from the list is appended). Used by layout restore// to reproduce a saved arrangement exactly.
+type SetSurfaceOrderRequest struct {
+	SurfaceIDs    []string `json:"surface_ids"`
+	WorkspaceID   string   `json:"workspace_id,omitempty"`
+	WaitTimeoutMs int      `json:"wait_timeout_ms,omitempty"`
+}
+
 type WorkspaceActionRequest struct {
 	WorkspaceID   string `json:"workspace_id"`
 	OutputID      string `json:"output_id,omitempty"`

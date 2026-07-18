@@ -4,6 +4,11 @@ import { auditTailFeatureManifest } from '@agora-de/feature-audit-tail';
 import { commandCenterFeatureManifest } from '@agora-de/feature-command-center';
 import { escalationsFeatureManifest } from '@agora-de/feature-escalations';
 import { notificationsFeatureManifest } from '@agora-de/feature-notifications';
+import { diagnosticsSettingsPageRegistration } from '@agora-de/feature-settings-diagnostics';
+import { appearanceSettingsPageRegistration } from '@agora-de/feature-settings-appearance';
+import { displaysSettingsPageRegistration } from '@agora-de/feature-settings-displays';
+import { windowManagementSettingsPageRegistration } from '@agora-de/feature-settings-window-management';
+import { shortcutsSettingsPageRegistration } from '@agora-de/feature-settings-shortcuts';
 import { taskbarFeatureManifest } from '@agora-de/feature-taskbar';
 import { workSurfaceControlsFeatureManifest } from '@agora-de/feature-work-surface-controls';
 import type { FeatureManifest, ShellSurface } from '@agora-de/domain';
@@ -37,3 +42,5 @@ export function composeShell(surface: ShellSurface): ShellComposition {
 
 export const desktopShellComposition = composeShell('desktop-shell');
 export const operatorConsoleComposition = composeShell('operator-console');
+
+export const settingsPageRegistrations = [displaysSettingsPageRegistration, windowManagementSettingsPageRegistration, appearanceSettingsPageRegistration, shortcutsSettingsPageRegistration, diagnosticsSettingsPageRegistration] as const;

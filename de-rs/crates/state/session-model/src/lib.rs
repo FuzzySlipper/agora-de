@@ -6,4 +6,3 @@ impl SessionToken {
         Self(value.into())
     }
 }
-

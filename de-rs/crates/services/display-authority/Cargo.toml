@@ -1,0 +1,22 @@
+[package]
+name = "display-authority"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+protocol-settings = { path = "../../protocol/protocol-settings" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wayland-client = "0.31.14"
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "agora-de-display-authority"
+path = "src/main.rs"
+
+[lints]
+workspace = true

@@ -34,6 +34,7 @@ const (
 	MethodPromoteSurface       = "promote_surface"
 	MethodMoveSurface          = "move_surface"
 	MethodSwapMasterSurface    = "swap_master_surface"
+	MethodSetSurfaceOrder      = "set_surface_order"
 	MethodMaximizeSurface      = "maximize_surface"
 	MethodMinimizeSurface      = "minimize_surface"
 	MethodFullscreenSurface    = "fullscreen_surface"
@@ -324,6 +325,16 @@ func (bridge *Bridge) Dispatch(request Request) (json.RawMessage, error) {
 			return nil, err
 		}
 		response, err := bridge.SwapMasterSurface(body)
+		if err != nil {
+			return nil, err
+		}
+		return marshalBody(response)
+	case MethodSetSurfaceOrder:
+		var body SetSurfaceOrderRequest
+		if err := decodeBody(request.Body, &body); err != nil {
+			return nil, err
+		}
+		response, err := bridge.SetSurfaceOrder(body)
 		if err != nil {
 			return nil, err
 		}

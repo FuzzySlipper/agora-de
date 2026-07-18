@@ -254,6 +254,24 @@ func (bridge *Bridge) SwapMasterSurface(request SurfaceLayoutActionRequest) (Lay
 	}, nil
 }
 
+// SetSurfaceOrder sets the active workspace's planning order to the given ids
+// (best-effort: pruned to active tiled surfaces, missing ones appended). Used by
+// layout restore to reproduce a saved arrangement.
+func (bridge *Bridge) SetSurfaceOrder(request SetSurfaceOrderRequest) (LayoutActionResponse, error) {
+	bridge.mu.Lock()
+	bridge.commitSurfaceOrder(request.SurfaceIDs)
+	bridge.layoutSeq++
+	layout := bridge.layoutLocked()
+	bridge.mu.Unlock()
+	bridge.requestAutoLayout("set_surface_order")
+	return LayoutActionResponse{
+		Action:   "set_surface_order",
+		Decision: DecisionAccepted,
+		Reason:   "surface order set by layout authority",
+		Layout:   &layout,
+	}, nil
+}
+
 // focusActiveWorkspaceLocked marks surfaceID focused among the active
 // workspace's surfaces. Shared by MoveSurface/SwapMasterSurface.
 func (bridge *Bridge) focusActiveWorkspaceLocked(surfaceID string, surface TrackedSurface) {

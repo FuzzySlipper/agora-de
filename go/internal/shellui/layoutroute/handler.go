@@ -15,11 +15,13 @@ import (
 
 const LayoutPath = "/api/layout"
 const ActionPath = "/api/layout/action"
+const SessionsPath = "/api/layout/sessions"
 
 type Config struct {
 	CompositorctlPath string
 	UseCompositorctl  bool
 	SurfaceProvider   surfaceroute.Provider
+	StateDir          string
 }
 
 type layoutResponse struct {

@@ -159,3 +159,380 @@ export interface EvidencePacket {
   readonly visualStatus: VisualStatus;
   readonly captureClassification: CaptureClassification;
 }
+
+export type SettingsCategory =
+  | 'hardware'
+  | 'personal'
+  | 'system';
+
+export type SettingsCapability =
+  | 'load'
+  | 'validate'
+  | 'apply'
+  | 'restore_defaults';
+
+export type SettingsAvailabilityState =
+  | 'available'
+  | 'read_only'
+  | 'unavailable'
+  | 'unsupported';
+
+export type SettingsOperation =
+  | 'load'
+  | 'validate'
+  | 'apply'
+  | 'reset'
+  | 'restore_defaults'
+  | 'keep'
+  | 'revert';
+
+export type SettingsErrorCode =
+  | 'invalid_request'
+  | 'validation_failed'
+  | 'stale_revision'
+  | 'unsupported'
+  | 'unavailable'
+  | 'timeout'
+  | 'apply_failed'
+  | 'rollback_failed'
+  | 'restart_required'
+  | 'test_failed'
+  | 'compositor_cancelled'
+  | 'transaction_busy'
+  | 'confirmation_expired';
+
+export type SettingsApplyOutcomeKind =
+  | 'applied'
+  | 'restart_required'
+  | 'rolled_back'
+  | 'pending_confirmation'
+  | 'kept';
+
+export interface SettingsModuleManifest {
+  readonly id: string;
+  readonly category: SettingsCategory;
+  readonly title: string;
+  readonly summary: string;
+  readonly icon: string;
+  readonly route: string;
+  readonly searchTerms: readonly string[];
+  readonly capabilities: readonly SettingsCapability[];
+  readonly backendAdapter: string;
+  readonly uiEntryPoint: string;
+  readonly contractVersion: number;
+}
+
+export interface SettingsModuleAvailability {
+  readonly state: SettingsAvailabilityState;
+  readonly reason?: string;
+}
+
+export interface SettingsCatalogEntry {
+  readonly manifest: SettingsModuleManifest;
+  readonly availability: SettingsModuleAvailability;
+}
+
+export interface SettingsCatalogResponse {
+  readonly schemaVersion: number;
+  readonly modules: readonly SettingsCatalogEntry[];
+}
+
+export interface SettingsValidationIssue {
+  readonly field: string;
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface SettingsError {
+  readonly code: SettingsErrorCode;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly issues: readonly SettingsValidationIssue[];
+  readonly restartComponent?: string;
+}
+
+export interface SettingsLoadRequest {
+  readonly contractVersion: number;
+}
+
+export interface SettingsResetRequest {
+  readonly contractVersion: number;
+}
+
+export interface SettingsDefaultsRequest {
+  readonly contractVersion: number;
+  readonly baseRevision: number;
+}
+
+export interface DiagnosticsSettings {
+  readonly diagnosticOverlayEnabled: boolean;
+}
+
+export interface DiagnosticsServiceState {
+  readonly enabled: boolean;
+  readonly active: boolean;
+  readonly enabledState: string;
+  readonly activeState: string;
+}
+
+export interface DiagnosticsComponentHealth { readonly id: string; readonly label: string; readonly state: string; readonly version: string; readonly detail: string; readonly recovery: string; }
+export interface DiagnosticsSupportBundle { readonly schemaVersion: number; readonly generatedAtUnixMillis: number; readonly productVersion: string; readonly settingsSchemaVersion: number; readonly components: readonly DiagnosticsComponentHealth[]; }
+
+export interface DiagnosticsSettingsState {
+  readonly moduleId: 'diagnostics';
+  readonly contractVersion: number;
+  readonly revision: number;
+  readonly active: DiagnosticsSettings;
+  readonly defaults: DiagnosticsSettings;
+  readonly service: DiagnosticsServiceState;
+  readonly productVersion: string;
+  readonly settingsSchemaVersion: number;
+  readonly components: readonly DiagnosticsComponentHealth[];
+  readonly supportBundle: DiagnosticsSupportBundle;
+  readonly availability: SettingsModuleAvailability;
+}
+
+export interface DiagnosticsValidateRequest {
+  readonly contractVersion: number;
+  readonly baseRevision: number;
+  readonly draft: DiagnosticsSettings;
+}
+
+export interface SettingsValidationResponse {
+  readonly valid: boolean;
+  readonly issues: readonly SettingsValidationIssue[];
+}
+
+export interface DiagnosticsApplyRequest {
+  readonly contractVersion: number;
+  readonly baseRevision: number;
+  readonly draft: DiagnosticsSettings;
+}
+
+export interface SettingsApplyOutcome {
+  readonly kind: SettingsApplyOutcomeKind;
+  readonly restartComponent?: string;
+}
+
+export interface DiagnosticsApplyResponse {
+  readonly state: DiagnosticsSettingsState;
+  readonly outcome: SettingsApplyOutcome;
+}
+
+export type DisplayTransform =
+  | 'normal'
+  | 'rotate_90'
+  | 'rotate_180'
+  | 'rotate_270'
+  | 'flipped'
+  | 'flipped_90'
+  | 'flipped_180'
+  | 'flipped_270';
+
+export type DisplayLeaseState =
+  | 'pending'
+  | 'kept'
+  | 'reverted'
+  | 'timed_out'
+  | 'rollback_failed';
+
+export type DisplayReconciliationState =
+  | 'not_needed'
+  | 'applied'
+  | 'partially_matched'
+  | 'safe_fallback'
+  | 'failed';
+
+export interface DisplayProtocolCapabilities {
+  readonly outputManagement: boolean;
+  readonly protocolVersion: number;
+  readonly testConfiguration: boolean;
+  readonly applyConfiguration: boolean;
+  readonly adaptiveSync: boolean;
+}
+
+export interface DisplayMode {
+  readonly id: string;
+  readonly width: number;
+  readonly height: number;
+  readonly refreshMillihz: number;
+  readonly preferred: boolean;
+}
+
+export interface DisplayHeadIdentity {
+  readonly name: string;
+  readonly description: string;
+  readonly make: string;
+  readonly model: string;
+  readonly serialNumber: string;
+  readonly physicalWidthMm: number;
+  readonly physicalHeightMm: number;
+}
+
+export interface DisplayHeadConfiguration {
+  readonly id: string;
+  readonly identity: DisplayHeadIdentity;
+  readonly connected: boolean;
+  readonly enabled: boolean;
+  readonly modes: readonly DisplayMode[];
+  readonly currentModeId?: string;
+  readonly x: number;
+  readonly y: number;
+  readonly scaleMilli: number;
+  readonly transform: DisplayTransform;
+  readonly adaptiveSync: boolean;
+}
+
+export interface DisplayTopology {
+  readonly serial: number;
+  readonly heads: readonly DisplayHeadConfiguration[];
+}
+
+export interface DisplayConfirmationLease {
+  readonly transactionId: string;
+  readonly state: DisplayLeaseState;
+  readonly deadlineUnixMillis: number;
+  readonly remainingMillis: number;
+}
+
+export interface DisplayReconciliationStatus {
+  readonly state: DisplayReconciliationState;
+  readonly detail: string;
+  readonly matchedHeads: readonly string[];
+  readonly unmatchedProfileHeads: readonly string[];
+}
+
+export interface DisplaySettingsState {
+  readonly moduleId: 'displays';
+  readonly contractVersion: number;
+  readonly revision: number;
+  readonly active: DisplayTopology;
+  readonly defaults: DisplayTopology;
+  readonly capabilities: DisplayProtocolCapabilities;
+  readonly lease?: DisplayConfirmationLease;
+  readonly reconciliation: DisplayReconciliationStatus;
+  readonly availability: SettingsModuleAvailability;
+}
+
+export interface DisplayValidateRequest {
+  readonly contractVersion: number;
+  readonly baseRevision: number;
+  readonly draft: DisplayTopology;
+}
+
+export interface DisplayApplyRequest extends DisplayValidateRequest {
+  readonly confirmationTimeoutMillis: number;
+}
+
+export interface DisplayApplyResponse {
+  readonly state: DisplaySettingsState;
+  readonly outcome: SettingsApplyOutcome;
+}
+
+export interface DisplayLeaseActionRequest {
+  readonly contractVersion: number;
+  readonly transactionId: string;
+}
+
+export type WindowLayoutMode =
+  | 'freeform'
+  | 'zones'
+  | 'columns';
+
+export type WindowLayoutRule =
+  | 'zones'
+  | 'master_stack'
+  | 'dwindle';
+
+export interface WindowManagementGaps {
+  readonly outerHorizontal: number;
+  readonly outerVertical: number;
+  readonly innerHorizontal: number;
+  readonly innerVertical: number;
+}
+
+export interface WindowManagementSettings {
+  readonly mode: WindowLayoutMode;
+  readonly rule: WindowLayoutRule;
+  readonly gaps: WindowManagementGaps;
+  readonly masterCount: number;
+  readonly masterRatio: number;
+  readonly smartGaps: boolean;
+}
+
+export interface WindowWorkspaceSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly outputId: string;
+  readonly active: boolean;
+  readonly surfaceCount: number;
+}
+
+export interface WindowManagementSettingsState {
+  readonly moduleId: 'window-management';
+  readonly contractVersion: number;
+  readonly revision: number;
+  readonly active: WindowManagementSettings;
+  readonly defaults: WindowManagementSettings;
+  readonly workspaces: readonly WindowWorkspaceSummary[];
+  readonly availability: SettingsModuleAvailability;
+}
+
+export interface WindowManagementValidateRequest {
+  readonly contractVersion: number;
+  readonly baseRevision: number;
+  readonly draft: WindowManagementSettings;
+}
+
+export type WindowManagementApplyRequest = WindowManagementValidateRequest;
+
+export interface WindowManagementApplyResponse {
+  readonly state: WindowManagementSettingsState;
+  readonly outcome: SettingsApplyOutcome;
+}
+
+export interface AppearanceThemeSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly tokens: Readonly<Record<string, string>>;
+}
+
+export interface AppearanceSettings {
+  readonly themeId: string;
+}
+
+export interface AppearanceSettingsState {
+  readonly moduleId: 'appearance';
+  readonly contractVersion: number;
+  readonly revision: number;
+  readonly active: AppearanceSettings;
+  readonly defaults: AppearanceSettings;
+  readonly themes: readonly AppearanceThemeSummary[];
+  readonly restartRequired: boolean;
+  readonly availability: SettingsModuleAvailability;
+}
+
+export interface AppearanceValidateRequest {
+  readonly contractVersion: number;
+  readonly baseRevision: number;
+  readonly draft: AppearanceSettings;
+}
+
+export type AppearanceApplyRequest = AppearanceValidateRequest;
+
+export interface AppearanceApplyResponse {
+  readonly state: AppearanceSettingsState;
+  readonly outcome: SettingsApplyOutcome;
+}
+
+export interface ShortcutDefinition { readonly id: string; readonly title: string; readonly group: string; readonly reserved: boolean; }
+export interface ShortcutAssignment { readonly id: string; readonly accelerator: string; }
+export interface ShortcutKeymap { readonly assignments: readonly ShortcutAssignment[]; }
+export interface ShortcutSettingsState {
+  readonly moduleId: 'shortcuts'; readonly contractVersion: number; readonly revision: number;
+  readonly active: ShortcutKeymap; readonly defaults: ShortcutKeymap;
+  readonly definitions: readonly ShortcutDefinition[]; readonly availability: SettingsModuleAvailability;
+}
+export interface ShortcutValidateRequest { readonly contractVersion: number; readonly baseRevision: number; readonly draft: ShortcutKeymap; }
+export type ShortcutApplyRequest = ShortcutValidateRequest;
+export interface ShortcutApplyResponse { readonly state: ShortcutSettingsState; readonly outcome: SettingsApplyOutcome; }

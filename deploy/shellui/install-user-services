@@ -56,8 +56,11 @@ desktop_roots=${AGORA_DE_SHELLUI_DESKTOP_ENTRY_ROOTS:-/usr/share/applications:$H
 
 install -d -m 0755 "$HOME/.local/bin"
 go -C "$repo_root/go" build -trimpath -buildvcs=false -o "$HOME/.local/bin/agora-de-shellui" ./cmd/shellui
+cargo build --manifest-path "$repo_root/de-rs/Cargo.toml" --release -p display-authority
+install -D -m 0755 "$repo_root/de-rs/target/release/agora-de-display-authority" "$HOME/.local/bin/agora-de-display-authority"
 
 install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shellui.user.service" "$HOME/.config/systemd/user/agora-de-shellui.service"
+install -D -m 0644 "$repo_root/deploy/shellui/agora-de-display-reconcile.user.service" "$HOME/.config/systemd/user/agora-de-display-reconcile.service"
 install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shell-background.user.service" "$HOME/.config/systemd/user/agora-de-shell-background.service"
 install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shell-panel.user.service" "$HOME/.config/systemd/user/agora-de-shell-panel.service"
 install -D -m 0644 "$repo_root/deploy/shellui/agora-de-shell-overlay.user.service" "$HOME/.config/systemd/user/agora-de-shell-overlay.service"
@@ -88,11 +91,16 @@ AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME=$HOME
 AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR=
 AGORA_DE_SHELLUI_SURFACE_PROVIDER=compositorctl
 AGORA_DE_SHELLUI_COMPOSITORCTL=$compositorctl
+AGORA_DE_SHELLUI_DISPLAY_AUTHORITY=$HOME/.local/bin/agora-de-display-authority
 EOF
+fi
+if ! grep -q '^AGORA_DE_SHELLUI_DISPLAY_AUTHORITY=' "$env_file"; then
+  printf 'AGORA_DE_SHELLUI_DISPLAY_AUTHORITY=%s\n' "$HOME/.local/bin/agora-de-display-authority" >>"$env_file"
 fi
 
 systemctl --user daemon-reload
 if [[ "$enable_services" -eq 1 ]]; then
+  systemctl --user enable --now agora-de-display-reconcile.service
   systemctl --user enable --now agora-de-shellui.service
   systemctl --user enable --now agora-de-shell-background.service
   systemctl --user enable --now agora-de-shell-panel.service
@@ -101,6 +109,7 @@ if [[ "$enable_overlay" -eq 1 ]]; then
   systemctl --user enable --now agora-de-shell-overlay.service
 fi
 if [[ "$restart_services" -eq 1 ]]; then
+  systemctl --user restart agora-de-display-reconcile.service
   systemctl --user restart agora-de-shellui.service
   systemctl --user restart agora-de-shell-background.service agora-de-shell-panel.service
   if systemctl --user is-enabled --quiet agora-de-shell-overlay.service; then

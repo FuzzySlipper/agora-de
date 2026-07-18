@@ -1,5 +1,7 @@
 use de_ids::SurfaceId;
-use protocol_compositor::{LayoutActionKind, LayoutMode, MoveDirection, SurfaceLayoutParticipation};
+use protocol_compositor::{
+    LayoutActionKind, LayoutMode, MoveDirection, SurfaceLayoutParticipation,
+};
 
 mod planner;
 pub use planner::dwindle::{DwindleAssignment, DwindleNode, DwindleTree, SplitAxis};
@@ -544,7 +546,9 @@ mod tests {
         ReservedChrome,
     };
     use de_ids::SurfaceId;
-    use protocol_compositor::{LayoutActionKind, LayoutMode, MoveDirection, SurfaceLayoutParticipation};
+    use protocol_compositor::{
+        LayoutActionKind, LayoutMode, MoveDirection, SurfaceLayoutParticipation,
+    };
 
     #[test]
     fn zones_planner_produces_desired_rectangles_with_stable_order() {
@@ -897,6 +901,9 @@ mod tests {
 
         assert_eq!(stale.error_class, Some(LayoutErrorClass::SurfaceStale));
         assert_eq!(missing.error_class, Some(LayoutErrorClass::SurfaceNotFound));
-        assert_eq!(no_direction.error_class, Some(LayoutErrorClass::InvalidRequest));
+        assert_eq!(
+            no_direction.error_class,
+            Some(LayoutErrorClass::InvalidRequest)
+        );
     }
 }

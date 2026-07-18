@@ -198,8 +198,8 @@ impl LayoutActionKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        LayoutActionKind, LayoutMode, MoveDirection, SurfaceEventKind,
-        SurfaceLayoutParticipation, SurfacePolicyClass,
+        LayoutActionKind, LayoutMode, MoveDirection, SurfaceEventKind, SurfaceLayoutParticipation,
+        SurfacePolicyClass,
     };
 
     #[test]

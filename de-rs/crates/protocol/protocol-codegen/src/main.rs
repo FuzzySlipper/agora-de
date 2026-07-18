@@ -1,4 +1,4 @@
-use protocol_codegen::generate_typescript_contracts;
+use protocol_codegen::{generate_go_settings_contracts, generate_typescript_contracts};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -6,36 +6,51 @@ use std::path::PathBuf;
 fn main() {
     let mut args = env::args().skip(1);
     let mode = args.next().unwrap_or_else(|| "--print".to_string());
-    let generated = generate_typescript_contracts();
-
     match mode.as_str() {
         "--print" => {
-            print!("{generated}");
+            print!("{}", generate_typescript_contracts());
         }
         "--write" => {
             let path = required_path(args.next(), "--write");
-            fs::write(&path, generated).unwrap_or_else(|error| {
+            fs::write(&path, generate_typescript_contracts()).unwrap_or_else(|error| {
                 panic!("failed to write {}: {error}", path.display());
             });
         }
         "--check" => {
             let path = required_path(args.next(), "--check");
-            let current = fs::read_to_string(&path).unwrap_or_else(|error| {
-                panic!("failed to read {}: {error}", path.display());
+            check_generated(path, generate_typescript_contracts(), "protocol contracts");
+        }
+        "--write-go-settings" => {
+            let path = required_path(args.next(), "--write-go-settings");
+            fs::write(&path, generate_go_settings_contracts()).unwrap_or_else(|error| {
+                panic!("failed to write {}: {error}", path.display());
             });
-            if current != generated {
-                eprintln!("generated protocol contracts are out of date: {}", path.display());
-                eprintln!("run: cargo run -p protocol-codegen -- --write {}", path.display());
-                std::process::exit(1);
-            }
-            println!("protocol contracts: OK");
+        }
+        "--check-go-settings" => {
+            let path = required_path(args.next(), "--check-go-settings");
+            check_generated(
+                path,
+                generate_go_settings_contracts(),
+                "Go settings contracts",
+            );
         }
         other => {
             eprintln!("unknown protocol-codegen mode: {other}");
-            eprintln!("usage: protocol-codegen [--print|--write PATH|--check PATH]");
+            eprintln!("usage: protocol-codegen [--print|--write PATH|--check PATH|--write-go-settings PATH|--check-go-settings PATH]");
             std::process::exit(2);
         }
     }
+}
+
+fn check_generated(path: PathBuf, generated: String, label: &str) {
+    let current = fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!("failed to read {}: {error}", path.display());
+    });
+    if current != generated {
+        eprintln!("generated {label} are out of date: {}", path.display());
+        std::process::exit(1);
+    }
+    println!("{label}: OK");
 }
 
 fn required_path(value: Option<String>, mode: &str) -> PathBuf {

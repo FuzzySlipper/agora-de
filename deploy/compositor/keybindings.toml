@@ -14,6 +14,12 @@
 
 compositorctl = "/usr/local/bin/agora-de-compositorctl"
 
+# Keep Settings reachable while editing shortcuts.
+[[binding]]
+name = "settings"
+keys = "<super> KEY_COMMA"
+command = "launch --arg agora-de-shell-settings"
+
 # Focus cycling (Super+J/K; vim-style down/up the focus order).
 [[binding]]
 name = "focus_next"

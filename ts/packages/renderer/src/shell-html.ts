@@ -842,15 +842,15 @@ ${componentCSS}
         } catch (_error) {
           payload = {};
         }
-        throw new Error(text(payload.error, path + " returned " + response.status));
+        throw new Error(text(payload.message, path + " returned " + response.status));
       }
       return response.json();
     }
 
     function render() {
       const settings = state.settings || {};
-      const overlay = settings.diagnosticOverlay || {};
-      const enabled = Boolean(settings.diagnosticOverlayEnabled);
+      const overlay = settings.service || {};
+      const enabled = Boolean(settings.active && settings.active.diagnosticOverlayEnabled);
       const active = Boolean(overlay.active);
       const toggle = document.getElementById("overlay-toggle");
       toggle.setAttribute("aria-pressed", String(enabled));
@@ -866,7 +866,7 @@ ${componentCSS}
 
     async function refresh() {
       try {
-        state.settings = await loadJSON("/api/settings");
+        state.settings = await loadJSON("/api/settings/modules/diagnostics/load");
         render();
       } catch (error) {
         document.getElementById("status").textContent = "offline";
@@ -881,9 +881,14 @@ ${componentCSS}
       }
       state.busy = true;
       render();
-      const enabled = !Boolean(state.settings && state.settings.diagnosticOverlayEnabled);
+      const enabled = !Boolean(state.settings && state.settings.active && state.settings.active.diagnosticOverlayEnabled);
       try {
-        state.settings = await postJSON("/api/settings", {diagnosticOverlayEnabled: enabled});
+        const result = await postJSON("/api/settings/modules/diagnostics/apply", {
+          contractVersion: 1,
+          baseRevision: Number(state.settings && state.settings.revision || 0),
+          draft: {diagnosticOverlayEnabled: enabled}
+        });
+        state.settings = result.state;
       } catch (error) {
         document.getElementById("status").textContent = "save failed";
       } finally {
@@ -1551,6 +1556,28 @@ ${componentCSS}
       border-color: var(--agora-accent);
       box-shadow: inset 0 -3px 0 var(--agora-accent);
     }
+    .task-button.pinned {
+      box-shadow: inset 0 -3px 0 var(--agora-taskbar-pin, var(--agora-accent-soft, rgba(94, 196, 168, 0.5)));
+    }
+    .task-button.pinned.focused {
+      box-shadow: inset 0 -3px 0 var(--agora-accent);
+    }
+    .task-button.launcher {
+      opacity: 0.85;
+    }
+    .task-button.launcher:hover {
+      opacity: 1;
+    }
+    .wm-select {
+      background: var(--agora-surface-raised);
+      border: 1px solid var(--agora-border);
+      border-radius: var(--agora-radius-control);
+      color: var(--agora-text);
+      padding: 0 8px;
+      height: var(--taskbar-control-height, 32px);
+      min-width: 120px;
+      font: inherit;
+    }
     .task-button.minimized {
       background: var(--agora-taskbar-minimized-bg);
       border-color: var(--agora-taskbar-minimized-border);
@@ -1776,11 +1803,6 @@ ${componentCSS}
         <button class="wm-control" id="minimize-button" type="button">Min</button>
         <button class="wm-control" id="close-focus-button" type="button">Close</button>
         <button class="wm-control" id="reset-layout-button" type="button">Reset</button>
-        <button class="wm-control" id="rule-button" type="button">Rule: master</button>
-        <button class="wm-control" id="master-count-button" type="button">Master: 1</button>
-        <button class="wm-control" id="master-ratio-button" type="button">Ratio: 50%</button>
-        <button class="wm-control" id="gaps-button" type="button">Gaps: 0</button>
-        <button class="wm-control" id="smart-gaps-button" type="button">Smart: off</button>
         <span class="dock-item surface-meta wm-rule" id="layout-rule-label">master_stack</span>
       </section>
     </details>
@@ -1797,6 +1819,7 @@ ${componentCSS}
     const state = {
       apps: [],
       surfaces: [],
+      pins: [],
       layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
       workspaceState: {currentWorkspaceId: "workspace-1", currentOutputId: "", workspaces: []},
       workspace: {id: "workspace-1", name: "workspace 1", active: true, surfaceCount: 0},
@@ -2089,6 +2112,138 @@ ${componentCSS}
       return app ? text(app.iconUrl, "") : "";
     }
 
+    function catalogAppById(appId) {
+      const key = normalizeAppKey(appId);
+      if (!key) {
+        return null;
+      }
+      return state.apps.find((app) =>
+        [normalizeAppKey(app.id), normalizeAppKey(app.name), normalizeAppKey(app.startupWMClass)]
+          .some((candidate) => candidate === key)
+      ) || null;
+    }
+
+    function taskbarAppId(surface) {
+      const layout = layoutSurface(surface.id) || {};
+      return text(surface.appId, text(layout.appId, text(surface.title, surface.id)));
+    }
+
+    // Build the merged taskbar list: pinned apps first (each carrying its running
+    // surface if one matches), then running surfaces not matched to a pin.
+    function taskbarEntries(workSurfaces) {
+      const pins = Array.isArray(state.pins) ? state.pins : [];
+      const used = new Set();
+      const entries = [];
+      pins.forEach((appId) => {
+        const surface = workSurfaces.find((candidate) => {
+          if (used.has(candidate.surfaceId || candidate.id)) {
+            return false;
+          }
+          return normalizeAppKey(taskbarAppId(candidate)) === normalizeAppKey(appId);
+        });
+        if (surface) {
+          used.add(surface.surfaceId || surface.id);
+        }
+        entries.push({appId, pinned: true, surface: surface || null});
+      });
+      workSurfaces.forEach((surface) => {
+        const id = surface.surfaceId || surface.id;
+        if (!used.has(id)) {
+          entries.push({appId: taskbarAppId(surface), pinned: false, surface});
+        }
+      });
+      return entries;
+    }
+
+    function renderTaskbar(workSurfaces) {
+      const target = document.getElementById("running-list");
+      target.replaceChildren();
+      const entries = taskbarEntries(workSurfaces);
+      if (!entries.length) {
+        const empty = document.createElement("span");
+        empty.className = "dock-item muted";
+        empty.textContent = "no apps";
+        target.appendChild(empty);
+        return;
+      }
+      entries.forEach((entry) => {
+        const surface = entry.surface;
+        const layout = surface ? (layoutSurface(surface.id) || {}) : {};
+        const app = catalogAppById(entry.appId);
+        const iconLabel = surface
+          ? appIconLabel(surface, layout)
+          : text(text(app && app.name, entry.appId).slice(0, 1).toUpperCase(), "?");
+        const iconUrl = surface ? appIconURL(surface, layout) : text(app && app.iconUrl, "");
+        const taskLabel = surface
+          ? text(surface.title, text(surface.appId, surface.id))
+          : text(app && app.name, entry.appId);
+        const focused = Boolean(surface && (surface.focused || layout.focused));
+        const minimized = Boolean(surface && surface.minimized);
+        const focusButton = button(
+          "",
+          "task-button" +
+            (focused ? " focused" : "") +
+            (minimized ? " minimized" : "") +
+            (entry.pinned ? " pinned" : "") +
+            (!surface ? " launcher" : ""),
+          () => (surface ? activateTaskSurface(surface) : launchApp(entry.appId))
+        );
+        focusButton.appendChild(createIcon("task-icon", iconLabel, iconUrl, entry.appId));
+        const name = document.createElement("span");
+        name.className = "task-label";
+        name.textContent = taskLabel;
+        focusButton.appendChild(name);
+        focusButton.title = taskLabel +
+          (entry.pinned ? " (pinned)" : "") +
+          " / right-click to " + (entry.pinned ? "unpin" : "pin");
+        focusButton.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          togglePin(entry.appId);
+        });
+        const group = document.createElement("span");
+        group.className = "surface-actions";
+        group.appendChild(focusButton);
+        target.appendChild(group);
+      });
+    }
+
+    async function togglePin(appId) {
+      const pins = Array.isArray(state.pins) ? state.pins.slice() : [];
+      const key = normalizeAppKey(appId);
+      const index = pins.findIndex((candidate) => normalizeAppKey(candidate) === key);
+      const status = document.getElementById("status-label");
+      if (index >= 0) {
+        pins.splice(index, 1);
+        status.textContent = "unpinned";
+      } else {
+        pins.push(appId);
+        status.textContent = "pinned";
+      }
+      status.className = "status ready";
+      try {
+        await putJSON("/api/taskbar/pins", {apps: pins});
+        state.pins = pins;
+        setFeedback(status.textContent, "ready");
+        render();
+      } catch (error) {
+        status.textContent = "pin failed";
+        status.className = "status warn";
+      }
+    }
+
+    async function putJSON(path, body) {
+      const response = await fetch(path, {
+        method: "PUT",
+        cache: "no-store",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        throw new Error(path + " returned " + response.status);
+      }
+      return response.json();
+    }
+
     function workspaceZones() {
       const zones = Array.isArray(activeLayoutWorkspace().zones) ? activeLayoutWorkspace().zones : [];
       const zoneIds = zones
@@ -2130,51 +2285,6 @@ ${componentCSS}
       const master = settings.masterCount ? " n" + settings.masterCount : "";
       const ratio = settings.masterRatio ? " " + Math.round(settings.masterRatio * 100) + "%" : "";
       return text(settings.rule, "master_stack") + master + ratio + gapLabel;
-    }
-
-    function normalizedSettings() {
-      const settings = state.layout.settings || {};
-      const gaps = settings.gaps || {};
-      return {
-        rule: text(settings.rule, "master_stack"),
-        mode: text(settings.mode, text(state.layout.mode, "zones")),
-        gaps: {
-          outerHorizontal: Math.max(0, Number(gaps.outerHorizontal || 0)),
-          outerVertical: Math.max(0, Number(gaps.outerVertical || 0)),
-          innerHorizontal: Math.max(0, Number(gaps.innerHorizontal || 0)),
-          innerVertical: Math.max(0, Number(gaps.innerVertical || 0))
-        },
-        masterCount: Math.max(1, Number(settings.masterCount || 1)),
-        masterRatio: Math.min(0.9, Math.max(0.1, Number(settings.masterRatio || 0.5))),
-        smartGaps: settings.smartGaps !== false
-      };
-    }
-
-    function nextLayoutRule(rule) {
-      const rules = ["master_stack", "zones", "dwindle"];
-      const current = rules.indexOf(rule);
-      return rules[(current + 1) % rules.length];
-    }
-
-    function nextMasterCount(count) {
-      return count >= 3 ? 1 : count + 1;
-    }
-
-    function nextMasterRatio(ratio) {
-      const rounded = Math.round(ratio * 10) / 10;
-      return rounded >= 0.8 ? 0.4 : Math.round((rounded + 0.1) * 10) / 10;
-    }
-
-    function nextGapSet(gaps) {
-      const values = [gaps.outerHorizontal, gaps.outerVertical, gaps.innerHorizontal, gaps.innerVertical];
-      const current = Math.max.apply(null, values.map((value) => Number(value || 0)));
-      const next = current >= 16 ? 0 : current + 4;
-      return {
-        outerHorizontal: next,
-        outerVertical: next,
-        innerHorizontal: next,
-        innerVertical: next
-      };
     }
 
     function setFeedback(label, className) {
@@ -2253,23 +2363,6 @@ ${componentCSS}
       ruleLabel.title = "rule " + text(settings.rule, "master_stack") +
         " / mode " + text(state.layout.mode, "freeform") +
         " / revision " + Number(state.layout.revision || 0);
-      const normalized = normalizedSettings();
-      const ruleButton = document.getElementById("rule-button");
-      ruleButton.textContent = "Rule: " + text(normalized.rule, "master_stack").replace("_stack", "");
-      ruleButton.title = "cycle rule (current " + normalized.rule + ")";
-      const masterCountButton = document.getElementById("master-count-button");
-      masterCountButton.textContent = "Master: " + normalized.masterCount;
-      masterCountButton.title = "master count " + normalized.masterCount + " (click to add)";
-      const masterRatioButton = document.getElementById("master-ratio-button");
-      masterRatioButton.textContent = "Ratio: " + Math.round(normalized.masterRatio * 100) + "%";
-      masterRatioButton.title = "master ratio " + normalized.masterRatio.toFixed(2) + " (click to step)";
-      const gapsButton = document.getElementById("gaps-button");
-      const gapValue = Math.max(normalized.gaps.outerHorizontal, normalized.gaps.outerVertical, normalized.gaps.innerHorizontal, normalized.gaps.innerVertical);
-      gapsButton.textContent = "Gaps: " + gapValue;
-      gapsButton.title = "gaps " + normalized.gaps.outerHorizontal + "/" + normalized.gaps.outerVertical + "/" + normalized.gaps.innerHorizontal + "/" + normalized.gaps.innerVertical + " (click to step)";
-      const smartGapsButton = document.getElementById("smart-gaps-button");
-      smartGapsButton.textContent = "Smart: " + (normalized.smartGaps ? "on" : "off");
-      smartGapsButton.title = normalized.smartGaps ? "smart gaps on (click to disable)" : "smart gaps off (click to enable)";
     }
 
     function render() {
@@ -2282,31 +2375,7 @@ ${componentCSS}
       appsButton.setAttribute("aria-pressed", showingApps ? "true" : "false");
       renderWorkspaces();
       const workSurfaces = state.surfaces.filter(isTaskbarWorkSurface);
-      renderList("running-list", "no running apps", workSurfaces, (surface) => {
-        const group = document.createElement("span");
-        group.className = "surface-actions";
-        const layout = layoutSurface(surface.id) || {};
-        const zone = text(layout.zoneId, text(surface.zoneId, "primary"));
-        const taskLabel = text(surface.title, text(surface.appId, surface.id));
-        const minimized = Boolean(surface.minimized);
-        const focusButton = button(
-          "",
-          "task-button" +
-            (surface.focused || layout.focused ? " focused" : "") +
-            (minimized ? " minimized" : ""),
-          () => activateTaskSurface(surface)
-        );
-        const icon = createIcon("task-icon", appIconLabel(surface, layout), appIconURL(surface, layout), text(surface.appId, text(layout.appId, "")));
-        const name = document.createElement("span");
-        name.className = "task-label";
-        name.textContent = taskLabel;
-        focusButton.appendChild(icon);
-        focusButton.appendChild(name);
-        const area = surfaceAreaLabel(layout, zone);
-        focusButton.title = taskLabel + " / " + area + " / " + surfacePolicyLabel(surface, layout) + (minimized ? " / click to restore" : "");
-        group.appendChild(focusButton);
-        return group;
-      }, 8);
+      renderTaskbar(workSurfaces);
       const status = document.getElementById("status-label");
       const feedback = statusFromFeedback();
       if (feedback) {
@@ -2384,14 +2453,16 @@ ${componentCSS}
 
     async function refresh() {
       try {
-        const [catalog, surfaces, workspaces, layout] = await Promise.all([
+        const [catalog, surfaces, workspaces, layout, pins] = await Promise.all([
           loadJSON("/api/catalog/apps"),
           loadJSON("/api/surfaces"),
           loadJSON("/api/workspaces"),
-          loadJSON("/api/layout")
+          loadJSON("/api/layout"),
+          loadJSON("/api/taskbar/pins")
         ]);
         state.apps = Array.isArray(catalog.apps) ? catalog.apps : [];
         state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
+        state.pins = Array.isArray(pins.apps) ? pins.apps : [];
         state.layout = layout.layout || state.layout;
         if (Array.isArray(workspaces.workspaces) && workspaces.workspaces.length) {
           state.workspaceState = {
@@ -2522,49 +2593,6 @@ ${componentCSS}
         status.textContent = "layout unsupported";
         status.className = "status warn";
       }
-    }
-
-    async function setLayoutSettings(patch) {
-      const status = document.getElementById("status-label");
-      const current = normalizedSettings();
-      const settings = Object.assign({}, current, patch || {});
-      settings.gaps = Object.assign({}, current.gaps, (patch && patch.gaps) || {});
-      status.textContent = "settings";
-      status.className = "status ready";
-      try {
-        const result = await postJSON("/api/layout/action", {action: "setSettings", settings});
-        await refresh();
-        setFeedback("settings " + actionStatus(result), "ready");
-        render();
-      } catch (error) {
-        status.textContent = "settings unsupported";
-        status.className = "status warn";
-      }
-    }
-
-    async function cycleLayoutRule() {
-      const settings = normalizedSettings();
-      await setLayoutSettings({rule: nextLayoutRule(settings.rule)});
-    }
-
-    async function cycleMasterCount() {
-      const settings = normalizedSettings();
-      await setLayoutSettings({masterCount: nextMasterCount(settings.masterCount)});
-    }
-
-    async function cycleMasterRatio() {
-      const settings = normalizedSettings();
-      await setLayoutSettings({masterRatio: nextMasterRatio(settings.masterRatio)});
-    }
-
-    async function cycleGaps() {
-      const settings = normalizedSettings();
-      await setLayoutSettings({gaps: nextGapSet(settings.gaps)});
-    }
-
-    async function toggleSmartGaps() {
-      const settings = normalizedSettings();
-      await setLayoutSettings({smartGaps: !settings.smartGaps});
     }
 
     async function activateWorkspace(workspaceId, outputId) {
@@ -2771,11 +2799,6 @@ ${componentCSS}
     document.getElementById("minimize-button").addEventListener("click", () => actOnTarget("minimize"));
     document.getElementById("close-focus-button").addEventListener("click", () => actOnTarget("close"));
     document.getElementById("reset-layout-button").addEventListener("click", resetLayout);
-    document.getElementById("rule-button").addEventListener("click", cycleLayoutRule);
-    document.getElementById("master-count-button").addEventListener("click", cycleMasterCount);
-    document.getElementById("master-ratio-button").addEventListener("click", cycleMasterRatio);
-    document.getElementById("gaps-button").addEventListener("click", cycleGaps);
-    document.getElementById("smart-gaps-button").addEventListener("click", toggleSmartGaps);
     updateClock();
     refresh();
     setInterval(updateClock, 30000);

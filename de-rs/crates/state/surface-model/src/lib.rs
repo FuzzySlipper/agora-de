@@ -5,4 +5,3 @@ pub struct SurfaceRecord {
     pub id: SurfaceId,
     pub owner_uid: u32,
 }
-

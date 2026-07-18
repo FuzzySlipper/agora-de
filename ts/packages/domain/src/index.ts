@@ -20,6 +20,19 @@ export interface FeatureManifest {
   readonly surfaces: readonly ShellSurface[];
 }
 
+export interface SettingsPageDefinition {
+  readonly moduleId: string;
+  readonly uiEntryPoint: string;
+  readonly title: string;
+  readonly renderPanel: () => string;
+  readonly renderClientController?: () => string;
+}
+
+export interface SettingsPageRegistration {
+  readonly uiEntryPoint: string;
+  readonly load: () => Promise<SettingsPageDefinition>;
+}
+
 interface MutableSurfaceLifecycleView {
   id: string;
   ownerUid: number;

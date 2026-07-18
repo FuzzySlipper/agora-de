@@ -9,10 +9,11 @@ Rust protocol crates under `de-rs/crates/protocol/*` are the source of truth for
 new DE contracts. TypeScript generated output is committed for worker
 convenience, but it is not hand-owned.
 
-Current generated TypeScript output:
+Current generated outputs:
 
 ```text
 ts/packages/protocol/src/generated/contracts.ts
+go/internal/settingsprotocol/generated.go
 ```
 
 Current generated evidence vocabulary includes `CaptureClassification`, which
@@ -36,6 +37,9 @@ Compositor surface event wire names are owned by
 ```bash
 cargo run --manifest-path de-rs/Cargo.toml -p protocol-codegen -- \
   --write ts/packages/protocol/src/generated/contracts.ts
+
+cargo run --manifest-path de-rs/Cargo.toml -p protocol-codegen -- \
+  --write-go-settings go/internal/settingsprotocol/generated.go
 ```
 
 Check drift without writing:
@@ -52,8 +56,9 @@ The full gate runs the same drift check:
 
 ## Rules
 
-- Do not hand-edit files under `ts/packages/protocol/src/generated/`.
-- Commit Rust protocol changes and generated TypeScript changes together.
+- Do not hand-edit files under `ts/packages/protocol/src/generated/` or
+  `go/internal/settingsprotocol/generated.go`.
+- Commit Rust protocol changes and all generated language borders together.
 - TypeScript imports protocol contracts through `@agora-de/protocol` only.
   `check-ts-structure.mjs` permits generated-contract imports only from the
   protocol package root barrel.

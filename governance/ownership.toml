@@ -9,6 +9,14 @@ ts_root = "ts"
 lane = "go-boundary"
 may_import = []
 
+[go_package."go/internal/settingsprotocol"]
+lane = "contract-steward"
+may_import = []
+
+[go_package."go/internal/settingsregistry"]
+lane = "go-settings"
+may_import = ["go/internal/settingsprotocol"]
+
 [go_package."go/internal/wayfireproto"]
 lane = "go-compositor-protocol"
 may_import = []
@@ -65,6 +73,30 @@ may_import = ["go/internal/wayfireproto"]
 lane = "go-shellui"
 may_import = ["go/internal/osboundary"]
 
+[go_package."go/internal/shellui/settingsdiagnostics"]
+lane = "go-settings"
+may_import = ["go/internal/settingsprotocol"]
+
+[go_package."go/internal/shellui/settingsdisplays"]
+lane = "go-settings"
+may_import = ["go/internal/settingsprotocol"]
+
+[go_package."go/internal/shellui/settingswindowmanagement"]
+lane = "go-settings"
+may_import = ["go/internal/settingsprotocol"]
+
+[go_package."go/internal/shellui/settingsappearance"]
+lane = "go-settings"
+may_import = ["go/internal/settingsprotocol", "go/internal/shellui/theme"]
+
+[go_package."go/internal/shellui/settingsshortcuts"]
+lane = "go-settings"
+may_import = ["go/internal/settingsprotocol"]
+
+[go_package."go/internal/shellui/settingsroute"]
+lane = "go-settings"
+may_import = ["go/internal/settingsprotocol", "go/internal/settingsregistry"]
+
 [go_package."go/internal/shellui/audittail"]
 lane = "go-shellui"
 may_import = ["go/internal/osboundary"]
@@ -93,6 +125,10 @@ may_import = ["go/internal/shellui/catalog"]
 lane = "go-shellui"
 may_import = ["go/internal/shellui/surfaceroute", "go/internal/shellui/surfaces"]
 
+[go_package."go/internal/shellui/taskbarroute"]
+lane = "go-shellui"
+may_import = []
+
 [go_package."go/internal/shellui/surfaces"]
 lane = "go-shellui"
 may_import = ["go/internal/surfacetrack"]
@@ -107,12 +143,21 @@ may_import = [
   "go/internal/appcatalog",
   "go/internal/nativelaunch",
   "go/internal/session",
+  "go/internal/settingsprotocol",
+  "go/internal/settingsregistry",
   "go/internal/shellui/catalog",
   "go/internal/shellui/catalogroute",
   "go/internal/shellui/layoutroute",
+  "go/internal/shellui/settingsdiagnostics",
+  "go/internal/shellui/settingsdisplays",
+  "go/internal/shellui/settingsappearance",
+  "go/internal/shellui/settingswindowmanagement",
+  "go/internal/shellui/settingsroute",
+  "go/internal/shellui/settingsshortcuts",
   "go/internal/shellui/staticserve",
   "go/internal/shellui/surfaceroute",
   "go/internal/shellui/surfaces",
+  "go/internal/shellui/taskbarroute",
   "go/internal/shellui/theme",
 ]
 
@@ -138,6 +183,10 @@ may_depend_on = ["de-ids", "de-error"]
 lane = "contract-steward"
 may_depend_on = ["de-ids", "de-error"]
 
+[crate."de-rs/crates/protocol/protocol-settings"]
+lane = "contract-steward"
+may_depend_on = []
+
 [crate."de-rs/crates/protocol/protocol-os-boundary"]
 lane = "contract-steward"
 may_depend_on = ["de-ids", "de-error", "de-time"]
@@ -151,6 +200,7 @@ lane = "contract-steward"
 may_depend_on = [
   "protocol-compositor",
   "protocol-shell",
+  "protocol-settings",
   "protocol-os-boundary",
   "protocol-evidence",
 ]
@@ -195,6 +245,10 @@ may_depend_on = ["de-ids", "de-error", "de-time", "protocol-evidence"]
 [crate."de-rs/crates/services/theme-sanitizer"]
 lane = "rust-service"
 may_depend_on = ["de-error", "protocol-shell"]
+
+[crate."de-rs/crates/services/display-authority"]
+lane = "rust-service"
+may_depend_on = ["protocol-settings"]
 
 [crate."de-rs/crates/compositor/compositor-backend-api"]
 lane = "rust-compositor"
@@ -287,6 +341,12 @@ may_import = [
   "@agora-de/feature-audit-tail",
   "@agora-de/feature-work-surface-controls",
   "@agora-de/feature-app-launcher",
+  "@agora-de/feature-settings-host",
+  "@agora-de/feature-settings-diagnostics",
+  "@agora-de/feature-settings-displays",
+  "@agora-de/feature-settings-window-management",
+  "@agora-de/feature-settings-appearance",
+  "@agora-de/feature-settings-shortcuts",
 ]
 
 [package."ts/packages/testing-fixtures"]
@@ -342,3 +402,45 @@ lane = "ts-feature"
 type = "feature"
 layer = "feature"
 may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@agora-de/store", "@agora-de/renderer", "@agora-de/components", "@agora-de/theme"]
+
+[package."ts/packages/feature-settings-host"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/domain"]
+
+[package."ts/packages/feature-settings-diagnostics"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/domain"]
+
+[package."ts/packages/feature-settings-displays"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/domain"]
+
+[package."ts/packages/feature-settings-window-management"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/domain"]
+
+[package."ts/packages/feature-settings-appearance"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/domain"]
+
+[package."ts/packages/feature-settings-shortcuts"]
+lane = "ts-feature"
+type = "feature"
+layer = "feature"
+may_import = ["@agora-de/protocol", "@agora-de/domain"]
+
+[package."ts/packages/settings-testing-fixtures"]
+lane = "ts-testing"
+type = "testing"
+layer = "testing-fixtures"
+may_import = "unrestricted"

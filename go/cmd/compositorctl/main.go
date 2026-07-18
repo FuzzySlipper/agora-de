@@ -52,6 +52,7 @@ const (
 	methodSetLayoutMode        = "set_layout_mode"
 	methodUpdateLayoutSettings = "update_layout_settings"
 	methodFocusSurface         = "focus_surface"
+	methodSetSurfaceOrder      = "set_surface_order"
 	methodCloseSurface         = "close_surface"
 	methodMoveResizeSurface    = "move_resize_surface"
 	methodTileSurface          = "tile_surface"
@@ -401,7 +402,7 @@ func runOutput(args []string, stdout io.Writer, pretty bool) error {
 
 func runLayout(args []string, stdout io.Writer, pretty bool) error {
 	if len(args) == 0 {
-		return errors.New("layout subcommand is required: get, set-mode, set-settings, cycle-mode, or cycle-rule")
+		return errors.New("layout subcommand is required: get, set-mode, set-settings, cycle-mode, cycle-rule, save, restore, list, or delete")
 	}
 	switch args[0] {
 	case "get":
@@ -423,6 +424,26 @@ func runLayout(args []string, stdout io.Writer, pretty bool) error {
 		}
 		rule := cycleString([]string{"master_stack", "zones", "dwindle"}, info.Settings.Rule)
 		return callAndPrint(methodUpdateLayoutSettings, updateLayoutSettingsRequest{Rule: &rule}, stdout, pretty)
+	case "save":
+		name, err := requireSessionName("save", args[1:])
+		if err != nil {
+			return err
+		}
+		return saveLayoutSession(name)
+	case "restore":
+		name, err := requireSessionName("restore", args[1:])
+		if err != nil {
+			return err
+		}
+		return restoreLayoutSession(name)
+	case "list":
+		return listLayoutSessions()
+	case "delete":
+		name, err := requireSessionName("delete", args[1:])
+		if err != nil {
+			return err
+		}
+		return deleteLayoutSession(name)
 	case "set-mode":
 		fs := flag.NewFlagSet("layout set-mode", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -1002,15 +1023,13 @@ func resolveSurfaceID(surfaceID string) (string, error) {
 
 type layoutSurfaceInfo struct {
 	SurfaceID string `json:"surface_id"`
+	AppID     string `json:"app_id"`
 	Focused   bool   `json:"focused"`
 }
 
 type layoutInfo struct {
-	Mode     string `json:"mode"`
-	Settings struct {
-		Rule string `json:"rule"`
-		Mode string `json:"mode"`
-	} `json:"settings"`
+	Mode     string             `json:"mode"`
+	Settings layoutInfoSettings `json:"settings"`
 	Surfaces   []layoutSurfaceInfo `json:"surfaces"`
 	Workspaces []struct {
 		SurfaceOrder []string `json:"surface_order"`

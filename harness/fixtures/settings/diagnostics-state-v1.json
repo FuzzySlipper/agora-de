@@ -1,0 +1,20 @@
+{
+  "moduleId": "diagnostics",
+  "contractVersion": 1,
+  "revision": 7,
+  "active": {
+    "diagnosticOverlayEnabled": true
+  },
+  "defaults": {
+    "diagnosticOverlayEnabled": false
+  },
+  "service": {
+    "enabled": true,
+    "active": true,
+    "enabledState": "enabled",
+    "activeState": "active"
+  },
+  "availability": {
+    "state": "available"
+  }
+}

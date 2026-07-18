@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"testing"
 
+	"agora-de.local/go/internal/settingsprotocol"
 	"agora-de.local/go/internal/shellui/catalog"
 )
 
@@ -72,11 +73,6 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`unsupportedSurfaceActions`,
 		`id="close-focus-button"`,
 		`id="reset-layout-button"`,
-		`id="rule-button"`,
-		`id="master-count-button"`,
-		`id="master-ratio-button"`,
-		`id="gaps-button"`,
-		`id="smart-gaps-button"`,
 		`id="layout-rule-label"`,
 		`id="workspace-label"`,
 		`id="layout-mode-button"`,
@@ -108,12 +104,13 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`task-button.minimized`,
 		`content: "min"`,
 		`activateTaskSurface`,
-		`click to restore`,
+		`right-click to`,
+		`renderTaskbar`,
+		`taskbarEntries`,
+		`togglePin`,
 		`workspaceZones`,
 		`nextLayoutMode`,
-		`nextLayoutRule`,
 		`layoutSettingsLabel`,
-		`normalizedSettings`,
 		`manageableLayoutSurfaces`,
 		`isTaskbarWorkSurface`,
 		`isShellManagedSurface`,
@@ -125,7 +122,6 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`moveTargetToNextZone`,
 		`toggleTargetFloating`,
 		`resetLayout`,
-		`setSettings`,
 		`actionStatus`,
 		`setFeedback`,
 		`floating, action: "setFloating"`,
@@ -197,14 +193,21 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 
 	settings := responseBody(t, handler, "/shell/dist/desktop/?surface=settings")
 	for _, want := range []string{
-		"agora-de settings",
+		"Agora Settings",
 		`data-surface="settings"`,
+		`id="settings-navigation"`,
+		`id="settings-search"`,
 		`id="overlay-toggle"`,
 		`aria-label="Debug overlay"`,
-		`/api/settings`,
+		`data-settings-entry="settings-diagnostics"`,
+		`id="apply-button"`,
+		`id="reset-button"`,
+		`id="defaults-button"`,
+		`/api/settings/catalog`,
+		`/api/settings/modules/`,
+		`operationPath(entry.manifest.id, "load")`,
 		`diagnosticOverlayEnabled`,
-		`io.agorade.ShellSettings`,
-		`closeSettings`,
+		`Discard unsaved settings changes?`,
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("settings body missing %q: %s", want, settings)
@@ -1011,9 +1014,14 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"surface=settings", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup", "--expected-app-id io.agorade.ShellSettings"} {
+	for _, want := range []string{"surface=settings", "--webview-title Agora DE Settings", "--app-id io.agorade.ShellSettings", "--expected-app-id io.agorade.ShellSettings", "--wait-surface"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("settings compositorctl calls missing %q: %s", want, calls)
+		}
+	}
+	for _, forbidden := range []string{"agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup"} {
+		if strings.Contains(lastLogLine(string(calls)), forbidden) {
+			t.Fatalf("settings must launch as a normal toplevel, found %q: %s", forbidden, calls)
 		}
 	}
 }
@@ -1321,9 +1329,14 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"surface=settings", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup", "--expected-app-id io.agorade.ShellSettings"} {
+	for _, want := range []string{"surface=settings", "--webview-title Agora DE Settings", "--app-id io.agorade.ShellSettings", "--expected-app-id io.agorade.ShellSettings", "--wait-surface"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("settings compositorctl calls missing %q: %s", want, calls)
+		}
+	}
+	for _, forbidden := range []string{"agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup"} {
+		if strings.Contains(lastLogLine(string(calls)), forbidden) {
+			t.Fatalf("settings must launch as a normal toplevel, found %q: %s", forbidden, calls)
 		}
 	}
 }
@@ -1498,47 +1511,61 @@ esac
 	t.Setenv("ACTIVE_PATH", activePath)
 
 	handler, err := NewHandler(Config{
-		FixtureProviders: true,
-		SystemctlPath:    command,
+		FixtureProviders:     true,
+		SystemctlPath:        command,
+		DisplayAuthorityPath: filepath.Join(dir, "missing-display-authority"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var initial settingsResponse
-	decodeRoute(t, handler, SettingsPath, &initial)
-	if initial.DiagnosticOverlayEnabled || initial.DiagnosticOverlay.Enabled || initial.DiagnosticOverlay.Active {
+	var catalog settingsprotocol.SettingsCatalogResponse
+	decodeRoute(t, handler, SettingsCatalogPath, &catalog)
+	if len(catalog.Modules) != 5 || catalog.Modules[0].Manifest.ID != settingsprotocol.DisplaysModuleID || catalog.Modules[1].Manifest.ID != settingsprotocol.WindowManagementModuleID || catalog.Modules[2].Manifest.ID != settingsprotocol.AppearanceModuleID || catalog.Modules[3].Manifest.ID != settingsprotocol.ShortcutsModuleID || catalog.Modules[4].Manifest.ID != settingsprotocol.DiagnosticsModuleID {
+		t.Fatalf("settings catalog = %+v, want Displays, Window Management, Appearance, Shortcuts, and Diagnostics", catalog)
+	}
+	if catalog.Modules[0].Availability.State != settingsprotocol.SettingsAvailabilityUnavailable {
+		t.Fatalf("missing display authority should be typed unavailable: %+v", catalog.Modules[0])
+	}
+
+	const diagnosticsLoadPath = "/api/settings/modules/diagnostics/load"
+	const diagnosticsApplyPath = "/api/settings/modules/diagnostics/apply"
+	var initial settingsprotocol.DiagnosticsSettingsState
+	decodeRoute(t, handler, diagnosticsLoadPath, &initial)
+	if initial.Active.DiagnosticOverlayEnabled || initial.Service.Enabled || initial.Service.Active {
 		t.Fatalf("initial settings = %+v, want overlay disabled", initial)
 	}
-	if initial.DiagnosticOverlay.EnabledState != "disabled" || initial.DiagnosticOverlay.ActiveState != "inactive" {
-		t.Fatalf("initial overlay state = %+v", initial.DiagnosticOverlay)
+	if initial.Service.EnabledState != "disabled" || initial.Service.ActiveState != "inactive" {
+		t.Fatalf("initial overlay state = %+v", initial.Service)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, SettingsPath, strings.NewReader(`{"diagnosticOverlayEnabled":true}`))
+	request := httptest.NewRequest(http.MethodPost, diagnosticsApplyPath, strings.NewReader(`{"contractVersion":1,"baseRevision":1,"draft":{"diagnosticOverlayEnabled":true}}`))
+	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusAccepted {
-		t.Fatalf("enable status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("enable status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	var enabled settingsResponse
+	var enabled settingsprotocol.DiagnosticsApplyResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &enabled); err != nil {
 		t.Fatal(err)
 	}
-	if !enabled.DiagnosticOverlayEnabled || !enabled.DiagnosticOverlay.Enabled || !enabled.DiagnosticOverlay.Active {
+	if !enabled.State.Active.DiagnosticOverlayEnabled || !enabled.State.Service.Enabled || !enabled.State.Service.Active {
 		t.Fatalf("enabled settings = %+v, want overlay enabled and active", enabled)
 	}
 
 	recorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodPost, SettingsPath, strings.NewReader(`{"diagnosticOverlayEnabled":false}`))
+	request = httptest.NewRequest(http.MethodPost, diagnosticsApplyPath, strings.NewReader(`{"contractVersion":1,"baseRevision":2,"draft":{"diagnosticOverlayEnabled":false}}`))
+	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusAccepted {
-		t.Fatalf("disable status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	var disabled settingsResponse
+	var disabled settingsprotocol.DiagnosticsApplyResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &disabled); err != nil {
 		t.Fatal(err)
 	}
-	if disabled.DiagnosticOverlayEnabled || disabled.DiagnosticOverlay.Enabled || disabled.DiagnosticOverlay.Active {
+	if disabled.State.Active.DiagnosticOverlayEnabled || disabled.State.Service.Enabled || disabled.State.Service.Active {
 		t.Fatalf("disabled settings = %+v, want overlay disabled", disabled)
 	}
 
@@ -1592,6 +1619,14 @@ func responseBody(t *testing.T, handler http.Handler, path string) string {
 		t.Fatalf("%s status = %d, want %d", path, recorder.Code, http.StatusOK)
 	}
 	return recorder.Body.String()
+}
+
+func lastLogLine(log string) string {
+	lines := strings.Split(strings.TrimSpace(log), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[len(lines)-1]
 }
 
 func assertNoStore(t *testing.T, handler http.Handler, path string) {

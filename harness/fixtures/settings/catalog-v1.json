@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "manifest": {
+        "id": "diagnostics",
+        "category": "system",
+        "title": "Diagnostics & About",
+        "summary": "Inspect Agora services and diagnostic tools.",
+        "icon": "diagnostics",
+        "route": "diagnostics",
+        "searchTerms": ["overlay", "health", "version"],
+        "capabilities": ["load", "validate", "apply", "restore_defaults"],
+        "backendAdapter": "settings-diagnostics",
+        "uiEntryPoint": "settings-diagnostics",
+        "contractVersion": 1
+      },
+      "availability": {
+        "state": "available"
+      }
+    },
+    {
+      "manifest": {
+        "id": "future-module",
+        "category": "system",
+        "title": "Future module",
+        "summary": "A newer module unavailable to this build.",
+        "icon": "settings",
+        "route": "future-module",
+        "searchTerms": [],
+        "capabilities": ["load"],
+        "backendAdapter": "future-module",
+        "uiEntryPoint": "future-module",
+        "contractVersion": 99
+      },
+      "availability": {
+        "state": "unsupported",
+        "reason": "contract version 99 is unsupported"
+      }
+    }
+  ]
+}

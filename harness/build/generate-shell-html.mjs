@@ -11,14 +11,22 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appFallbackIconSVG } from '../../ts/packages/components/src/index.ts';
+import { generateSettingsHostHTML } from '../../ts/packages/feature-settings-host/src/html.ts';
+import { SettingsPageRegistry } from '../../ts/packages/feature-settings-host/src/index.ts';
+import { settingsPageRegistrations } from '../../ts/packages/shell/src/index.ts';
 import {
   backgroundHTML,
   launcherHTML,
   operatorHTML,
   overlayHTML,
   panelHTML,
-  settingsHTML,
 } from '../../ts/packages/renderer/src/shell-html.ts';
+
+const settingsPageRegistry = new SettingsPageRegistry(settingsPageRegistrations);
+const settingsPages = await Promise.all(
+  settingsPageRegistrations.map((registration) => settingsPageRegistry.load(registration.uiEntryPoint)),
+);
+const settingsHTML = generateSettingsHostHTML(settingsPages);
 
 const root = process.argv[2] ?? new URL('../../go/internal/shellui/server', import.meta.url).pathname;
 const shellAssets = join(root, 'shellassets');

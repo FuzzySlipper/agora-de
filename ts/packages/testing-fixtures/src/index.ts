@@ -17,6 +17,9 @@ import type {
   CatalogAppsResponse,
   CaptureClassification,
   EvidencePacket,
+  DiagnosticsApplyRequest,
+  DiagnosticsSettingsState,
+  SettingsCatalogResponse,
   SurfaceEvent,
 } from '@agora-de/protocol';
 
@@ -29,6 +32,53 @@ export const visibleEvidencePacket: EvidencePacket = {
   capturedAtUnixMillis: 0,
   visualStatus: 'visible',
   captureClassification: visibleCaptureClassification,
+};
+
+export const settingsCatalogFixture: SettingsCatalogResponse = {
+  schemaVersion: 1,
+  modules: [
+    {
+      manifest: {
+        id: 'diagnostics',
+        category: 'system',
+        title: 'Diagnostics & About',
+        summary: 'Inspect Agora services and diagnostic tools.',
+        icon: 'diagnostics',
+        route: 'diagnostics',
+        searchTerms: ['overlay', 'health', 'version'],
+        capabilities: ['load', 'validate', 'apply', 'restore_defaults'],
+        backendAdapter: 'settings-diagnostics',
+        uiEntryPoint: 'settings-diagnostics',
+        contractVersion: 1,
+      },
+      availability: { state: 'available' },
+    },
+  ],
+};
+
+export const diagnosticsSettingsStateFixture: DiagnosticsSettingsState = {
+  moduleId: 'diagnostics',
+  contractVersion: 1,
+  revision: 7,
+  active: { diagnosticOverlayEnabled: true },
+  defaults: { diagnosticOverlayEnabled: false },
+  service: {
+    enabled: true,
+    active: true,
+    enabledState: 'enabled',
+    activeState: 'active',
+  },
+  productVersion: 'settings-v1',
+  settingsSchemaVersion: 1,
+  components: [{ id: 'shell-gateway', label: 'Shell gateway', state: 'available', version: 'settings-v1', detail: 'active', recovery: 'Restart shell.' }],
+  supportBundle: { schemaVersion: 1, generatedAtUnixMillis: 0, productVersion: 'settings-v1', settingsSchemaVersion: 1, components: [{ id: 'shell-gateway', label: 'Shell gateway', state: 'available', version: 'settings-v1', detail: 'active', recovery: 'Restart shell.' }] },
+  availability: { state: 'available' },
+};
+
+export const diagnosticsApplyRequestFixture: DiagnosticsApplyRequest = {
+  contractVersion: 1,
+  baseRevision: diagnosticsSettingsStateFixture.revision,
+  draft: { diagnosticOverlayEnabled: false },
 };
 
 export const surfaceLifecycleEvents: readonly SurfaceEvent[] = [
@@ -247,5 +297,18 @@ export function assertThemeFixture(): void {
   }
   if (appLauncherThemeVars.itemBackground !== 'var(--agora-surface-raised)') {
     throw new Error('app launcher should consume shell theme surface tokens');
+  }
+}
+
+export function assertSettingsContractFixtures(): void {
+  const [diagnostics] = settingsCatalogFixture.modules;
+  if (!diagnostics || diagnostics.manifest.id !== diagnosticsSettingsStateFixture.moduleId) {
+    throw new Error('settings catalog and diagnostics state should share a stable module id');
+  }
+  if (diagnosticsApplyRequestFixture.baseRevision !== diagnosticsSettingsStateFixture.revision) {
+    throw new Error('settings apply fixture should use the loaded authoritative revision');
+  }
+  if ('payload' in diagnosticsApplyRequestFixture) {
+    throw new Error('settings module requests must not use a generic payload bag');
   }
 }

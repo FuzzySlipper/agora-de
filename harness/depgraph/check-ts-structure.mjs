@@ -62,6 +62,12 @@ function checkGeneratedContractImport(source, specifier) {
   failures.push(`${repoPath(source)} imports generated contracts directly; use @agora-de/protocol`);
 }
 
+function settingsSiblingFeatureViolation(sourcePackage, specifier) {
+  if (!sourcePackage.startsWith('feature-settings-')) return false;
+  if (!specifier.startsWith('@agora-de/feature-settings-')) return false;
+  return specifier !== `@agora-de/${sourcePackage}`;
+}
+
 for (const packageDirName of readdirSync(packagesRoot)) {
   const packageDir = join(packagesRoot, packageDirName);
   if (!statSync(packageDir).isDirectory()) continue;
@@ -95,8 +101,33 @@ for (const packageDirName of readdirSync(packagesRoot)) {
   for (const source of collectTypeScriptFiles(sourceDir)) {
     const text = readFileSync(source, 'utf8');
     for (const match of text.matchAll(importPattern)) {
-      checkGeneratedContractImport(source, match[1]);
+      const specifier = match[1];
+      checkGeneratedContractImport(source, specifier);
+      if (settingsSiblingFeatureViolation(packageDirName, specifier)) {
+        failures.push(`ts/packages/${packageDirName} imports sibling settings feature ${specifier}`);
+      }
     }
+  }
+}
+
+const siblingFixture = readJson(
+  join(root, 'harness', 'fixtures', 'depgraph', 'settings-sibling-feature-import.json'),
+  'settings sibling feature import fixture',
+);
+if (
+  siblingFixture &&
+  !settingsSiblingFeatureViolation(siblingFixture.sourcePackage, siblingFixture.specifier)
+) {
+  failures.push('settings sibling feature import regression fixture was not rejected');
+}
+
+const productionComposition = [
+  join(root, 'harness', 'build', 'generate-shell-html.mjs'),
+  ...collectTypeScriptFiles(join(root, 'ts', 'packages', 'shell', 'src')),
+];
+for (const source of productionComposition) {
+  if (readFileSync(source, 'utf8').includes('@agora-de/settings-testing-fixtures')) {
+    failures.push(`${repoPath(source)} includes the non-production settings fixture module`);
   }
 }
 

@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 protocol-compositor = { path = "../protocol-compositor" }
 protocol-shell = { path = "../protocol-shell" }
+protocol-settings = { path = "../protocol-settings" }
 protocol-os-boundary = { path = "../protocol-os-boundary" }
 protocol-evidence = { path = "../protocol-evidence" }
 
@@ -15,4 +16,3 @@ path = "src/lib.rs"
 
 [lints]
 workspace = true
-

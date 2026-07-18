@@ -7,5 +7,4 @@ export {
   operatorHTML,
   overlayHTML,
   panelHTML,
-  settingsHTML,
 } from './shell-html.js';

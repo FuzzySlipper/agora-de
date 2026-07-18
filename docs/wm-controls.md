@@ -111,6 +111,39 @@ left`/`Move right` to place windows across the two columns.
 `Move left`/`Move right` cross the master↔stack boundary using the live master
 count; `Move up`/`Move down` reorder within the current column.
 
+## Pin apps to the taskbar
+
+Pin frequently-used apps so they stay one click away whether or not they're
+running (persists across session restarts):
+
+- **Right-click** a taskbar entry → **Pin** / **Unpin**.
+- Pinned apps show with a pin indicator; click to launch (not running) or
+  focus/raise (running).
+- Pin state lives at `~/.config/agora-de/pinned-apps.json` (server-owned;
+`GET/PUT /api/taskbar/pins`).
+
+## Save / restore layouts
+
+Snapshot the whole arrangement — which apps are open, the WM layout/rule/settings,
+and the window order + focus — and return to it later:
+
+- **Panel**: WM menu → pick a name in the layouts row → **Save…** / **Restore** /
+  **Delete**.
+- **CLI**:
+  ```bash
+  agora-de-compositorctl layout save    --name dev
+  agora-de-compositorctl layout restore --name dev
+  agora-de-compositorctl layout list
+  agora-de-compositorctl layout delete  --name dev
+  ```
+- Restore re-launches the apps (via their desktop entry, falling back to the
+  app id as a command), re-applies the layout settings, reproduces the window
+  order, and restores focus. **It reproduces window arrangement, not in-app
+  state** (browser tabs / editor files are the app's own concern). A missing
+  app is skipped with a warning, not a hang.
+- Snapshots live at `~/.config/agora-de/layouts/<name>.json`
+  (`GET/POST /api/layout/sessions`).
+
 ## Power-user: compositorctl
 
 Everything the panel/keys do is also on the CLI (acts on `--surface focused` when
@@ -129,6 +162,9 @@ agora-de-compositorctl layout cycle-rule           # master_stack/zones/dwindle
 agora-de-compositorctl layout set-mode --mode zones
 agora-de-compositorctl layout set-settings --rule master_stack --master-count 2 --master-ratio 0.6 --inner-horizontal 8 --smart-gaps
 agora-de-compositorctl layout get                  # inspect geometry/order/focused
+agora-de-compositorctl layout save    --name dev   # snapshot current arrangement
+agora-de-compositorctl layout restore --name dev   # re-launch + reproduce it
+agora-de-compositorctl layout list                 # list saved layouts
 ```
 
 ## Status / gaps

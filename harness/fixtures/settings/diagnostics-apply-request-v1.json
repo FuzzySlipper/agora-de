@@ -1,0 +1,7 @@
+{
+  "contractVersion": 1,
+  "baseRevision": 7,
+  "draft": {
+    "diagnosticOverlayEnabled": false
+  }
+}

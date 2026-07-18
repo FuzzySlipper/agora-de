@@ -22,12 +22,20 @@ import (
 	"agora-de.local/go/internal/appcatalog"
 	"agora-de.local/go/internal/nativelaunch"
 	"agora-de.local/go/internal/session"
+	"agora-de.local/go/internal/settingsregistry"
 	"agora-de.local/go/internal/shellui/catalog"
 	"agora-de.local/go/internal/shellui/catalogroute"
 	"agora-de.local/go/internal/shellui/layoutroute"
+	"agora-de.local/go/internal/shellui/settingsappearance"
+	"agora-de.local/go/internal/shellui/settingsdiagnostics"
+	"agora-de.local/go/internal/shellui/settingsdisplays"
+	"agora-de.local/go/internal/shellui/settingsroute"
+	"agora-de.local/go/internal/shellui/settingsshortcuts"
+	"agora-de.local/go/internal/shellui/settingswindowmanagement"
 	"agora-de.local/go/internal/shellui/staticserve"
 	"agora-de.local/go/internal/shellui/surfaceroute"
 	"agora-de.local/go/internal/shellui/surfaces"
+	"agora-de.local/go/internal/shellui/taskbarroute"
 	"agora-de.local/go/internal/shellui/theme"
 )
 
@@ -46,7 +54,7 @@ const (
 	OperatorStatusPath    = "/api/operator/status"
 	TimingDiagnosticsPath = "/api/diagnostics/timing"
 	ThemePath             = "/api/theme"
-	SettingsPath          = "/api/settings"
+	SettingsCatalogPath   = settingsroute.CatalogPath
 	WorkspacesPath        = "/api/workspaces"
 	WorkspaceActionPath   = "/api/workspaces/action"
 	CatalogIconPathPrefix = "/api/catalog/icons/"
@@ -76,6 +84,7 @@ type Config struct {
 	SurfaceProvider          string
 	CompositorctlPath        string
 	SystemctlPath            string
+	DisplayAuthorityPath     string
 	NativeLaunchProvider     string
 	NativeLaunchAllowlist    []string
 	NativeLaunchRequesterUID int
@@ -84,6 +93,10 @@ type Config struct {
 	NativeLaunchOutputName   string
 	NativeLaunchHome         string
 	NativeLaunchWorkingDir   string
+	StateDir                 string
+	SettingsAdapterTimeout   time.Duration
+	ShortcutKeymapPath       string
+	WayfireConfigPath        string
 }
 
 func NewHandler(config Config) (http.Handler, error) {
@@ -91,8 +104,14 @@ func NewHandler(config Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	selectedThemeID := config.ThemeID
+	if config.ThemeManifestPath == "" {
+		if persisted := settingsappearance.PersistedThemeID(config.StateDir); persisted != "" {
+			selectedThemeID = persisted
+		}
+	}
 	themeSelection := theme.Resolve(theme.SelectionOptions{
-		ID:           config.ThemeID,
+		ID:           selectedThemeID,
 		ManifestPath: config.ThemeManifestPath,
 	})
 
@@ -109,6 +128,7 @@ func NewHandler(config Config) (http.Handler, error) {
 		SurfaceProvider:   surfaceProvider,
 	}))
 	mux.Handle(LayoutActionPath, layoutroute.NewAction(layoutroute.Config{CompositorctlPath: config.CompositorctlPath}))
+	mux.Handle(layoutroute.SessionsPath, layoutroute.NewSessions(layoutroute.Config{CompositorctlPath: config.CompositorctlPath, StateDir: config.StateDir}))
 	mux.Handle(WorkControlsPath, surfaceroute.Handler{
 		Path:     WorkControlsPath,
 		Provider: surfaceProvider,
@@ -117,7 +137,22 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider, timings))
 	mux.Handle(TimingDiagnosticsPath, timingDiagnosticsHandler(timings))
 	mux.Handle(ThemePath, themeHandler(themeSelection))
-	mux.Handle(SettingsPath, settingsHandler(config))
+	diagnostics := settingsdiagnostics.New(settingsdiagnostics.Config{SystemctlPath: config.SystemctlPath, DisplayAuthorityPath: config.DisplayAuthorityPath})
+	displays := settingsdisplays.New(settingsdisplays.Config{AuthorityPath: config.DisplayAuthorityPath, StateDir: config.StateDir})
+	windowManagement := settingswindowmanagement.New(settingswindowmanagement.Config{CompositorctlPath: config.CompositorctlPath})
+	appearance := settingsappearance.New(settingsappearance.Config{StateDir: config.StateDir, ActiveThemeID: themeSelection.Manifest.ID})
+	shortcuts := settingsshortcuts.New(settingsshortcuts.Config{KeymapPath: config.ShortcutKeymapPath, WayfireConfigPath: config.WayfireConfigPath})
+	settingsRegistry, err := settingsregistry.New(
+		[]settingsregistry.Module{displays, windowManagement, appearance, shortcuts, diagnostics},
+		config.SettingsAdapterTimeout,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("settings registry: %w", err)
+	}
+	mux.Handle(settingsroute.Prefix, settingsroute.New(settingsRegistry))
+	if pinsHandler, err := taskbarroute.New(taskbarroute.Config{StateDir: config.StateDir}); err == nil {
+		mux.Handle(taskbarroute.Path, pinsHandler)
+	}
 	workspaceConfig := workspaceRouteConfig{
 		CompositorctlPath: config.CompositorctlPath,
 		UseCompositorctl:  useCompositorctl,
@@ -152,104 +187,6 @@ func themeHandler(selection theme.Selection) http.Handler {
 			FallbackReason: selection.FallbackReason,
 		})
 	})
-}
-
-type settingsResponse struct {
-	GeneratedAtUnixMillis    int64               `json:"generatedAtUnixMillis"`
-	DiagnosticOverlayEnabled bool                `json:"diagnosticOverlayEnabled"`
-	DiagnosticOverlay        shellServiceSetting `json:"diagnosticOverlay"`
-}
-
-type shellServiceSetting struct {
-	Name         string `json:"name"`
-	Scope        string `json:"scope"`
-	EnabledState string `json:"enabledState"`
-	ActiveState  string `json:"activeState"`
-	Enabled      bool   `json:"enabled"`
-	Active       bool   `json:"active"`
-}
-
-type settingsUpdateRequest struct {
-	DiagnosticOverlayEnabled *bool `json:"diagnosticOverlayEnabled,omitempty"`
-}
-
-func settingsHandler(config Config) http.Handler {
-	systemctl := strings.TrimSpace(config.SystemctlPath)
-	if systemctl == "" {
-		systemctl = "systemctl"
-	}
-	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != SettingsPath {
-			http.NotFound(response, request)
-			return
-		}
-		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
-		defer cancel()
-		switch request.Method {
-		case http.MethodGet:
-			writeJSON(response, http.StatusOK, collectSettings(ctx, systemctl, time.Now()))
-		case http.MethodPost:
-			var update settingsUpdateRequest
-			if err := json.NewDecoder(request.Body).Decode(&update); err != nil {
-				writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid settings request"})
-				return
-			}
-			if update.DiagnosticOverlayEnabled == nil {
-				writeJSON(response, http.StatusBadRequest, map[string]string{"error": "diagnosticOverlayEnabled is required"})
-				return
-			}
-			args := []string{"--user", "disable", "--now", "agora-de-shell-overlay.service"}
-			if *update.DiagnosticOverlayEnabled {
-				args = []string{"--user", "enable", "--now", "agora-de-shell-overlay.service"}
-			}
-			if output, err := exec.CommandContext(ctx, systemctl, args...).CombinedOutput(); err != nil {
-				detail := strings.TrimSpace(string(output))
-				if detail == "" {
-					detail = err.Error()
-				}
-				writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": detail})
-				return
-			}
-			writeJSON(response, http.StatusAccepted, collectSettings(ctx, systemctl, time.Now()))
-		default:
-			response.Header().Set("Allow", "GET, POST")
-			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		}
-	})
-}
-
-func collectSettings(ctx context.Context, systemctl string, now time.Time) settingsResponse {
-	overlay := checkUserServiceSetting(ctx, systemctl, "agora-de-shell-overlay.service")
-	return settingsResponse{
-		GeneratedAtUnixMillis:    now.UnixMilli(),
-		DiagnosticOverlayEnabled: overlay.Enabled,
-		DiagnosticOverlay:        overlay,
-	}
-}
-
-func checkUserServiceSetting(ctx context.Context, systemctl string, name string) shellServiceSetting {
-	enabledState := systemctlState(ctx, systemctl, "--user", "is-enabled", name)
-	activeState := systemctlState(ctx, systemctl, "--user", "is-active", name)
-	return shellServiceSetting{
-		Name:         name,
-		Scope:        "user",
-		EnabledState: enabledState,
-		ActiveState:  activeState,
-		Enabled:      enabledState == "enabled",
-		Active:       activeState == "active",
-	}
-}
-
-func systemctlState(ctx context.Context, systemctl string, args ...string) string {
-	output, err := exec.CommandContext(ctx, systemctl, args...).CombinedOutput()
-	state := strings.TrimSpace(string(output))
-	if state == "" && err != nil {
-		return "unavailable"
-	}
-	if state == "" {
-		return "unknown"
-	}
-	return state
 }
 
 func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, map[string]string, error) {
@@ -481,14 +418,9 @@ func launchTargets() map[string]launchTarget {
 			ExclusiveZone: 54,
 		},
 		"shell-settings": {
-			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=settings",
-			Title:         "Agora DE Settings",
-			AppID:         "io.agorade.ShellSettings",
-			LayerShell:    true,
-			LayerRole:     "popup",
-			Width:         760,
-			Height:        520,
-			ExclusiveZone: 54,
+			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=settings",
+			Title: "Agora DE Settings",
+			AppID: "io.agorade.ShellSettings",
 		},
 		"shell-launcher": {
 			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=launcher",
@@ -1630,4 +1562,3 @@ func shellTemplateName(surface string) string {
 		return "background.html"
 	}
 }
-

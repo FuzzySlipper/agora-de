@@ -33,9 +33,15 @@
       "@agora-de/feature-audit-tail": ["packages/feature-audit-tail/src/index.ts"],
       "@agora-de/feature-work-surface-controls": ["packages/feature-work-surface-controls/src/index.ts"],
       "@agora-de/feature-app-launcher": ["packages/feature-app-launcher/src/index.ts"],
+      "@agora-de/feature-settings-host": ["packages/feature-settings-host/src/index.ts"],
+      "@agora-de/feature-settings-diagnostics": ["packages/feature-settings-diagnostics/src/index.ts"],
+      "@agora-de/feature-settings-displays": ["packages/feature-settings-displays/src/index.ts"],
+      "@agora-de/feature-settings-window-management": ["packages/feature-settings-window-management/src/index.ts"],
+      "@agora-de/feature-settings-appearance": ["packages/feature-settings-appearance/src/index.ts"],
+      "@agora-de/feature-settings-shortcuts": ["packages/feature-settings-shortcuts/src/index.ts"],
       "@agora-de/shell": ["packages/shell/src/index.ts"],
-      "@agora-de/testing-fixtures": ["packages/testing-fixtures/src/index.ts"]
+      "@agora-de/testing-fixtures": ["packages/testing-fixtures/src/index.ts"],
+      "@agora-de/settings-testing-fixtures": ["packages/settings-testing-fixtures/src/index.ts"]
     }
   }
 }
-

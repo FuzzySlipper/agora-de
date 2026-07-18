@@ -50,3 +50,11 @@ decided by spikes and evidence, not fallback mode accumulation.
 
 Deterministic tests are necessary but not sufficient for user-visible UI work.
 Live VM/capture evidence must travel with the successor before cutover.
+
+## Settings Posture
+
+Settings is a normal XDG toplevel composed from a build-time registry of
+first-party modules. Rust owns the lifecycle contracts and durable validation,
+Go owns lifted integration adapters, and TypeScript owns host/module
+projection. The detailed decision, lifecycle, ownership map, migration, and
+recovery rules are recorded in [Settings v1 Architecture](../docs/settings-v1-architecture.md).

@@ -17,8 +17,15 @@
     { "path": "packages/feature-audit-tail" },
     { "path": "packages/feature-work-surface-controls" },
     { "path": "packages/feature-app-launcher" },
+    { "path": "packages/feature-settings-host" },
+    { "path": "packages/feature-settings-diagnostics" },
+    { "path": "packages/feature-settings-displays" },
+    { "path": "packages/feature-settings-window-management" },
+    { "path": "packages/feature-settings-appearance" },
+    { "path": "packages/feature-settings-shortcuts" },
     { "path": "packages/shell" },
     { "path": "packages/testing-fixtures" },
+    { "path": "packages/settings-testing-fixtures" },
     { "path": "apps/desktop-shell" },
     { "path": "apps/operator-console" }
   ]

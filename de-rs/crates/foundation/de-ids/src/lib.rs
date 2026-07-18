@@ -19,4 +19,3 @@ impl LaunchId {
         Self(value.into())
     }
 }
-

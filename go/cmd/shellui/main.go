@@ -26,6 +26,7 @@ func main() {
 	surfaceProvider := flag.String("surface-provider", env("AGORA_DE_SHELLUI_SURFACE_PROVIDER", server.SurfaceProviderFixture), "surface provider: fixture or compositorctl")
 	compositorctlPath := flag.String("compositorctl", env("AGORA_DE_SHELLUI_COMPOSITORCTL", "compositorctl"), "compositorctl path for live surface provider")
 	systemctlPath := flag.String("systemctl", env("AGORA_DE_SHELLUI_SYSTEMCTL", "systemctl"), "systemctl path for shell settings actions")
+	displayAuthorityPath := flag.String("display-authority", env("AGORA_DE_SHELLUI_DISPLAY_AUTHORITY", "agora-de-display-authority"), "Rust display authority binary")
 	nativeLaunchProvider := flag.String("native-launch-provider", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_PROVIDER", server.NativeLaunchProviderDisabled), "native launch provider: disabled or structured_compositorctl")
 	nativeLaunchAllowlist := flag.String("native-launch-allowlist", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_ALLOWLIST", ""), "comma-separated desktop entry ids allowed for native launch")
 	nativeLaunchUID := flag.Int("native-launch-uid", envInt("AGORA_DE_SHELLUI_NATIVE_LAUNCH_UID", 0), "requester uid for native launch")
@@ -34,6 +35,9 @@ func main() {
 	nativeLaunchOutput := flag.String("native-launch-output", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_OUTPUT", ""), "output name for native launch placement")
 	nativeLaunchHome := flag.String("native-launch-home", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_HOME", os.Getenv("HOME")), "home directory used as native launch cwd default")
 	nativeLaunchWorkingDir := flag.String("native-launch-working-dir", env("AGORA_DE_SHELLUI_NATIVE_LAUNCH_WORKING_DIR", ""), "explicit native launch working directory")
+	stateDir := flag.String("state-dir", env("AGORA_DE_SHELLUI_STATE_DIR", filepath.Join(env("HOME", "/home/agent"), ".config", "agora-de")), "directory for persisted shell state (pins, layouts)")
+	shortcutKeymap := flag.String("shortcut-keymap", env("AGORA_DE_SHELLUI_SHORTCUT_KEYMAP", filepath.Join(env("HOME", "/home/agent"), ".config", "agora-de", "keybindings.toml")), "managed Agora keymap")
+	wayfireConfig := flag.String("wayfire-config", env("AGORA_DE_SHELLUI_WAYFIRE_CONFIG", filepath.Join(env("HOME", "/home/agent"), ".config", "wayfire.ini")), "Wayfire config containing the managed keymap block")
 	flag.Parse()
 
 	handler, err := server.NewHandler(server.Config{
@@ -48,6 +52,7 @@ func main() {
 		SurfaceProvider:          *surfaceProvider,
 		CompositorctlPath:        *compositorctlPath,
 		SystemctlPath:            *systemctlPath,
+		DisplayAuthorityPath:     *displayAuthorityPath,
 		NativeLaunchProvider:     *nativeLaunchProvider,
 		NativeLaunchAllowlist:    splitCSV(*nativeLaunchAllowlist),
 		NativeLaunchRequesterUID: *nativeLaunchUID,
@@ -56,6 +61,9 @@ func main() {
 		NativeLaunchOutputName:   *nativeLaunchOutput,
 		NativeLaunchHome:         *nativeLaunchHome,
 		NativeLaunchWorkingDir:   *nativeLaunchWorkingDir,
+		StateDir:                 *stateDir,
+		ShortcutKeymapPath:       *shortcutKeymap,
+		WayfireConfigPath:        *wayfireConfig,
 	})
 	if err != nil {
 		log.Fatal(err)

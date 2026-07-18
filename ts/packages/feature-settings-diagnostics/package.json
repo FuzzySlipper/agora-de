@@ -1,0 +1,1 @@
+{"name":"@agora-de/feature-settings-diagnostics","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/protocol":"*","@agora-de/domain":"*"}}
