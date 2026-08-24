@@ -17,6 +17,7 @@ import (
 )
 
 const selectedThemeFile = "appearance/theme-id"
+const maxJavaScriptSafeInteger = uint64(1<<53 - 1)
 
 type Config struct {
 	StateDir      string
@@ -110,7 +111,7 @@ func (module *Module) serveHTTP(response http.ResponseWriter, request *http.Requ
 			return
 		}
 		state = module.snapshot()
-		writeJSON(response, http.StatusOK, settingsprotocol.AppearanceApplyResponse{State: state, Outcome: settingsprotocol.SettingsApplyOutcome{Kind: settingsprotocol.SettingsApplyRestartRequired, RestartComponent: "shell-chrome"}})
+		writeJSON(response, http.StatusOK, settingsprotocol.AppearanceApplyResponse{State: state, Outcome: settingsprotocol.SettingsApplyOutcome{Kind: settingsprotocol.SettingsApplyApplied}})
 	case "/defaults":
 		if request.Method != http.MethodPost {
 			methodNotAllowed(response, http.MethodPost)
@@ -145,7 +146,7 @@ func (module *Module) snapshot() settingsprotocol.AppearanceSettingsState {
 	for _, manifest := range theme.BuiltinManifests() {
 		themes = append(themes, settingsprotocol.AppearanceThemeSummary{ID: manifest.ID, Name: manifest.Name, Tokens: manifest.Tokens})
 	}
-	return settingsprotocol.AppearanceSettingsState{ModuleID: settingsprotocol.AppearanceModuleID, ContractVersion: settingsprotocol.AppearanceContractVersion, Revision: revision(selected), Active: settingsprotocol.AppearanceSettings{ThemeID: selected}, Defaults: settingsprotocol.AppearanceSettings{ThemeID: theme.DefaultThemeID}, Themes: themes, RestartRequired: selected != module.activeThemeID, Availability: settingsprotocol.SettingsModuleAvailability{State: settingsprotocol.SettingsAvailabilityAvailable}}
+	return settingsprotocol.AppearanceSettingsState{ModuleID: settingsprotocol.AppearanceModuleID, ContractVersion: settingsprotocol.AppearanceContractVersion, Revision: revision(selected), Active: settingsprotocol.AppearanceSettings{ThemeID: selected}, Defaults: settingsprotocol.AppearanceSettings{ThemeID: theme.DefaultThemeID}, Themes: themes, RestartRequired: false, Availability: settingsprotocol.SettingsModuleAvailability{State: settingsprotocol.SettingsAvailabilityAvailable}}
 }
 
 func validate(contract uint16, draft settingsprotocol.AppearanceSettings) []settingsprotocol.SettingsValidationIssue {
@@ -194,7 +195,11 @@ func (module *Module) persist(id string) error {
 func revision(id string) uint64 {
 	hash := fnv.New64a()
 	_, _ = hash.Write([]byte(id))
-	return hash.Sum64()
+	value := hash.Sum64() & maxJavaScriptSafeInteger
+	if value == 0 {
+		return 1
+	}
+	return value
 }
 func issue(field, code, message string) settingsprotocol.SettingsValidationIssue {
 	return settingsprotocol.SettingsValidationIssue{Field: field, Code: code, Message: message}

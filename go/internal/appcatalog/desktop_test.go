@@ -137,6 +137,46 @@ Exec=second
 	}
 }
 
+func TestDesktopEntryRevisionTracksAddChangeAndRemove(t *testing.T) {
+	root := t.TempDir()
+	initial, err := DesktopEntryRevision(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeDesktopEntry(t, root, "revision.desktop", `[Desktop Entry]
+Type=Application
+Name=Revision One
+Exec=/usr/bin/true
+`)
+	added, err := DesktopEntryRevision(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added == initial {
+		t.Fatal("desktop entry addition did not change revision")
+	}
+	if err := os.WriteFile(path, []byte("[Desktop Entry]\nType=Application\nName=Revision Changed\nExec=/usr/bin/true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := DesktopEntryRevision(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed == added {
+		t.Fatal("desktop entry content change did not change revision")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := DesktopEntryRevision(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != initial {
+		t.Fatalf("removed revision=%d, want initial empty revision=%d", removed, initial)
+	}
+}
+
 func TestNormalizeExecHandlesCommonFieldCodesConservatively(t *testing.T) {
 	tokens, ok := NormalizeExec(`"sample app" --open %U --literal=%% --name=%c`)
 	if !ok {
@@ -175,10 +215,11 @@ func TestCatalogVisibleEntriesSkipsNoDisplay(t *testing.T) {
 	}
 }
 
-func writeDesktopEntry(t *testing.T, root string, name string, body string) {
+func writeDesktopEntry(t *testing.T, root string, name string, body string) string {
 	t.Helper()
 	path := filepath.Join(root, name)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return path
 }

@@ -1,6 +1,8 @@
 import type { SettingsPageDefinition } from '@agora-de/domain';
+import { liveThemeClientScript } from '@agora-de/theme';
 
 export function generateSettingsHostHTML(pages: readonly SettingsPageDefinition[]): string {
+  const liveThemeScript = liveThemeClientScript();
   const templates = pages
     .map(
       (page) =>
@@ -108,6 +110,7 @@ __AGORA_THEME_CSS__
   </footer>
   ${templates}
   <script>
+    ${liveThemeScript}
     const controllerFactories = Object.freeze({${controllers}});
     const state = { catalog: {schemaVersion: 1, modules: []}, selectedId: "", moduleState: null, draft: null, dirty: false, busy: false, error: null, notice: "", controller: null };
     const navigation = document.getElementById("settings-navigation");
@@ -289,6 +292,7 @@ __AGORA_THEME_CSS__
     document.getElementById("reset-button").addEventListener("click", resetDraft);
     document.getElementById("defaults-button").addEventListener("click", restoreDefaults);
     window.addEventListener("popstate", () => { const requested = new URLSearchParams(location.search).get("module"); if (requested) selectModule(requested, false); });
+    window.addEventListener("focus", () => { if (!state.dirty && !state.busy) loadSelectedModule(); });
     window.addEventListener("beforeunload", (event) => { if (!state.dirty) return; event.preventDefault(); event.returnValue = ""; });
     start();
   </script>

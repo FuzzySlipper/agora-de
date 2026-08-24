@@ -11,7 +11,7 @@ export const featureTaskbar = taskbarFeatureManifest.id;
 
 export const taskbarThemeVars = {
   background: themeVar('surface'),
-  border: themeVar('evidenceAccent'),
+  border: themeVar('accent'),
   foreground: themeVar('foreground'),
   gap: themeVar('panelGap'),
   height: themeVar('panelHeight'),

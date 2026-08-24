@@ -3,11 +3,13 @@ package appcatalog
 import (
 	"bufio"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -139,6 +141,48 @@ func ImportDesktopEntries(roots ...string) (*Catalog, error) {
 	}
 
 	return catalog, nil
+}
+
+// DesktopEntryRevision returns a stable metadata fingerprint for the desktop
+// entry files under roots. Catalog consumers can revalidate a cached snapshot
+// without rereading and reparsing every entry on every request.
+func DesktopEntryRevision(roots ...string) (uint64, error) {
+	paths := []string{}
+	for _, root := range roots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		if _, err := os.Stat(root); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return 0, fmt.Errorf("stat desktop entry root %q: %w", root, err)
+		}
+		if err := filepath.WalkDir(root, func(path string, dirEntry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !dirEntry.IsDir() && filepath.Ext(path) == ".desktop" {
+				paths = append(paths, path)
+			}
+			return nil
+		}); err != nil {
+			return 0, fmt.Errorf("walk desktop entry root %q: %w", root, err)
+		}
+	}
+	sort.Strings(paths)
+	hash := fnv.New64a()
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return 0, fmt.Errorf("stat desktop entry %q: %w", path, err)
+		}
+		_, _ = io.WriteString(hash, path)
+		_, _ = io.WriteString(hash, "\x00"+strconv.FormatInt(info.Size(), 10))
+		_, _ = io.WriteString(hash, "\x00"+strconv.FormatInt(info.ModTime().UnixNano(), 10)+"\x00")
+	}
+	return hash.Sum64(), nil
 }
 
 func parseDesktopEntryFile(id string, path string) (Entry, error) {

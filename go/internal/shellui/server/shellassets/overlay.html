@@ -223,6 +223,24 @@ __AGORA_THEME_CSS__
     <section id="overlay-labels" aria-label="Surface labels"></section>
   </main>
   <script>
+    (()=>{
+    const endpoint="/api/settings/modules/appearance/load";
+    const evidenceTokens=new Set(["--agora-evidence-bg","--agora-evidence-accent","--agora-evidence-strong"]);
+    let previewing=false;let revision=null;let requestPending=false;
+    function themeFromState(state){if(!state||!state.active||!Array.isArray(state.themes))return null;return state.themes.find((theme)=>theme&&theme.id===state.active.themeId)||null;}
+    function applyTokens(tokens){if(!tokens||typeof tokens!=="object")return false;let applied=false;Object.entries(tokens).forEach(([name,value])=>{if(name.startsWith("--agora-")&&!evidenceTokens.has(name)&&typeof value==="string"){document.documentElement.style.setProperty(name,value);applied=true;}});return applied;}
+    function applyState(state,force){if(previewing&&!force)return false;const selected=themeFromState(state);if(!selected||!applyTokens(selected.tokens))return false;revision=state.revision;document.documentElement.dataset.agoraTheme=selected.id;return true;}
+    async function refresh(){if(requestPending||previewing)return;requestPending=true;try{const response=await fetch(endpoint,{cache:"no-store"});if(!response.ok)return;const state=await response.json();if(state.revision!==revision)applyState(state,false);}catch(_error){}finally{requestPending=false;}}
+    let channel=null;try{channel=new BroadcastChannel("agora-de-theme");channel.addEventListener("message",()=>{void refresh();});}catch(_error){}
+    const api=Object.freeze({
+      applyState:(state)=>applyState(state,true),
+      preview:(theme)=>{previewing=true;return Boolean(theme&&applyTokens(theme.tokens));},
+      endPreview:(state)=>{previewing=false;if(state)applyState(state,true);else void refresh();},
+      notifyApplied:(state)=>{previewing=false;applyState(state,true);if(channel)channel.postMessage({type:"theme-changed",revision:state&&state.revision});},
+      refresh,
+    });
+    window.agoraTheme=api;void refresh();window.setInterval(refresh,1500);
+  })();
     const state = {
       layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
       surfaces: []

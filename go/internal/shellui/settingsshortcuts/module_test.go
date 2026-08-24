@@ -1,6 +1,7 @@
 package settingsshortcuts
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,19 @@ func TestManagedKeymapApplyPreservesUnrelatedWayfireConfig(t *testing.T) {
 	state, err := module.snapshot()
 	if err != nil {
 		t.Fatal(err)
+	}
+	wire, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var browser struct {
+		Revision float64 `json:"revision"`
+	}
+	if err := json.Unmarshal(wire, &browser); err != nil {
+		t.Fatal(err)
+	}
+	if state.Revision > maxJavaScriptSafeInteger || uint64(browser.Revision) != state.Revision {
+		t.Fatalf("revision %d is not browser-safe", state.Revision)
 	}
 	draft := state.Active
 	draft.Assignments[1].Accelerator = "<super> KEY_N"

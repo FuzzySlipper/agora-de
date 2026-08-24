@@ -19,6 +19,7 @@ import (
 
 const beginMarker = "# >>> agora-de-keybindings (managed - do not edit; regenerate via generate-wayfire-keybindings.py)"
 const endMarker = "# <<< agora-de-keybindings"
+const maxJavaScriptSafeInteger = uint64(1<<53 - 1)
 
 var acceleratorPattern = regexp.MustCompile(`^(?:<(?:super|ctrl|alt|shift)> )+KEY_[A-Z0-9_]+$`)
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
@@ -384,7 +385,11 @@ func group(id string) string {
 func revision(value string) uint64 {
 	hash := fnv.New64a()
 	_, _ = hash.Write([]byte(value))
-	return hash.Sum64()
+	result := hash.Sum64() & maxJavaScriptSafeInteger
+	if result == 0 {
+		return 1
+	}
+	return result
 }
 func issue(field, code, message string) settingsprotocol.SettingsValidationIssue {
 	return settingsprotocol.SettingsValidationIssue{Field: field, Code: code, Message: message}

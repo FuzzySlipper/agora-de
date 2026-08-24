@@ -104,16 +104,8 @@ func NewHandler(config Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	selectedThemeID := config.ThemeID
-	if config.ThemeManifestPath == "" {
-		if persisted := settingsappearance.PersistedThemeID(config.StateDir); persisted != "" {
-			selectedThemeID = persisted
-		}
-	}
-	themeSelection := theme.Resolve(theme.SelectionOptions{
-		ID:           selectedThemeID,
-		ManifestPath: config.ThemeManifestPath,
-	})
+	themeSelection := currentThemeSelection(config)
+	themeProvider := func() theme.Selection { return currentThemeSelection(config) }
 
 	useCompositorctl := strings.TrimSpace(config.SurfaceProvider) == SurfaceProviderCompositorctl
 	timings := newTimingRecorder(timingConfig{UseCompositorctl: useCompositorctl})
@@ -136,7 +128,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	mux.Handle(SurfaceActionPath, surfaceActionHandler(config))
 	mux.Handle(OperatorStatusPath, operatorStatusHandler(config, surfaceProvider, timings))
 	mux.Handle(TimingDiagnosticsPath, timingDiagnosticsHandler(timings))
-	mux.Handle(ThemePath, themeHandler(themeSelection))
+	mux.Handle(ThemePath, themeHandler(themeProvider))
 	diagnostics := settingsdiagnostics.New(settingsdiagnostics.Config{SystemctlPath: config.SystemctlPath, DisplayAuthorityPath: config.DisplayAuthorityPath})
 	displays := settingsdisplays.New(settingsdisplays.Config{AuthorityPath: config.DisplayAuthorityPath, StateDir: config.StateDir})
 	windowManagement := settingswindowmanagement.New(settingswindowmanagement.Config{CompositorctlPath: config.CompositorctlPath})
@@ -160,8 +152,18 @@ func NewHandler(config Config) (http.Handler, error) {
 	}
 	mux.Handle(WorkspacesPath, workspacesHandler(workspaceConfig))
 	mux.Handle(WorkspaceActionPath, workspaceActionHandler(workspaceConfig))
-	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot, themeSelection.CSS))
+	mux.Handle("/shell/dist/", shellAssetHandler(config.StaticRoot, themeProvider))
 	return noStore(timings.instrument(mux)), nil
+}
+
+func currentThemeSelection(config Config) theme.Selection {
+	selectedThemeID := config.ThemeID
+	if config.ThemeManifestPath == "" {
+		if persisted := settingsappearance.PersistedThemeID(config.StateDir); persisted != "" {
+			selectedThemeID = persisted
+		}
+	}
+	return theme.Resolve(theme.SelectionOptions{ID: selectedThemeID, ManifestPath: config.ThemeManifestPath})
 }
 
 type themeResponse struct {
@@ -172,51 +174,39 @@ type themeResponse struct {
 	FallbackReason string `json:"fallbackReason,omitempty"`
 }
 
-func themeHandler(selection theme.Selection) http.Handler {
+func themeHandler(selection func() theme.Selection) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
 			response.Header().Set("Allow", http.MethodGet)
 			writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
+		current := selection()
 		writeJSON(response, http.StatusOK, themeResponse{
-			ID:             selection.Manifest.ID,
-			Name:           selection.Manifest.Name,
-			Source:         selection.Source,
-			Fallback:       selection.FallbackReason != "",
-			FallbackReason: selection.FallbackReason,
+			ID:             current.Manifest.ID,
+			Name:           current.Manifest.Name,
+			Source:         current.Source,
+			Fallback:       current.FallbackReason != "",
+			FallbackReason: current.FallbackReason,
 		})
 	})
 }
 
-func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, map[string]string, error) {
+func providers(config Config) (catalogroute.Provider, catalogroute.LaunchProvider, surfaceroute.Provider, func(string) (string, bool), error) {
 	if !config.FixtureProviders {
 		return nil, nil, nil, nil, fmt.Errorf("shellui live providers are not wired yet; enable fixture providers for deployment testing")
 	}
 
-	appCatalog, err := catalogSource(config)
+	catalogCache, err := newCatalogCache(config)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	apps, err := launchAwareAppViews(config, appCatalog)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	iconFiles := map[string]string{}
-	apps = catalog.ApplyIconURLs(apps, iconResolver(config), func(path string) string {
-		key := iconKey(path)
-		iconFiles[key] = path
-		return CatalogIconPathPrefix + key + "/" + filepath.Base(path)
-	})
 	surfaceProvider, err := surfaceProvider(config)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	catalogProvider := func(*http.Request) ([]catalog.AppView, error) {
-		return apps, nil
-	}
-	return catalogProvider, launchProvider(config, appCatalog), surfaceProvider, iconFiles, nil
+	return catalogCache.appsProvider, launchProvider(config, catalogCache.entry), surfaceProvider, catalogCache.iconPath, nil
 }
 
 func iconResolver(config Config) *catalog.IconResolver {
@@ -240,7 +230,7 @@ func iconKey(path string) string {
 	return hex.EncodeToString(sum[:])[:24]
 }
 
-func catalogIconHandler(files map[string]string) http.Handler {
+func catalogIconHandler(files func(string) (string, bool)) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if !strings.HasPrefix(request.URL.Path, CatalogIconPathPrefix) {
 			http.NotFound(response, request)
@@ -253,7 +243,7 @@ func catalogIconHandler(files map[string]string) http.Handler {
 		}
 		rest := strings.TrimPrefix(request.URL.Path, CatalogIconPathPrefix)
 		key, _, _ := strings.Cut(rest, "/")
-		path, ok := files[key]
+		path, ok := files(key)
 		if !ok || path == "" {
 			response.Header().Set("Content-Type", "image/svg+xml")
 			_, _ = response.Write(appFallbackIcon)
@@ -393,6 +383,7 @@ type launchTarget struct {
 	URL           string
 	Title         string
 	AppID         string
+	Reusable      bool
 	LayerShell    bool
 	LayerRole     string
 	Width         int
@@ -411,6 +402,7 @@ func launchTargets() map[string]launchTarget {
 			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=operator",
 			Title:         "Agora DE Shell Status",
 			AppID:         "io.agorade.ShellStatus",
+			Reusable:      true,
 			LayerShell:    true,
 			LayerRole:     "popup",
 			Width:         980,
@@ -418,14 +410,19 @@ func launchTargets() map[string]launchTarget {
 			ExclusiveZone: 54,
 		},
 		"shell-settings": {
-			URL:   "http://127.0.0.1:17780/shell/dist/desktop/?surface=settings",
-			Title: "Agora DE Settings",
-			AppID: "io.agorade.ShellSettings",
+			URL:       "http://127.0.0.1:17780/shell/dist/desktop/?surface=settings",
+			Title:     "Agora DE Settings",
+			AppID:     "io.agorade.ShellSettings",
+			Reusable:  true,
+			LayerRole: "window",
+			Width:     1280,
+			Height:    800,
 		},
 		"shell-launcher": {
 			URL:           "http://127.0.0.1:17780/shell/dist/desktop/?surface=launcher",
 			Title:         "Agora DE App Launcher",
 			AppID:         "io.agorade.ShellLauncher",
+			Reusable:      true,
 			LayerShell:    true,
 			LayerRole:     "popup",
 			Width:         760,
@@ -435,7 +432,7 @@ func launchTargets() map[string]launchTarget {
 	}
 }
 
-func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.LaunchProvider {
+func launchProvider(config Config, catalogEntry func(string) (appcatalog.Entry, bool)) catalogroute.LaunchProvider {
 	path := strings.TrimSpace(config.CompositorctlPath)
 	if path == "" {
 		path = "compositorctl"
@@ -447,7 +444,7 @@ func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.
 		if ok {
 			return launchWebviewTarget(request, path, launch.AppID, target)
 		}
-		entry, ok := appCatalog.Get(launch.AppID)
+		entry, ok := catalogEntry(launch.AppID)
 		if !ok || entry.NoDisplay {
 			return catalogroute.LaunchResult{}, fmt.Errorf("app %q not found", launch.AppID)
 		}
@@ -466,8 +463,17 @@ func launchProvider(config Config, appCatalog *appcatalog.Catalog) catalogroute.
 func launchWebviewTarget(request *http.Request, path string, appID string, target launchTarget) (catalogroute.LaunchResult, error) {
 	ctx, cancel := context.WithTimeout(request.Context(), 8*time.Second)
 	defer cancel()
-	if target.LayerShell {
-		return launchLayerShellWebviewTarget(ctx, path, request.Host, appID, target)
+	if target.Reusable {
+		result, reused, err := reuseShellWebviewTarget(ctx, path, appID, target.AppID)
+		if err != nil {
+			return catalogroute.LaunchResult{}, err
+		}
+		if reused {
+			return result, nil
+		}
+	}
+	if target.Reusable || target.LayerShell {
+		return launchShellWebviewTarget(ctx, path, request.Host, appID, target)
 	}
 	output, err := exec.CommandContext(ctx, path,
 		"launch",
@@ -492,7 +498,39 @@ func launchWebviewTarget(request *http.Request, path string, appID string, targe
 	return result, nil
 }
 
-func launchLayerShellWebviewTarget(ctx context.Context, path string, host string, appID string, target launchTarget) (catalogroute.LaunchResult, error) {
+func reuseShellWebviewTarget(ctx context.Context, compositorctlPath string, appID string, nativeAppID string) (catalogroute.LaunchResult, bool, error) {
+	if err := requestShellVisibility(nativeAppID, "show"); err != nil {
+		return catalogroute.LaunchResult{}, false, nil
+	}
+	deadline := time.NewTimer(1500 * time.Millisecond)
+	defer deadline.Stop()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		output, err := exec.CommandContext(ctx, compositorctlPath, "list-surfaces").Output()
+		if err != nil {
+			return catalogroute.LaunchResult{}, true, fmt.Errorf("compositorctl list reusable surface: %w", err)
+		}
+		var response compositorctlListSurfacesResponse
+		if err := json.Unmarshal(output, &response); err != nil {
+			return catalogroute.LaunchResult{}, true, fmt.Errorf("decode reusable shell surfaces: %w", err)
+		}
+		for _, tracked := range response.Surfaces {
+			if tracked.Surface.AppID == nativeAppID && tracked.Surface.Visible {
+				return catalogroute.LaunchResult{AppID: appID, SurfaceID: tracked.Surface.ID, Status: "reused_existing_window"}, true, nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return catalogroute.LaunchResult{}, true, ctx.Err()
+		case <-deadline.C:
+			return catalogroute.LaunchResult{}, true, fmt.Errorf("reusable shell surface %q did not become visible", nativeAppID)
+		case <-ticker.C:
+		}
+	}
+}
+
+func launchShellWebviewTarget(ctx context.Context, path string, host string, appID string, target launchTarget) (catalogroute.LaunchResult, error) {
 	url := target.URL
 	if strings.Contains(url, "127.0.0.1:17780") && host != "" {
 		url = strings.Replace(url, "127.0.0.1:17780", host, 1)
@@ -845,7 +883,7 @@ func surfaceActionHandler(config Config) http.Handler {
 		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 		defer cancel()
 		if action.Action == "close" {
-			closed, err := closeShellLayerSurface(ctx, path, action.SurfaceID)
+			closed, err := closeReusableOrShellSurface(ctx, path, action.SurfaceID)
 			if err != nil {
 				writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 				return
@@ -895,8 +933,9 @@ func surfaceActionArgs(action surfaceActionRequest) ([]string, bool) {
 }
 
 var signalProcess = syscall.Kill
+var requestShellVisibility = sendShellVisibility
 
-func closeShellLayerSurface(ctx context.Context, compositorctlPath string, surfaceID string) (bool, error) {
+func closeReusableOrShellSurface(ctx context.Context, compositorctlPath string, surfaceID string) (bool, error) {
 	output, err := exec.CommandContext(ctx, compositorctlPath, "list-surfaces").Output()
 	if err != nil {
 		return false, fmt.Errorf("compositorctl list-surfaces: %w", err)
@@ -909,18 +948,56 @@ func closeShellLayerSurface(ctx context.Context, compositorctlPath string, surfa
 		if tracked.Surface.ID != surfaceID {
 			continue
 		}
-		if tracked.Surface.SurfaceKind != "layer_shell" || !isCloseableShellLayerApp(tracked.Surface.AppID) {
+		reusable := reusableShellControlSocket(tracked.Surface.AppID) != ""
+		if !reusable && (tracked.Surface.SurfaceKind != "layer_shell" || !isCloseableShellLayerApp(tracked.Surface.AppID)) {
 			return false, nil
 		}
+		if reusable {
+			if err := requestShellVisibility(tracked.Surface.AppID, "hide"); err == nil {
+				return true, nil
+			}
+		}
 		if tracked.Client.PID <= 0 {
-			return true, nil
+			return tracked.Surface.SurfaceKind == "layer_shell", nil
 		}
 		if err := signalProcess(tracked.Client.PID, syscall.SIGTERM); err != nil && processExists(tracked.Client.PID) {
-			return true, fmt.Errorf("terminate shell layer client %d: %w", tracked.Client.PID, err)
+			return true, fmt.Errorf("signal shell layer client %d: %w", tracked.Client.PID, err)
 		}
 		return true, nil
 	}
 	return false, nil
+}
+
+func sendShellVisibility(appID string, command string) error {
+	socketName := reusableShellControlSocket(appID)
+	if socketName == "" {
+		return fmt.Errorf("shell surface %q is not reusable", appID)
+	}
+	runtimeDir := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR"))
+	if runtimeDir == "" {
+		runtimeDir = filepath.Join("/run/user", strconv.Itoa(os.Geteuid()))
+	}
+	address := &net.UnixAddr{Name: filepath.Join(runtimeDir, socketName), Net: "unixgram"}
+	connection, err := net.DialUnix("unixgram", nil, address)
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	_, err = connection.Write([]byte(command))
+	return err
+}
+
+func reusableShellControlSocket(appID string) string {
+	switch strings.TrimSpace(appID) {
+	case "io.agorade.ShellLauncher":
+		return "agora-de-shell-launcher.sock"
+	case "io.agorade.ShellSettings":
+		return "agora-de-shell-settings.sock"
+	case "io.agorade.ShellStatus":
+		return "agora-de-shell-status.sock"
+	default:
+		return ""
+	}
 }
 
 func isCloseableShellLayerApp(appID string) bool {
@@ -1478,7 +1555,7 @@ func setNoStore(response http.ResponseWriter) {
 	response.Header().Set("Expires", "0")
 }
 
-func shellAssetHandler(root string, themeCSS string) http.Handler {
+func shellAssetHandler(root string, selection func() theme.Selection) http.Handler {
 	var resolver staticserve.Resolver
 	var hasRoot bool
 	if strings.TrimSpace(root) != "" {
@@ -1513,7 +1590,7 @@ func shellAssetHandler(root string, themeCSS string) http.Handler {
 			}
 		}
 
-		writeShellHTML(response, request, themeCSS)
+		writeShellHTML(response, request, selection().CSS)
 	})
 }
 

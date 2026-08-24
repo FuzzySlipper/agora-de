@@ -5,7 +5,46 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import socket
 import sys
+import threading
+
+
+REUSABLE_CONTROL_SOCKETS = {
+    "io.agorade.ShellLauncher": "agora-de-shell-launcher.sock",
+    "io.agorade.ShellSettings": "agora-de-shell-settings.sock",
+    "io.agorade.ShellStatus": "agora-de-shell-status.sock",
+}
+
+
+def reusable_control_path(app_id: str) -> str | None:
+    socket_name = REUSABLE_CONTROL_SOCKETS.get(app_id)
+    if socket_name is None:
+        return None
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return os.path.join(runtime_dir, socket_name)
+
+
+def request_existing_surface(path: str, command: str) -> bool:
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        client.connect(path)
+        client.send(command.encode("utf-8"))
+        return True
+    except OSError:
+        return False
+    finally:
+        client.close()
+
+
+def emit_event(payload: dict[str, object]) -> None:
+    try:
+        print(json.dumps(payload, sort_keys=True), flush=True)
+    except OSError:
+        # The compositor launcher may close its capture pipe after the initial
+        # surface appears; later reuse must not depend on that pipe remaining open.
+        pass
 
 
 def main() -> int:
@@ -13,13 +52,19 @@ def main() -> int:
         description="Launch an agora-de GTK4/WebKit layer-shell surface."
     )
     parser.add_argument("--url", required=True)
-    parser.add_argument("--role", choices=("background", "panel", "overlay", "popup"), required=True)
+    parser.add_argument("--role", choices=("background", "panel", "overlay", "popup", "window"), required=True)
     parser.add_argument("--width", type=int, required=True)
     parser.add_argument("--height", type=int, required=True)
     parser.add_argument("--exclusive-zone", type=int, default=96)
     parser.add_argument("--title", required=True)
     parser.add_argument("--app-id", required=True)
     args = parser.parse_args()
+    control_path = reusable_control_path(args.app_id)
+    if control_path and request_existing_surface(control_path, "show"):
+        emit_event(
+            {"event": "activation-requested", "role": args.role, "appId": args.app_id}
+        )
+        return 0
 
     try:
         import gi
@@ -41,45 +86,142 @@ def main() -> int:
                 application_id=args.app_id,
                 flags=Gio.ApplicationFlags.FLAGS_NONE,
             )
+            if control_path:
+                self.hold()
             self.window = None
+            self.webview = None
+            self.control_socket = None
+            self.desired_visible = True
+
+        def install_reuse_control(self, path: str) -> None:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+            control = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            control.bind(path)
+            os.chmod(path, 0o600)
+            self.control_socket = control
+            threading.Thread(target=self.control_loop, daemon=True).start()
+
+        def control_loop(self) -> None:
+            while self.control_socket is not None:
+                try:
+                    command = self.control_socket.recv(64).decode("utf-8", "replace").strip()
+                except OSError:
+                    return
+                if command == "show":
+                    self.desired_visible = True
+                elif command == "hide":
+                    self.desired_visible = False
+                GLib.idle_add(self.handle_control, command)
+
+        def handle_control(self, command: str) -> bool:
+            if command == "show":
+                self.show_window()
+            elif command == "hide":
+                self.hide_window()
+            return False
+
+        def show_window(self) -> bool:
+            self.desired_visible = True
+            if self.window is None:
+                self.do_activate()
+                return False
+            self.window.set_visible(True)
+            self.window.present()
+            emit_event(
+                {
+                    "event": "reshown",
+                    "role": args.role,
+                    "appId": args.app_id,
+                }
+            )
+            return False
+
+        def hide_window(self) -> bool:
+            self.desired_visible = False
+            if self.window is not None:
+                self.window.set_visible(False)
+                if args.role != "window":
+                    GLib.timeout_add(100, self.finish_layer_hide, self.window)
+                emit_event(
+                    {
+                        "event": "hidden",
+                        "role": args.role,
+                        "appId": args.app_id,
+                    }
+                )
+            return True
+
+        def finish_layer_hide(self, window) -> bool:
+            if self.window is window and not self.desired_visible:
+                window.set_child(None)
+                self.window = None
+                window.destroy()
+            return False
+
+        def do_shutdown(self) -> None:
+            if self.control_socket is not None:
+                self.control_socket.close()
+                self.control_socket = None
+            if control_path:
+                try:
+                    os.unlink(control_path)
+                except FileNotFoundError:
+                    pass
+            super().do_shutdown()
 
         def do_activate(self) -> None:
+            if self.window is not None:
+                self.show_window()
+                return
             self.window = Gtk.ApplicationWindow(application=self)
             self.window.set_title(args.title)
             self.window.set_default_size(args.width, args.height)
             configure_layer_shell(Gtk4LayerShell, self.window, args.role, args.app_id, args.exclusive_zone)
 
-            webview = WebKit.WebView()
-            if args.role in ("overlay", "panel", "popup"):
-                rgba = Gdk.RGBA()
-                rgba.red = 0.0
-                rgba.green = 0.0
-                rgba.blue = 0.0
-                rgba.alpha = 0.0
-                webview.set_background_color(rgba)
-            webview.load_uri(args.url)
+            webview = self.webview
+            if webview is None:
+                webview = WebKit.WebView()
+                if args.role in ("overlay", "panel", "popup"):
+                    rgba = Gdk.RGBA()
+                    rgba.red = 0.0
+                    rgba.green = 0.0
+                    rgba.blue = 0.0
+                    rgba.alpha = 0.0
+                    webview.set_background_color(rgba)
+                webview.load_uri(args.url)
             self.window.set_child(webview)
-            self.window.connect("destroy", lambda *_args: self.quit())
+            self.webview = webview
+            if control_path and args.role == "window":
+                self.window.connect("close-request", lambda *_args: self.hide_window())
+            if not control_path:
+                self.window.connect("destroy", lambda *_args: self.quit())
+            if control_path and self.control_socket is None:
+                # Publish reuse control only once the window and retained page
+                # are ready, so an early close cannot race initial activation.
+                self.install_reuse_control(control_path)
             self.window.present()
+            if not self.desired_visible:
+                self.window.set_visible(False)
 
-            print(
-                json.dumps(
-                    {
-                        "event": "shown",
-                        "toolkit": "gtk4",
-                        "role": args.role,
-                        "appId": args.app_id,
-                        "url": args.url,
-                    },
-                    sort_keys=True,
-                ),
-                flush=True,
+            emit_event(
+                {
+                    "event": "shown",
+                    "toolkit": "gtk4",
+                    "role": args.role,
+                    "appId": args.app_id,
+                    "url": args.url,
+                }
             )
 
     return ShellSurfaceApp().run([])
 
 
 def configure_layer_shell(Gtk4LayerShell, window, role: str, namespace: str, exclusive_zone: int) -> None:
+    if role == "window":
+        return
     if not Gtk4LayerShell.is_supported():
         raise RuntimeError("Gtk4LayerShell is not supported on this Wayland display")
 

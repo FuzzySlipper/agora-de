@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +31,12 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 	}
 	if !strings.Contains(body, "--agora-bg") || !strings.Contains(body, "var(--agora-evidence-accent)") {
 		t.Fatalf("shell body = %q, want centralized theme tokens", body)
+	}
+	for _, surface := range []string{"dock", "launcher", "operator", "settings", "overlay", "background", "background-fallback"} {
+		surfaceBody := responseBody(t, handler, "/shell/dist/desktop/?surface="+surface)
+		if !strings.Contains(surfaceBody, "/api/settings/modules/appearance/load") || !strings.Contains(surfaceBody, "agora-de-theme") {
+			t.Fatalf("surface %q is missing live theme synchronization", surface)
+		}
 	}
 	if !strings.Contains(body, "surfacePolicyClass") || !strings.Contains(body, "policyClass") {
 		t.Fatalf("shell body should include surface policy projection helpers")
@@ -165,6 +172,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`/api/catalog/apps`,
 		`/api/surfaces/action`,
 		`await closeLauncher()`,
+		`window.addEventListener("focus", refresh)`,
 	} {
 		if !strings.Contains(launcher, want) {
 			t.Fatalf("launcher body missing %q: %s", want, launcher)
@@ -182,6 +190,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`/api/surfaces/action`,
 		`io.agorade.ShellStatus`,
 		`closeStatus`,
+		`window.addEventListener("focus", () => refresh().catch(() => {}))`,
 		`height: 100%`,
 		`overflow: hidden`,
 		"Recovery",
@@ -208,6 +217,7 @@ func TestHandlerServesShellAndClaimRoutes(t *testing.T) {
 		`operationPath(entry.manifest.id, "load")`,
 		`diagnosticOverlayEnabled`,
 		`Discard unsaved settings changes?`,
+		`window.addEventListener("focus", () => { if (!state.dirty && !state.busy) loadSelectedModule(); })`,
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("settings body missing %q: %s", want, settings)
@@ -473,6 +483,59 @@ func TestHandlerUsesSelectedTheme(t *testing.T) {
 	decodeRoute(t, handler, ThemePath, &route)
 	if route.ID != "agora-ember" || route.Fallback {
 		t.Fatalf("theme route = %+v, want ember without fallback", route)
+	}
+}
+
+func TestAppliedAppearanceThemeUpdatesNewShellSurfacesAndThemeRoute(t *testing.T) {
+	stateDir := t.TempDir()
+	handler, err := NewHandler(Config{FixtureProviders: true, StateDir: stateDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const appearanceLoadPath = "/api/settings/modules/appearance/load"
+	const appearanceApplyPath = "/api/settings/modules/appearance/apply"
+	var state settingsprotocol.AppearanceSettingsState
+	decodeRoute(t, handler, appearanceLoadPath, &state)
+	request := settingsprotocol.AppearanceApplyRequest{
+		ContractVersion: settingsprotocol.AppearanceContractVersion,
+		BaseRevision:    state.Revision,
+		Draft:           settingsprotocol.AppearanceSettings{ThemeID: "agora-ember"},
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	httpRequest := httptest.NewRequest(http.MethodPost, appearanceApplyPath, strings.NewReader(string(body)))
+	httpRequest.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recorder, httpRequest)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("appearance apply status=%d body=%s", recorder.Code, recorder.Body)
+	}
+	var applied settingsprotocol.AppearanceApplyResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied.Outcome.Kind != settingsprotocol.SettingsApplyApplied || applied.State.RestartRequired {
+		t.Fatalf("appearance apply=%+v, want live applied state", applied)
+	}
+
+	if shell := responseBody(t, handler, "/shell/dist/desktop/?surface=dock"); !strings.Contains(shell, "--agora-accent: #fb923c;") {
+		t.Fatalf("new shell surface did not use persisted Ember theme: %s", shell)
+	}
+	var route themeResponse
+	decodeRoute(t, handler, ThemePath, &route)
+	if route.ID != "agora-ember" {
+		t.Fatalf("theme route=%+v, want persisted Ember theme", route)
+	}
+
+	if err := os.WriteFile(filepath.Join(stateDir, "appearance", "theme-id"), []byte("agora-default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	decodeRoute(t, handler, ThemePath, &route)
+	if route.ID != "agora-default" {
+		t.Fatalf("theme route=%+v, want externally restored default theme", route)
 	}
 }
 
@@ -942,6 +1005,7 @@ func TestHandlerLaunchesBuiltInStatusOutsideActiveCatalog(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture is Unix-specific")
 	}
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	root := t.TempDir()
 	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
 Type=Application
@@ -1014,12 +1078,12 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"surface=settings", "--webview-title Agora DE Settings", "--app-id io.agorade.ShellSettings", "--expected-app-id io.agorade.ShellSettings", "--wait-surface"} {
+	for _, want := range []string{"surface=settings", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg window", "--arg --app-id --arg io.agorade.ShellSettings", "--expected-app-id io.agorade.ShellSettings", "--wait-surface"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("settings compositorctl calls missing %q: %s", want, calls)
 		}
 	}
-	for _, forbidden := range []string{"agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup"} {
+	for _, forbidden := range []string{"--webview-title Agora DE Settings", "--arg --role --arg popup"} {
 		if strings.Contains(lastLogLine(string(calls)), forbidden) {
 			t.Fatalf("settings must launch as a normal toplevel, found %q: %s", forbidden, calls)
 		}
@@ -1027,6 +1091,7 @@ printf '%s\n' '{"launch_id":"status-launch","surface":{"surface":{"id":"status-v
 }
 
 func TestHandlerLaunchesNativeAppsWithAllowAllWildcard(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	root := t.TempDir()
 	writeServerDesktopEntry(t, root, "terminal.desktop", `[Desktop Entry]
 Type=Application
@@ -1227,6 +1292,7 @@ func TestHandlerLaunchesAppThroughCompositorctl(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fixture is Unix-specific")
 	}
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "calls.log")
 	command := filepath.Join(dir, "compositorctl-fixture")
@@ -1329,12 +1395,12 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"surface=settings", "--webview-title Agora DE Settings", "--app-id io.agorade.ShellSettings", "--expected-app-id io.agorade.ShellSettings", "--wait-surface"} {
+	for _, want := range []string{"surface=settings", "agora-de-gtk4-layer-shell-webview", "--arg --role --arg window", "--arg --app-id --arg io.agorade.ShellSettings", "--expected-app-id io.agorade.ShellSettings", "--wait-surface"} {
 		if !strings.Contains(string(calls), want) {
 			t.Fatalf("settings compositorctl calls missing %q: %s", want, calls)
 		}
 	}
-	for _, forbidden := range []string{"agora-de-gtk4-layer-shell-webview", "--arg --role --arg popup"} {
+	for _, forbidden := range []string{"--webview-title Agora DE Settings", "--arg --role --arg popup"} {
 		if strings.Contains(lastLogLine(string(calls)), forbidden) {
 			t.Fatalf("settings must launch as a normal toplevel, found %q: %s", forbidden, calls)
 		}
@@ -1407,7 +1473,7 @@ func TestHandlerClosesShellLayerByTerminatingShellClient(t *testing.T) {
 printf '%s\n' "$*" >> "$CALL_LOG"
 case "$1" in
   list-surfaces)
-    printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-status","app_id":"io.agorade.ShellStatus","surface_kind":"layer_shell","visible":true},"client":{"pid":424242,"uid":60010},"last_event":"content_committed","visible":true}]}'
+		printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-overlay","app_id":"io.agorade.ShellOverlay","surface_kind":"layer_shell","visible":true},"client":{"pid":424242,"uid":60010},"last_event":"content_committed","visible":true}]}'
     ;;
   surface)
     printf '%s\n' '{"status":"accepted"}'
@@ -1442,10 +1508,10 @@ esac
 	}
 
 	recorder := httptest.NewRecorder()
-	body := strings.NewReader(`{"surfaceId":"layer-status","action":"close"}`)
+	body := strings.NewReader(`{"surfaceId":"layer-overlay","action":"close"}`)
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, SurfaceActionPath, body))
 	if recorder.Code != http.StatusAccepted {
-		t.Fatalf("close launcher status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
+		t.Fatalf("close overlay status = %d, want %d; body=%s", recorder.Code, http.StatusAccepted, recorder.Body.String())
 	}
 	if signaledPID != 424242 || signaledSignal != syscall.SIGTERM {
 		t.Fatalf("signal = (%d, %v), want (424242, SIGTERM)", signaledPID, signaledSignal)
@@ -1457,8 +1523,116 @@ esac
 	if !strings.Contains(string(calls), "list-surfaces") {
 		t.Fatalf("compositorctl calls missing list-surfaces: %s", calls)
 	}
-	if strings.Contains(string(calls), "surface close --surface layer-status") {
-		t.Fatalf("launcher layer close should not use work-surface close: %s", calls)
+	if strings.Contains(string(calls), "surface close --surface layer-overlay") {
+		t.Fatalf("shell layer close should not use work-surface close: %s", calls)
+	}
+}
+
+func TestHandlerHidesReusableShellSurfacesForWarmReuse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	dir := t.TempDir()
+	command := filepath.Join(dir, "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+case "$1" in
+  list-surfaces)
+    printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-launcher","app_id":"io.agorade.ShellLauncher","surface_kind":"layer_shell","visible":true},"client":{"pid":424243,"uid":60010},"last_event":"content_committed","visible":true},{"surface":{"id":"layer-status","app_id":"io.agorade.ShellStatus","surface_kind":"layer_shell","visible":true},"client":{"pid":424244,"uid":60010},"last_event":"content_committed","visible":true},{"surface":{"id":"view-settings","app_id":"io.agorade.ShellSettings","surface_kind":"xdg_toplevel","visible":true},"client":{"pid":424245,"uid":60010},"last_event":"content_committed","visible":true}]}'
+    ;;
+  *)
+    printf 'unexpected command %s\n' "$1" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	visibilityCommands := make(map[string]string)
+	originalRequestShellVisibility := requestShellVisibility
+	originalSignalProcess := signalProcess
+	requestShellVisibility = func(appID string, command string) error {
+		visibilityCommands[appID] = command
+		return nil
+	}
+	t.Cleanup(func() {
+		requestShellVisibility = originalRequestShellVisibility
+		signalProcess = originalSignalProcess
+	})
+
+	handler, err := NewHandler(Config{
+		FixtureProviders:  true,
+		SurfaceProvider:   SurfaceProviderCompositorctl,
+		CompositorctlPath: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		surfaceID string
+		appID     string
+	}{
+		{surfaceID: "layer-launcher", appID: "io.agorade.ShellLauncher"},
+		{surfaceID: "layer-status", appID: "io.agorade.ShellStatus"},
+		{surfaceID: "view-settings", appID: "io.agorade.ShellSettings"},
+	} {
+		recorder := httptest.NewRecorder()
+		body := strings.NewReader(`{"surfaceId":"` + test.surfaceID + `","action":"close"}`)
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, SurfaceActionPath, body))
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("close %s status = %d, want %d; body=%s", test.surfaceID, recorder.Code, http.StatusAccepted, recorder.Body.String())
+		}
+		if visibilityCommands[test.appID] != "hide" {
+			t.Fatalf("%s visibility command = %q, want hide", test.appID, visibilityCommands[test.appID])
+		}
+	}
+
+	requestShellVisibility = func(string, string) error { return os.ErrNotExist }
+	var fallbackPID int
+	var fallbackSignal syscall.Signal
+	signalProcess = func(pid int, signal syscall.Signal) error {
+		fallbackPID = pid
+		fallbackSignal = signal
+		return nil
+	}
+	recorder := httptest.NewRecorder()
+	body := strings.NewReader(`{"surfaceId":"layer-launcher","action":"close"}`)
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, SurfaceActionPath, body))
+	if recorder.Code != http.StatusAccepted || fallbackPID != 424243 || fallbackSignal != syscall.SIGTERM {
+		t.Fatalf("fallback close status=%d signal=(%d,%v), want accepted SIGTERM", recorder.Code, fallbackPID, fallbackSignal)
+	}
+}
+
+func TestReuseShellWebviewTargetWaitsForVisibleSurface(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is Unix-specific")
+	}
+	dir := t.TempDir()
+	command := filepath.Join(dir, "compositorctl-fixture")
+	script := `#!/usr/bin/env sh
+printf '%s\n' '{"surfaces":[{"surface":{"id":"layer-status","app_id":"io.agorade.ShellStatus","surface_kind":"layer_shell","visible":true},"client":{"pid":424244,"uid":60010},"last_event":"content_committed","visible":true}]}'
+`
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	originalRequestShellVisibility := requestShellVisibility
+	var requestedAppID, requestedCommand string
+	requestShellVisibility = func(appID string, command string) error {
+		requestedAppID, requestedCommand = appID, command
+		return nil
+	}
+	t.Cleanup(func() { requestShellVisibility = originalRequestShellVisibility })
+
+	result, reused, err := reuseShellWebviewTarget(context.Background(), command, "shell-status", "io.agorade.ShellStatus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reused || result.AppID != "shell-status" || result.SurfaceID != "layer-status" || result.Status != "reused_existing_window" {
+		t.Fatalf("reuse result=(%+v,%v), want visible existing status", result, reused)
+	}
+	if requestedAppID != "io.agorade.ShellStatus" || requestedCommand != "show" {
+		t.Fatalf("visibility request=(%q,%q), want status show", requestedAppID, requestedCommand)
 	}
 }
 

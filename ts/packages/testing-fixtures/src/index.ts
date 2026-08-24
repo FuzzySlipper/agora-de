@@ -7,7 +7,7 @@ import { taskbarThemeVars } from '@agora-de/feature-taskbar';
 import { projectSurfaceLifecycle } from '@agora-de/domain';
 import { dataState, appCatalogState, surfaceLifecycleState } from '@agora-de/store';
 import { desktopShellComposition, operatorConsoleComposition } from '@agora-de/shell';
-import { evidenceThemeTokenNames, shellThemeTokens } from '@agora-de/theme';
+import { evidenceThemeTokenNames, liveThemeClientScript, shellThemeTokens } from '@agora-de/theme';
 import { catalogAppsPath, decodeCatalogAppsResponse } from '@agora-de/transport';
 import { workSurfaceControlsViewModel } from '@agora-de/feature-work-surface-controls';
 import type {
@@ -292,11 +292,23 @@ export function assertThemeFixture(): void {
   if (evidenceThemeTokenNames.includes(shellThemeTokens.accent)) {
     throw new Error('presentation accent should remain changeable without being a visual evidence marker');
   }
-  if (taskbarThemeVars.border !== 'var(--agora-evidence-accent)') {
-    throw new Error('taskbar should consume the stable evidence accent through theme tokens');
+  if (taskbarThemeVars.border !== 'var(--agora-accent)') {
+    throw new Error('taskbar separator should follow the active presentation accent');
   }
   if (appLauncherThemeVars.itemBackground !== 'var(--agora-surface-raised)') {
     throw new Error('app launcher should consume shell theme surface tokens');
+  }
+  const liveClient = liveThemeClientScript();
+  for (const marker of [
+    '/api/settings/modules/appearance/load',
+    'new BroadcastChannel("agora-de-theme")',
+    'window.agoraTheme=api',
+    '!evidenceTokens.has(name)',
+    'window.setInterval(refresh,1500)',
+  ]) {
+    if (!liveClient.includes(marker)) {
+      throw new Error(`live theme client missing ${marker}`);
+    }
   }
 }
 

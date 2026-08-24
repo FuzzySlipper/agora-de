@@ -5,6 +5,9 @@
 // and __AGORA_SURFACE__ placeholders at runtime, and inlines the shared component CSS.
 
 import { appFallbackIconSVG, componentCSS, shellIconSVG } from '@agora-de/components';
+import { liveThemeClientScript } from '@agora-de/theme';
+
+const liveThemeScript = liveThemeClientScript();
 
 export const overlayHTML: string = `<!doctype html>
 <html>
@@ -169,6 +172,7 @@ ${componentCSS}
     <section id="overlay-labels" aria-label="Surface labels"></section>
   </main>
   <script>
+    ${liveThemeScript}
     const state = {
       layout: {mode: "freeform", revision: 0, surfaces: [], workspaces: []},
       surfaces: []
@@ -509,6 +513,7 @@ ${componentCSS}
     <div id="recovery"><code>loading</code></div>
   </section>
   <script>
+    ${liveThemeScript}
     function cell(value) {
       const td = document.createElement("td");
       td.textContent = String(value || "");
@@ -636,6 +641,7 @@ ${componentCSS}
         closeStatus();
       }
     });
+    window.addEventListener("focus", () => refresh().catch(() => {}));
     refresh().catch((error) => {
       document.getElementById("overall").textContent = "status: offline";
       document.getElementById("overall").className = "overall warn";
@@ -811,6 +817,7 @@ ${componentCSS}
     <span class="state" id="service-state">unknown</span>
   </footer>
   <script>
+    ${liveThemeScript}
     const state = {
       settings: null,
       busy: false
@@ -1151,6 +1158,7 @@ ${componentCSS}
     </footer>
   </main>
   <script>
+    ${liveThemeScript}
     const state = {
       apps: [],
       query: "",
@@ -1359,6 +1367,7 @@ ${componentCSS}
         closeLauncher();
       }
     });
+    window.addEventListener("focus", refresh);
     refresh().then(() => document.getElementById("app-search").focus());
   </script>
 </body>
@@ -1393,7 +1402,7 @@ ${componentCSS}
       --taskbar-control-height: var(--agora-panel-control-height);
       align-items: center;
       background: var(--agora-panel-bg);
-      border-top: 3px solid var(--agora-evidence-accent);
+      border-top: 3px solid var(--agora-accent);
       bottom: 0;
       box-shadow: var(--agora-panel-shadow);
       box-sizing: border-box;
@@ -1816,6 +1825,7 @@ ${componentCSS}
     </section>
   </main>
   <script>
+    ${liveThemeScript}
     const state = {
       apps: [],
       surfaces: [],
@@ -2749,6 +2759,12 @@ ${componentCSS}
 
     async function toggleApps() {
       const status = document.getElementById("status-label");
+      try {
+        const surfaces = await loadJSON("/api/surfaces");
+        state.surfaces = Array.isArray(surfaces.surfaces) ? surfaces.surfaces : [];
+      } catch (_error) {
+        // Use the most recent panel snapshot if the compositor read is transiently unavailable.
+      }
       const launcher = launcherSurface();
       if (launcher) {
         status.textContent = "apps";
@@ -2891,6 +2907,7 @@ ${componentCSS}
     <span class="mark"></span>
     <span>agora-de shell: __AGORA_SURFACE__</span>
   </main>${taskbarHTML}
+  <script>${liveThemeScript}</script>
 </body>
 </html>`;
 }

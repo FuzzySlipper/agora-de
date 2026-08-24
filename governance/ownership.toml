@@ -407,7 +407,7 @@ may_import = ["@agora-de/protocol", "@agora-de/platform", "@agora-de/domain", "@
 lane = "ts-feature"
 type = "feature"
 layer = "feature"
-may_import = ["@agora-de/protocol", "@agora-de/domain"]
+may_import = ["@agora-de/protocol", "@agora-de/domain", "@agora-de/theme"]
 
 [package."ts/packages/feature-settings-diagnostics"]
 lane = "ts-feature"

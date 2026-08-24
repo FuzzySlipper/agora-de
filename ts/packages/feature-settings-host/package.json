@@ -1,1 +1,1 @@
-{"name":"@agora-de/feature-settings-host","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/protocol":"*","@agora-de/domain":"*"}}
+{"name":"@agora-de/feature-settings-host","private":true,"type":"module","exports":{".":"./src/index.ts"},"dependencies":{"@agora-de/protocol":"*","@agora-de/domain":"*","@agora-de/theme":"*"}}
